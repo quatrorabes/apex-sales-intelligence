@@ -1,0 +1,17 @@
+# apps/backend/intelligence/__init__.py
+"""
+Apex Intelligence - Adaptive Scoring System
+Version 1.0.0
+"""
+
+from .apex_scoring_engine import ApexScoringEngine, score_contact, score_all_contacts
+from .lead_types import LeadTypeProfile, LeadLifecycleStage
+
+__version__ = "1.0.0"
+__all__ = [
+    'ApexScoringEngine',
+    'score_contact',
+    'score_all_contacts',
+    'LeadTypeProfile',
+    'LeadLifecycleStage'
+]
