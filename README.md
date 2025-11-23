@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # APEX Sales Intelligence Platform
 
 AI-Powered Contact Enrichment & Scoring System for Commercial Real Estate & SBA Lending
@@ -169,3 +170,7 @@ Private - All Rights Reserved
 ## Author
 
 Chris Rabenold
+=======
+# apex-sales-intelligence
+AI-Powered Sales Intelligence Platform with MDCP/RSS Scoring
+>>>>>>> e607b64a002d9500b4a9a22b8be0319e52e06b95
