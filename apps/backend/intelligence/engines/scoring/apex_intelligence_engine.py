@@ -237,31 +237,87 @@ class ApexScoringEngine:
             return 'COLD'
     
     def calculate_rss_score(self, contact: Dict, lifecycle_stage: str) -> Dict:
-        """Calculate RSS score"""
+        """Calculate RSS score based on role seniority and scope"""
         
-        if lifecycle_stage == 'NEW':
-            return {
-                'total': 0,
-                'familiarity': 0,
-                'engagement': 0,
-                'productivity': 0,
-                'tier': 'N/A'
-            }
+        # Start with base score
+        base_score = 0.0
+        title = (contact.get('title') or '').lower()
+        company = contact.get('company') or ''
         
-        # Simplified RSS
-        base_score = 50.0
+        # 1. SENIORITY ANALYSIS (0-40 points)
+        seniority_score = 0
         
+        # C-Suite / Executive
+        if any(word in title for word in ['ceo', 'cfo', 'coo', 'cto', 'chief', 'president', 'founder', 'owner', 'partner']):
+            seniority_score = 40
+        # VP Level
+        elif any(word in title for word in ['vp', 'vice president', 'evp', 'svp']):
+            seniority_score = 35
+        # Director Level
+        elif 'director' in title:
+            if 'senior' in title or 'sr.' in title:
+                seniority_score = 30
+            else:
+                seniority_score = 25
+        # Manager Level
+        elif 'manager' in title:
+            if 'senior' in title or 'sr.' in title:
+                seniority_score = 20
+            else:
+                seniority_score = 15
+        # Specialist/Analyst
+        elif any(word in title for word in ['specialist', 'analyst', 'coordinator', 'associate']):
+            seniority_score = 10
+        # Individual contributor
+        else:
+            seniority_score = 5
+            
+        # 2. SCOPE INDICATORS (0-30 points)
+        scope_score = 0
+        
+        # Regional/National scope
+        if any(word in title for word in ['national', 'regional', 'global', 'international']):
+            scope_score += 15
+        # Department/Division leadership
+        if any(word in title for word in ['head', 'lead', 'principal']):
+            scope_score += 10
+        # Team leadership
+        if any(word in title for word in ['senior', 'sr.', 'lead']):
+            scope_score += 5
+            
+        # 3. DECISION AUTHORITY (0-30 points)
+        authority_score = 0
+        
+        # Clear decision-making roles
+        if any(word in title for word in ['director', 'vp', 'president', 'chief', 'head']):
+            authority_score = 30
+        elif any(word in title for word in ['manager', 'supervisor', 'lead']):
+            authority_score = 20
+        elif any(word in title for word in ['senior', 'principal']):
+            authority_score = 15
+        else:
+            authority_score = 10
+            
+        # Calculate total RSS
+        total_rss = seniority_score + scope_score + authority_score
+        
+        # Apply lifecycle adjustment (relationship factor)
         if lifecycle_stage == 'ESTABLISHED':
-            base_score = 75.0
+            total_rss = min(100, total_rss * 1.2)  # 20% boost for established relationships
         elif lifecycle_stage == 'ACTIVE':
-            base_score = 60.0
+            total_rss = min(100, total_rss * 1.1)  # 10% boost for active contacts
+        elif lifecycle_stage == 'WARMING':
+            total_rss = min(100, total_rss * 1.05)  # 5% boost for warming
+        # NEW and COLD get no boost
+            
+        total_rss = round(total_rss, 2)
         
         return {
-            'total': round(base_score, 2),
-            'familiarity': round(base_score * 0.4, 2),
-            'engagement': round(base_score * 0.3, 2),
-            'productivity': round(base_score * 0.3, 2),
-            'tier': self.classify_rss_tier(base_score)
+            'total': total_rss,
+            'seniority': round(seniority_score, 2),
+            'scope': round(scope_score, 2),
+            'authority': round(authority_score, 2),
+            'tier': self.classify_rss_tier(total_rss)
         }
     
     def classify_rss_tier(self, score: float) -> str:

@@ -484,20 +484,53 @@ def score_single_contact(contact_id):
         logger.info(f"🎯 Scoring contact {contact_id}...")
         
         conn = get_db()
-        result = score_contact_from_db(conn, contact_id, trigger='manual')
-        conn.close()
         
-        if 'error' in result:
-            return jsonify(result), 404
-        
-        logger.info(f"✅ Scored contact {contact_id}")
-        return jsonify(result)
-    
+        # Use the scoring wrapper
+        if score_contact_from_db:
+            result = score_contact_from_db(conn, contact_id, trigger='manual')
+            
+            # The wrapper should have updated the database
+            conn.commit()
+            
+            # Fetch the updated scores to return
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT mdcp_score, rss_score, priority_score, urgency_level, 
+                       mdcp_tier, rss_tier, recommended_action
+                FROM contacts WHERE id = ?
+            ''', (contact_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                logger.info(f"✅ Scored contact {contact_id}")
+                return jsonify({
+                    'success': True,
+                    'contact_id': contact_id,
+                    'scores': {
+                        'mdcp_score': row['mdcp_score'],
+                        'rss_score': row['rss_score'],
+                        'priority_score': row['priority_score'],
+                        'urgency_level': row['urgency_level'],
+                        'mdcp_tier': row['mdcp_tier'],
+                        'rss_tier': row['rss_tier'],
+                        'recommended_action': row['recommended_action']
+                    }
+                })
+            else:
+                # Return the result from wrapper even if fetch failed
+                logger.info(f"✅ Scored contact {contact_id} (fetch failed)")
+                return jsonify(result)
+        else:
+            # Fallback scoring
+            logger.warning("Using fallback scoring")
+            # ... existing fallback code ...
+            
     except Exception as e:
         logger.error(f"❌ Error scoring contact {contact_id}: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
-    
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+        
     
 @app.route('/api/contacts/score-batch', methods=['POST'])
 def score_batch_contacts():
@@ -791,7 +824,35 @@ def get_contact_intelligence(contact_id):
             'error': str(e)
         }), 500
 
-
+@app.route('/api/contacts/<int:contact_id>/reset-enrichment', methods=['POST'])
+def reset_enrichment(contact_id):
+    """Reset enrichment status to allow re-enrichment"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts 
+            SET enrichment_status = 'pending'
+            WHERE id = ?
+        """, (contact_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+@app.route('/api/contacts/<int:contact_id>/report-issue', methods=['POST'])
+def report_issue(contact_id):
+    """Log reported profile issues"""
+    try:
+        data = request.get_json()
+        reason = data.get('reason', 'No reason provided')
+        logger.warning(f"⚠️ Profile issue reported for contact {contact_id}: {reason}")
+        # TODO: Save to issues table or send notification
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 @app.route('/api/apex/scores', methods=['GET'])
 def get_apex_intelligence_scores():
     """Get all Apex Intelligence scores for dashboard"""
@@ -805,6 +866,147 @@ def get_apex_intelligence_scores():
     except Exception as e:
         logger.error(f"❌ Error getting Apex scores: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/user/preferences', methods=['GET'])
+def get_user_preferences():
+    """Get current user's scoring preferences"""
+    user_id = request.headers.get('X-User-Id', 'default')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM user_preferences WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return jsonify({
+            'user_id': row['user_id'],
+            'scoring_profile': row['scoring_profile'],
+            'custom_ideal_titles': json.loads(row['custom_ideal_titles'] or '[]'),
+            'custom_avoid_titles': json.loads(row['custom_avoid_titles'] or '[]'),
+            'ideal_company_size_min': row['ideal_company_size_min'],
+            'ideal_company_size_max': row['ideal_company_size_max'],
+            'target_seniority_levels': json.loads(row['target_seniority_levels'] or '[]'),
+            'exclude_c_suite': row['exclude_c_suite']
+        })
+    else:
+        return jsonify({
+            'user_id': user_id,
+            'scoring_profile': 'DEFAULT',
+            'message': 'No preferences set yet'
+        })
+    
+@app.route('/api/user/preferences', methods=['POST'])
+def update_user_preferences():
+    """Update user's scoring preferences"""
+    user_id = request.headers.get('X-User-Id', 'default')
+    data = request.get_json()
+    
+    from intelligence.engines.scoring.user_scoring_engine import UserSpecificScoringEngine
+    
+    engine = UserSpecificScoringEngine(user_id)
+    engine.update_preferences(data)
+    
+    return jsonify({
+        'success': True,
+        'message': 'Preferences updated successfully',
+        'user_id': user_id
+    })
+    
+@app.route('/api/user/onboarding', methods=['POST'])
+def user_onboarding():
+    """Save user preferences from onboarding"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id', 'default_user')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Create table if not exists
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT UNIQUE NOT NULL,
+                scoring_profile TEXT DEFAULT 'DEFAULT',
+                custom_ideal_titles TEXT,
+                custom_avoid_titles TEXT,
+                ideal_company_size_min INTEGER,
+                ideal_company_size_max INTEGER,
+                ideal_industries TEXT,
+                target_seniority_levels TEXT,
+                exclude_c_suite BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Convert lists to JSON strings
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_preferences 
+            (user_id, scoring_profile, custom_ideal_titles, custom_avoid_titles, 
+             ideal_company_size_min, ideal_company_size_max, ideal_industries,
+             target_seniority_levels, exclude_c_suite, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (
+            user_id,
+            data.get('industry', 'DEFAULT'),
+            json.dumps(data.get('ideal_titles', [])),
+            json.dumps(data.get('avoid_titles', [])),
+            data.get('min_company_size', 50),
+            data.get('max_company_size', 5000),
+            json.dumps(data.get('target_industries', [])),
+            json.dumps(data.get('seniority_levels', [])),
+            data.get('exclude_c_suite', False)
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Preferences saved successfully',
+            'user_id': user_id
+        })
+    except Exception as e:
+        logger.error(f"Onboarding error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+@app.route('/api/user/preferences/<user_id>', methods=['GET'])
+def get_user_preferences_by_id(user_id):  # <-- RENAMED FUNCTION
+    """Get user's scoring preferences"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM user_preferences WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            # Convert row to dict
+            columns = [desc[0] for desc in cursor.description]
+            pref_dict = dict(zip(columns, row))
+            
+            return jsonify({
+                'success': True,
+                'user_id': pref_dict.get('user_id'),
+                'scoring_profile': pref_dict.get('scoring_profile'),
+                'custom_ideal_titles': json.loads(pref_dict.get('custom_ideal_titles') or '[]'),
+                'custom_avoid_titles': json.loads(pref_dict.get('custom_avoid_titles') or '[]'),
+                'ideal_company_size_min': pref_dict.get('ideal_company_size_min'),
+                'ideal_company_size_max': pref_dict.get('ideal_company_size_max'),
+                'target_seniority_levels': json.loads(pref_dict.get('target_seniority_levels') or '[]'),
+                'exclude_c_suite': bool(pref_dict.get('exclude_c_suite'))
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No preferences found for user'
+            })
+    except Exception as e:
+        logger.error(f"Error getting preferences: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
     
     
 @app.route('/api/apex/score-all', methods=['POST'])
@@ -847,6 +1049,97 @@ def score_all_contacts():
         logger.error(f"❌ Error scoring all contacts: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/contacts/<int:contact_id>/verify-vertical', methods=['POST'])
+def verify_contact_vertical(contact_id):
+    """Verify if contact is in CRE vertical"""
+    try:
+        from intelligence.engines.scoring.vertical_verifier import VerticalVerifier
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get contact and enrichment data
+        cursor.execute('''
+            SELECT id, name, title, company, enrichment_data 
+            FROM contacts 
+            WHERE id = ?
+        ''', (contact_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'error': 'Contact not found'}), 404
+        
+        contact = dict(row)
+        enrichment_data = {}
+        if contact['enrichment_data']:
+            try:
+                enrichment_data = json.loads(contact['enrichment_data'])
+            except:
+                pass
+                
+        # Verify vertical
+        verifier = VerticalVerifier()
+        verification = verifier.verify_from_enrichment(contact, enrichment_data)
+        
+        # Save verification result
+        cursor.execute('''
+            UPDATE contacts 
+            SET vertical_verification = ? 
+            WHERE id = ?
+        ''', (json.dumps(verification), contact_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'verification': verification
+        })
+    
+    except Exception as e:
+        logger.error(f"Error verifying vertical: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+@app.route('/api/apex/scores', methods=['GET'])
+def get_apex_scores_endpoint():
+    """Get all scored contacts for Apex Intelligence dashboard"""
+    try:
+        conn = get_db()
+        
+        if get_apex_scores:
+            # Use the scoring wrapper function
+            result = get_apex_scores(conn)
+            conn.close()
+            return jsonify(result)
+        else:
+            # Fallback - get scored contacts directly
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, name, company, email, title,
+                       mdcp_score, mdcp_tier,
+                       rss_score, rss_tier,
+                       priority_score, urgency_level,
+                       lifecycle_stage, recommended_action
+                FROM contacts
+                WHERE priority_score IS NOT NULL
+                ORDER BY priority_score DESC
+            ''')
+            
+            columns = [desc[0] for desc in cursor.description]
+            contacts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            conn.close()
+            
+            return jsonify({
+                'status': 'success',
+                'count': len(contacts),
+                'contacts': contacts
+            })
+        
+    except Exception as e:
+        logger.error(f"Error getting apex scores: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    
 
 if __name__ == '__main__':
     ensure_scoring_columns()

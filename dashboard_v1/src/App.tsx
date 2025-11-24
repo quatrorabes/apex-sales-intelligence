@@ -31,6 +31,7 @@ import CadenceDashboard from "./components/CadenceDashboard";
 import RawDataViewer from "./components/RawDataViewer";
 import { ApexIntelligenceDashboard } from "./components/ApexIntelligence";
 import BatchProgress from "./components/BatchProgress";
+import OnboardingModal from './components/OnboardingModal';
 
 export interface Contact {
   id: number;
@@ -102,6 +103,7 @@ function App() {
   const [showRawData, setShowRawData] = useState(false);
   const [selectedRawData, setSelectedRawData] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
   
@@ -121,7 +123,6 @@ function App() {
 
   const fetchAnalytics = async () => {
     try {
-      // Calculate analytics from contacts since there's no dedicated endpoint
       const enriched = contacts.filter(c => c.enrichment_status === 'complete').length;
       const pending = contacts.filter(c => !c.enrichment_status || c.enrichment_status === 'pending').length;
       const scored = contacts.filter(c => c.priority_score).length;
@@ -195,7 +196,7 @@ function App() {
           `Priority Score: ${Math.round(data.scores.priority_score)}\n` +
           `MDCP Score: ${Math.round(data.scores.mdcp_score)}\n` +
           `RSS Score: ${Math.round(data.scores.rss_score)}\n` +
-          `Urgency: ${data.tiers?.urgency_level || 'N/A'}`
+          `Urgency: ${data.scores.urgency_level || 'N/A'}`
         );
         fetchContacts();
       } else {
@@ -283,7 +284,7 @@ function App() {
       );
       
       fetchContacts();
-      setSelectedContacts(new Set()); // Clear selection after enrichment
+      setSelectedContacts(new Set());
     } catch (error) {
       console.error("Error enriching contacts:", error);
       alert("Failed to enrich contacts");
@@ -292,7 +293,6 @@ function App() {
       setShowBatchProgress(false);
     }
   };
-
 
   const handleSort = (key: keyof Contact) => {
     setSortConfig((prev) => ({
@@ -392,7 +392,7 @@ function App() {
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
                   APEX Sales Intelligence
                 </h1>
-                <p className="text-sm text-slate-400">AI-Powered Contact Enrichment & Scoring</p>
+                <p className="text-sm text-slate-400">AI-Powered Contact Enrichment * Scoring</p>
               </div>
             </div>
 
@@ -425,6 +425,14 @@ function App() {
                   Enrich Selected ({selectedContacts.size})
                 </button>
               )}
+              
+              <button
+                onClick={() => setShowOnboarding(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
+              >
+                <Target className="w-4 h-4" />
+                Configure ICP
+              </button>
             </div>
           </div>
 
@@ -809,7 +817,6 @@ function App() {
         />
       )}
 
-
       {showRawData && selectedRawData && (
         <RawDataViewer
           data={selectedRawData}
@@ -817,6 +824,17 @@ function App() {
             setShowRawData(false);
             setSelectedRawData(null);
           }}
+        />
+      )}
+
+      {showOnboarding && (
+        <OnboardingModal
+          onComplete={(prefs) => {
+            console.log('Preferences saved:', prefs);
+            setShowOnboarding(false);
+            fetchContacts();
+          }}
+          onClose={() => setShowOnboarding(false)}
         />
       )}
 

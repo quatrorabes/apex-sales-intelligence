@@ -1,212 +1,151 @@
-#!/usr/bin/ruby
-
 """
-Scoring Wrapper - Standalone module to handle scoring logic
-This wraps the actual scoring engines and provides a simple interface
+Complete scoring wrapper with all required functions
 """
 import sys
 import os
-import sqlite3
-from datetime import datetime
 import json
+from datetime import datetime
 
-# Add backend path
-BACKEND_PATH = '/Users/chrisrabenold/projects/apex/apps/backend'
-sys.path.insert(0, BACKEND_PATH)
-sys.path.insert(0, os.path.join(BACKEND_PATH, 'intelligence', 'engines'))
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Try to import the scoring engines
-try:
-	from apex_intelligence_engine import ApexScoringEngine
-	APEX_ENGINE_AVAILABLE = True
-except ImportError:
-	try:
-		from intelligence.engines.apex_intelligence_engine import ApexScoringEngine
-		APEX_ENGINE_AVAILABLE = True
-	except ImportError:
-		APEX_ENGINE_AVAILABLE = False
-		ApexScoringEngine = None
-		
-try:
-	from scoring_orchestrator import ScoringOrchestrator
-	ORCHESTRATOR_AVAILABLE = True
-except ImportError:
-	try:
-		from intelligence.engines.scoring_orchestrator import ScoringOrchestrator
-		ORCHESTRATOR_AVAILABLE = True
-	except ImportError:
-		ORCHESTRATOR_AVAILABLE = False
-		ScoringOrchestrator = None
-		
-
-def score_contact_simple(contact_dict):
-	"""
-	Simple scoring function that works with just contact data
-	Returns scores even if engines aren't available
-	"""
-	# Default fallback scoring
-	default_score = {
-		'mdcp_score': 0,
-		'mdcp_tier': 'UNKNOWN',
-		'rss_score': 0,
-		'rss_tier': 'UNKNOWN',
-		'priority_score': 0,
-		'urgency_level': 'LOW',
-		'recommended_action': 'Review contact manually',
-		'calculation_version': 'fallback_v1',
-		'timestamp': datetime.now().isoformat()
-	}
-
-	# If no engines available, use basic heuristic scoring
-	if not APEX_ENGINE_AVAILABLE:
-		# Simple heuristic based on available data
-		score = 50  # Base score
-		
-		# Add points for data completeness
-		if contact_dict.get('email'): score += 10
-		if contact_dict.get('phone'): score += 10
-		if contact_dict.get('company'): score += 10
-		if contact_dict.get('title'): score += 10
-		if contact_dict.get('linkedin_url'): score += 10
-		
-		# Determine tier
-		if score >= 80:
-			tier = 'HOT'
-			urgency = 'IMMEDIATE'
-		elif score >= 65:
-			tier = 'WARM'
-			urgency = 'HIGH'
-		elif score >= 50:
-			tier = 'QUALIFIED'
-			urgency = 'MEDIUM'
-		else:
-			tier = 'COLD'
-			urgency = 'LOW'
-			
-		return {
-			'mdcp_score': score,
-			'mdcp_tier': tier,
-			'rss_score': score,
-			'rss_tier': tier,
-			'priority_score': score,
-			'urgency_level': urgency,
-			'recommended_action': f'{urgency} priority - Contact within 24-48 hours',
-			'calculation_version': 'heuristic_v1',
-			'timestamp': datetime.now().isoformat()
-		}
-
-	# If engines are available, use them
-	try:
-		engine = ApexScoringEngine()
-		result = engine.score(contact_dict)
-		return result
-	except Exception as e:
-		print(f"Error using scoring engine: {e}")
-		return default_score
-		
-
-def score_contact_from_db(conn, contact_id, trigger='manual'):
-	"""
-	Score a contact using database connection
-	"""
-	cursor = conn.cursor()
-	
-	# Get contact data
-	cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
-	row = cursor.fetchone()
-	
-	if not row:
-		return {'error': 'Contact not found'}
-		
-	# Convert to dict
-	columns = [desc[0] for desc in cursor.description]
-	contact_dict = dict(zip(columns, row))
-	
-	# Score the contact
-	scores = score_contact_simple(contact_dict)
-	
-	# Update database
-	cursor.execute('''
-		UPDATE contacts
-		SET mdcp_score = ?,
-			mdcp_tier = ?,
-			rss_score = ?,
-			rss_tier = ?,
-			priority_score = ?,
-			urgency_level = ?,
-			recommended_action = ?,
-			calculation_version = ?,
-			last_scored = ?
-		WHERE id = ?
-	''', (
-		scores.get('mdcp_score'),
-		scores.get('mdcp_tier'),
-		scores.get('rss_score'),
-		scores.get('rss_tier'),
-		scores.get('priority_score'),
-		scores.get('urgency_level'),
-		scores.get('recommended_action'),
-		scores.get('calculation_version'),
-		scores.get('timestamp'),
-		contact_id
-	))
-
-	conn.commit()
-	
-	return {
-		'success': True,
-		'contact_id': contact_id,
-		'scores': scores
-	}
-
+def score_contact_from_db(conn, contact_id: int, trigger: str = 'manual', user_id: str = None):
+    """Score a contact with CRE-specific logic"""
+    
+    if not user_id:
+        user_id = os.getenv('CURRENT_USER_ID', 'default')
+    
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
+    row = cursor.fetchone()
+    
+    if not row:
+        return {'error': 'Contact not found'}
+    
+    columns = [desc[0] for desc in cursor.description]
+    contact = dict(zip(columns, row))
+    
+    # Import and use CRE scoring engine
+    try:
+        from user_scoring_engine import UserSpecificScoringEngine
+        user_engine = UserSpecificScoringEngine(user_id)
+        rss_result = user_engine.calculate_personalized_rss(contact)
+        rss_score = rss_result['total']
+        print(f"DEBUG: CRE RSS Score: {rss_score} for {contact.get('name')}")
+    except Exception as e:
+        print(f"ERROR in scoring: {e}")
+        # Fallback - but with CRE logic
+        title = (contact.get('title') or '').lower()
+        
+        # CRE-specific fallback
+        if any(word in title for word in ['broker', 'commercial', 'real estate', 'leasing']):
+            rss_score = 75
+        elif any(word in title for word in ['vp', 'director', 'principal']):
+            rss_score = 70
+        elif any(word in title for word in ['hr', 'marketing', 'it', 'legal']):
+            rss_score = 15  # Very low for non-targets
+        else:
+            rss_score = 40
+    
+    # MDCP calculation (simpler)
+    mdcp_score = 40.0  # Start lower
+    if contact.get('company'):
+        mdcp_score += 15
+    if contact.get('email'):
+        mdcp_score += 15
+    if contact.get('phone'):
+        mdcp_score += 10
+    if contact.get('linkedin_url'):
+        mdcp_score += 10
+    
+    # Priority calculation - RSS matters more for CRE
+    priority_score = (mdcp_score * 0.3) + (rss_score * 0.7)  # 70% weight on role
+    
+    # Urgency levels
+    if priority_score >= 80:
+        urgency = 'IMMEDIATE'
+        tier = 'HOT'
+    elif priority_score >= 65:
+        urgency = 'HIGH'
+        tier = 'WARM'
+    elif priority_score >= 50:
+        urgency = 'MEDIUM'
+        tier = 'QUALIFIED'
+    else:
+        urgency = 'LOW'
+        tier = 'COLD'
+    
+    print(f"  Final scores - MDCP: {mdcp_score}, RSS: {rss_score}, Priority: {priority_score}")
+    
+    # UPDATE DATABASE
+    try:
+        cursor.execute('''
+            UPDATE contacts
+            SET mdcp_score = ?, 
+                mdcp_tier = ?, 
+                rss_score = ?, 
+                rss_tier = ?,
+                priority_score = ?, 
+                urgency_level = ?,
+                recommended_action = ?,
+                last_scored = ?
+            WHERE id = ?
+        ''', (
+            mdcp_score, tier, rss_score, tier, priority_score, urgency,
+            f'{urgency} priority contact',
+            datetime.now().isoformat(),
+            contact_id
+        ))
+        
+        conn.commit()
+        print(f"  ✅ Saved to database")
+        
+    except Exception as e:
+        print(f"ERROR saving to database: {e}")
+        conn.rollback()
+    
+    return {
+        'success': True,
+        'contact_id': contact_id,
+        'scores': {
+            'mdcp_score': mdcp_score,
+            'rss_score': rss_score,
+            'priority_score': priority_score,
+            'urgency_level': urgency
+        }
+    }
 
 def bulk_score_contacts(conn, contact_ids, trigger='batch'):
-	"""
-	Score multiple contacts in bulk
-	"""
-	results = []
-	
-	for contact_id in contact_ids:
-		try:
-			result = score_contact_from_db(conn, contact_id, trigger)
-			results.append(result)
-		except Exception as e:
-			results.append({
-				'contact_id': contact_id,
-				'error': str(e)
-			})
-
-	return results
-	
+    """Bulk score multiple contacts"""
+    results = []
+    for cid in contact_ids:
+        try:
+            result = score_contact_from_db(conn, cid, trigger)
+            results.append(result)
+        except Exception as e:
+            print(f"Error scoring {cid}: {e}")
+            results.append({'contact_id': cid, 'error': str(e)})
+    return results
 
 def get_apex_scores(conn):
-	"""
-	Get all contacts with Apex scores for the intelligence dashboard
-	"""
-	cursor = conn.cursor()
-	
-	cursor.execute('''
-		SELECT 
-			id, name, company, email,
-			lead_type, lifecycle_stage,
-			mdcp_score, mdcp_tier,
-			rss_score, rss_tier,
-			priority_score, urgency_level,
-			recommended_action, last_scored
-		FROM contacts
-		WHERE mdcp_score IS NOT NULL
-		ORDER BY priority_score DESC
-	''')
-
-	columns = [desc[0] for desc in cursor.description]
-	contacts = []
-	
-	for row in cursor.fetchall():
-		contact_dict = dict(zip(columns, row))
-		contacts.append(contact_dict)
-		
-	return {
-		'status': 'success',
-		'count': len(contacts),
-		'contacts': contacts
-	}
+    """Get all scored contacts for display"""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, name, company, email, title,
+               mdcp_score, mdcp_tier,
+               rss_score, rss_tier,
+               priority_score, urgency_level,
+               recommended_action, last_scored
+        FROM contacts
+        WHERE priority_score IS NOT NULL
+        ORDER BY priority_score DESC
+    ''')
+    
+    columns = [desc[0] for desc in cursor.description]
+    contacts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    
+    return {
+        'status': 'success',
+        'count': len(contacts),
+        'contacts': contacts
+    }
