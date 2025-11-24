@@ -12,6 +12,7 @@ import sqlite3
 from dotenv import load_dotenv
 import requests
 import logging
+import traceback
 
 # ============= LOAD ENV ONCE =============
 load_dotenv('/Users/chrisrabenold/projects/apex/.env')
@@ -56,17 +57,14 @@ bulk_score_contacts = None
 get_apex_scores = None
 
 try:
-    # Check if the path exists
     scoring_path = os.path.join(BACKEND_PATH, 'intelligence', 'engines', 'scoring')
     logger.info(f"Looking for scoring modules in: {scoring_path}")
     logger.info(f"Path exists: {os.path.exists(scoring_path)}")
     
     if os.path.exists(scoring_path):
-        # List contents for debugging
         contents = os.listdir(scoring_path)
         logger.info(f"Scoring directory contents: {contents}")
         
-    # Import from the CORRECT location (scoring/, not enrichment/)
     from intelligence.engines.scoring.scoring_wrapper import (
         score_contact_from_db,
         bulk_score_contacts,
@@ -79,10 +77,7 @@ try:
     
 except ImportError as e:
     logger.error(f"❌ Scoring engines not available: {e}")
-    import traceback
     logger.error(traceback.format_exc())
-    
-    # Create fallback functions
     logger.warning("⚠️ Using fallback scoring functions")
     
     def score_contact_from_db(conn, contact_id, trigger='manual'):
@@ -94,11 +89,9 @@ except ImportError as e:
         if not row:
             return {'error': 'Contact not found'}
         
-        # Convert to dict
         columns = [desc[0] for desc in cursor.description]
         contact = dict(zip(columns, row))
         
-        # Simple heuristic score
         score = 50
         if contact.get('email'): score += 10
         if contact.get('phone'): score += 10
@@ -109,7 +102,6 @@ except ImportError as e:
         tier = 'HOT' if score >= 80 else 'WARM' if score >= 70 else 'QUALIFIED'
         urgency = 'IMMEDIATE' if score >= 80 else 'HIGH' if score >= 70 else 'MEDIUM'
         
-        # Update database
         cursor.execute('''
             UPDATE contacts
             SET mdcp_score = ?, mdcp_tier = ?, 
@@ -213,15 +205,11 @@ def ensure_scoring_columns():
             cursor.execute(f'ALTER TABLE contacts ADD COLUMN {col_name} {col_type}')
             logger.info(f"✅ Added column: {col_name}")
         except sqlite3.OperationalError:
-            pass  # Column already exists
+            pass
             
     conn.commit()
     conn.close()
     logger.info("✅ Database schema checked for scoring")
-    
-    
-# ============= API ROUTES =============
-# (Continue with your existing routes below)
     
 
 # ============= API ROUTES =============
@@ -244,7 +232,6 @@ def get_contacts():
         conn = get_db()
         cursor = conn.cursor()
         
-        # Get query parameters
         status = request.args.get('status')
         limit = request.args.get('limit', 100, type=int)
         
@@ -477,7 +464,6 @@ def hubspot_import():
         
     except Exception as e:
         logger.error(f"❌ Error importing from HubSpot: {e}")
-        import traceback
         logger.error(traceback.format_exc())
         if 'conn' in locals():
             conn.close()
@@ -491,7 +477,6 @@ def hubspot_import():
         }), 500
 
 
-    
 @app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
 def score_single_contact(contact_id):
     """Score a single contact"""
@@ -510,7 +495,6 @@ def score_single_contact(contact_id):
     
     except Exception as e:
         logger.error(f"❌ Error scoring contact {contact_id}: {e}")
-        import traceback
         logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
     
@@ -565,13 +549,249 @@ def score_batch_contacts():
     
     except Exception as e:
         logger.error(f"❌ Error in batch scoring: {e}")
-        import traceback
         logger.error(traceback.format_exc())
         if 'conn' in locals():
             conn.close()
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
+def enrich_contact(contact_id):
+    """Enrich a single contact with REAL AI intelligence using Perplexity"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+        contact = cursor.fetchone()
+        
+        if not contact:
+            conn.close()
+            return jsonify({
+                'success': False,
+                'error': 'Contact not found'
+            }), 404
+        
+        if contact['enrichment_status'] == 'complete':
+            conn.close()
+            return jsonify({
+                'success': True,
+                'message': 'Contact already enriched',
+                'contact_id': contact_id
+            }), 200
+        
+        # Update status to processing
+        cursor.execute("""
+            UPDATE contacts 
+            SET enrichment_status = 'processing',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (contact_id,))
+        conn.commit()
+        
+        logger.info(f"🔍 Starting AI enrichment for contact {contact_id}: {contact['name']}")
+        
+        # Check if enrichment engine is available
+        if not ENRICHMENT_AVAILABLE or not PERPLEXITY_API_KEY:
+            logger.warning("⚠️ Enrichment engine or API key not available, using fallback")
+            enrichment_data = {
+                'enriched_at': datetime.now().isoformat(),
+                'source': 'fallback',
+                'note': 'Enrichment engine not available. Install perplexity_enrichment or add PERPLEXITY_API_KEY',
+                'company_info': {
+                    'name': contact['company'],
+                    'industry': 'Unknown'
+                },
+                'professional_background': {
+                    'current_title': contact['title']
+                }
+            }
+        else:
+            # REAL AI ENRICHMENT
+            try:
+                enricher = PerplexityEnrichment(api_key=PERPLEXITY_API_KEY)
+                
+                # Build contact dict for enricher
+                contact_dict = {
+                    'id': contact['id'],
+                    'name': contact['name'],
+                    'email': contact['email'],
+                    'company': contact['company'],
+                    'title': contact['title'],
+                    'phone': contact['phone'],
+                    'linkedin_url': contact['linkedin_url']
+                }
+                
+                logger.info(f"📡 Calling Perplexity API for {contact['name']}...")
+                
+                result = enricher.enrich_contact(contact_dict)
+                
+                logger.info(f"📦 Result type: {type(result)}, keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+                
+                # The enrichment saves to file but may not return it in the dict
+                profile_file = f"profile_{contact_id}.txt"
+                full_profile = ""
+                
+                # Try to get from result first
+                if result and isinstance(result, dict):
+                    enrichment_data = result.get('enrichment_data', result)
+                    full_profile = (
+                        enrichment_data.get('full_profile_text') or
+                        enrichment_data.get('full_profile') or
+                        enrichment_data.get('perplexity_insights') or
+                        ''
+                    )
+                    logger.info(f"📋 Profile from result: {len(full_profile)} chars")
+                    
+                # If no profile in result, read from file
+                if not full_profile and os.path.exists(profile_file):
+                    try:
+                        with open(profile_file, 'r', encoding='utf-8') as f:
+                            full_profile = f.read()
+                        logger.info(f"📖 Read {len(full_profile)} chars from {profile_file}")
+                    except Exception as file_err:
+                        logger.error(f"Error reading profile file: {file_err}")
+                        
+                # Build enrichment data with the profile
+                if not enrichment_data or not isinstance(enrichment_data, dict):
+                    enrichment_data = {}
+                    
+                enrichment_data['full_profile_text'] = full_profile
+                enrichment_data['perplexity_insights'] = full_profile
+                enrichment_data['enriched_at'] = datetime.now().isoformat()
+                enrichment_data['source'] = 'perplexity_ai'
+                enrichment_data['profile_length'] = len(full_profile)
+                
+                if full_profile:
+                    logger.info(f"✅ Successfully enriched {contact['name']} - {len(full_profile)} chars")
+                else:
+                    raise Exception("No profile data generated")
+                    
+            except Exception as enrich_err:
+                logger.error(f"❌ Enrichment failed: {enrich_err}")
+                logger.error(traceback.format_exc())
+                enrichment_data = {
+                    'enriched_at': datetime.now().isoformat(),
+                    'source': 'error_fallback',
+                    'error': str(enrich_err),
+                    'note': f'Enrichment failed: {str(enrich_err)}',
+                    'company_info': {
+                        'name': contact['company']
+                    }
+                }
+                
+        # Save enrichment data
+        cursor.execute("""
+            UPDATE contacts 
+            SET enrichment_status = 'complete',
+                enrichment_data = ?,
+                enriched = 1,
+                enrichment_date = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (json.dumps(enrichment_data), datetime.now().isoformat(), contact_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Contact {contact_id} enrichment saved to database")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Contact enriched successfully with AI intelligence',
+            'contact_id': contact_id,
+            'source': enrichment_data.get('source'),
+            'data_size': len(json.dumps(enrichment_data))
+        }), 200
     
+    except Exception as e:
+        logger.error(f"Error enriching contact {contact_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Try to reset status on error
+        try:
+            cursor.execute("""
+                UPDATE contacts 
+                SET enrichment_status = 'failed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (contact_id,))
+            conn.commit()
+        except:
+            pass
+            
+        if 'conn' in locals():
+            conn.close()
+            
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
     
+@app.route('/api/contacts/<int:contact_id>/intelligence', methods=['GET'])
+def get_contact_intelligence(contact_id):
+    """Get full intelligence data for a contact - FIXED"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({
+                'success': False,
+                'error': 'Contact not found'
+            }), 404
+        
+        # Safely parse enrichment_data
+        enrichment_data = {}
+        if row['enrichment_data']:
+            try:
+                enrichment_data = json.loads(row['enrichment_data'])
+            except:
+                pass
+        
+        # Build contact dict from row
+        contact_data = {
+            'id': row['id'],
+            'name': row['name'],
+            'firstname': row['firstname'],
+            'lastname': row['lastname'],
+            'email': row['email'],
+            'company': row['company'],
+            'title': row['title'],
+            'phone': row['phone'],
+            'linkedin_url': row['linkedin_url'],
+            'enrichment_status': row['enrichment_status'],
+            'enrichment_date': row['enrichment_date'] or row['last_scored'],
+            'mdcp_score': row['mdcp_score'],
+            'rss_score': row['rss_score'],
+            'priority_score': row['priority_score'],
+            'urgency_level': row['urgency_level'],
+            'persona_type': row['persona_type'],
+            'persona_tier': row['persona_tier'],
+            'mdcp_tier': row['mdcp_tier'],
+            'rss_tier': row['rss_tier']
+        }
+        
+        return jsonify({
+            'success': True,
+            'contact': contact_data,
+            'enrichment_data': enrichment_data,
+            'dashboard': enrichment_data  # Same as enrichment_data since no separate dashboard column
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error fetching intelligence for contact {contact_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/apex/scores', methods=['GET'])
 def get_apex_intelligence_scores():
     """Get all Apex Intelligence scores for dashboard"""
@@ -626,7 +846,8 @@ def score_all_contacts():
     except Exception as e:
         logger.error(f"❌ Error scoring all contacts: {e}")
         return jsonify({'error': str(e)}), 500
-    
+
+
 if __name__ == '__main__':
     ensure_scoring_columns()
     logger.info(f"✅ Apex API Server starting on port {PORT}...")

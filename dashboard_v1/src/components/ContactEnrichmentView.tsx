@@ -4,23 +4,19 @@ import {
   Brain,
   User,
   Building2,
-  MessageSquare,
   Target,
-  Lightbulb,
   AlertCircle,
   Mail,
   Phone,
   Copy,
-  ExternalLink,
-  FileText,
-  BarChart3,
   Linkedin,
-  Globe,
-  RefreshCw
+  RefreshCw,
+  BarChart3,
+  FileText
 } from "lucide-react";
 
 interface ContactEnrichmentViewProps {
-  contactId: number;  // Changed from contact object to contactId
+  contactId: number;
   onClose: () => void;
 }
 
@@ -35,7 +31,8 @@ export default function ContactEnrichmentView({
   const [fullProfile, setFullProfile] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch intelligence data when component mounts
+  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
   useEffect(() => {
     fetchIntelligenceData();
   }, [contactId]);
@@ -45,7 +42,7 @@ export default function ContactEnrichmentView({
     setError(null);
     
     try {
-      const response = await fetch(`http://localhost:8000/api/contacts/${contactId}/intelligence`);
+      const response = await fetch(`${API_BASE}/api/contacts/${contactId}/intelligence`);
       
       if (!response.ok) {
         throw new Error('Failed to fetch intelligence data');
@@ -53,24 +50,24 @@ export default function ContactEnrichmentView({
       
       const data = await response.json();
       
-      // Set contact information
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to load data');
+      }
+      
       setContact(data.contact);
       
-      // Set enrichment data
-      const enrichment = data.enrichment_data || data.dashboard || {};
+      const enrichment = data.enrichment_data || {};
       setEnrichmentData(enrichment);
       
-      // Set full profile text
       const profile = enrichment.full_profile_text || 
                      enrichment.perplexity_insights || 
-                     data.dashboard?.full_profile_text ||
-                     data.dashboard?.perplexity_insights || 
+                     enrichment.profile || 
                      "";
       setFullProfile(profile);
       
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching intelligence:", err);
-      setError("Failed to load intelligence data");
+      setError(err.message || "Failed to load intelligence data");
     } finally {
       setLoading(false);
     }
@@ -81,34 +78,13 @@ export default function ContactEnrichmentView({
     alert("Copied to clipboard!");
   };
 
-  // Extract sections from the full profile
-  const extractSection = (startPattern: string, endPattern?: string) => {
-    if (!fullProfile) return "No data available";
-    
-    const startIndex = fullProfile.indexOf(startPattern);
-    if (startIndex === -1) return "Section not found in profile";
-    
-    const contentStart = startIndex;
-    const endIndex = endPattern ? fullProfile.indexOf(endPattern, contentStart) : fullProfile.length;
-    
-    if (endIndex === -1) {
-      return fullProfile.substring(contentStart);
-    }
-    
-    return fullProfile.substring(contentStart, endIndex);
-  };
-
-  // Tab configuration
   const tabs = [
+    { id: 'full', label: 'Full Profile', icon: FileText },
     { id: 'overview', label: 'Overview', icon: User },
     { id: 'company', label: 'Company', icon: Building2 },
-    { id: 'person', label: 'Individual', icon: Brain },
-    { id: 'personality', label: 'Personality', icon: BarChart3 },
-    { id: 'sales', label: 'Sales Intel', icon: Target },
     { id: 'outreach', label: 'Outreach', icon: Mail },
   ];
 
-  // Loading state
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
@@ -120,7 +96,6 @@ export default function ContactEnrichmentView({
     );
   }
 
-  // Error state
   if (error || !contact) {
     return (
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
@@ -128,6 +103,7 @@ export default function ContactEnrichmentView({
           <div className="flex flex-col items-center gap-4">
             <AlertCircle className="w-12 h-12 text-red-400" />
             <p className="text-white text-lg">{error || "No contact data available"}</p>
+            <p className="text-slate-400 text-sm">The contact may not be enriched yet. Try enriching this contact first.</p>
             <button
               onClick={onClose}
               className="px-6 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
@@ -141,11 +117,10 @@ export default function ContactEnrichmentView({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-      <div className="bg-slate-800 rounded-xl border border-slate-700 max-w-7xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50 overflow-y-auto">
+      <div className="bg-slate-800 rounded-xl border border-slate-700 max-w-7xl w-full my-8 flex flex-col max-h-[90vh]">
         
-        {/* Header */}
-        <div className="p-6 border-b border-slate-700 flex items-center justify-between bg-slate-900/50">
+        <div className="p-6 border-b border-slate-700 flex items-center justify-between bg-slate-900/50 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center">
               <Brain className="w-6 h-6 text-white" />
@@ -167,8 +142,7 @@ export default function ContactEnrichmentView({
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="border-b border-slate-700 bg-slate-900/30">
+        <div className="border-b border-slate-700 bg-slate-900/30 flex-shrink-0">
           <div className="flex gap-1 px-6 overflow-x-auto">
             {tabs.map((tab) => {
               const Icon = tab.icon;
@@ -190,14 +164,44 @@ export default function ContactEnrichmentView({
           </div>
         </div>
 
-        {/* Tab Content */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-6">
 
-            {/* Overview Tab */}
+            {activeTab === 'full' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium text-cyan-400">Complete Intelligence Profile</h3>
+                  <button
+                    onClick={() => copyToClipboard(fullProfile)}
+                    className="px-3 py-1 bg-slate-700 text-white rounded hover:bg-slate-600 flex items-center gap-1 text-sm"
+                  >
+                    <Copy className="w-3 h-3" />
+                    Copy All
+                  </button>
+                </div>
+                
+                {fullProfile ? (
+                  <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
+                    <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed font-mono max-h-[600px] overflow-y-auto">
+                      {fullProfile}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
+                    <div className="flex flex-col items-center gap-4 py-8">
+                      <AlertCircle className="w-12 h-12 text-yellow-400" />
+                      <p className="text-slate-400 text-center">
+                        No enrichment data available yet.<br/>
+                        This contact needs to be enriched with AI intelligence.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'overview' && (
               <div className="space-y-6">
-                {/* Contact Information Card */}
                 <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
                   <h3 className="text-lg font-medium text-cyan-400 mb-6 flex items-center gap-2">
                     <User className="w-5 h-5" />
@@ -213,14 +217,12 @@ export default function ContactEnrichmentView({
                       
                       <div>
                         <p className="text-sm text-slate-400 mb-1">Title</p>
-                        <p className="text-lg text-white">
-                          {enrichmentData.overview?.current_title || "Principal at Gantry, Inc."}
-                        </p>
+                        <p className="text-lg text-white">{contact.title || "Not available"}</p>
                       </div>
                       
                       <div>
                         <p className="text-sm text-slate-400 mb-1">Company</p>
-                        <p className="text-lg text-white">{contact.company || "Gantry"}</p>
+                        <p className="text-lg text-white">{contact.company || "Not available"}</p>
                       </div>
                     </div>
                     
@@ -261,140 +263,73 @@ export default function ContactEnrichmentView({
                   </div>
                 </div>
 
-                {/* Quick Stats */}
                 <div className="grid grid-cols-4 gap-4">
-                  <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
-                    <p className="text-xs text-slate-400 mb-1">Personality</p>
-                    <p className="text-2xl font-bold text-purple-400">
-                      {enrichmentData.personality_profile?.mbti_inference || "ENTJ"}
-                    </p>
-                  </div>
                   <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
                     <p className="text-xs text-slate-400 mb-1">MDCP Score</p>
                     <p className="text-2xl font-bold text-cyan-400">
-                      {contact.mdcp_score || "41.25"}
+                      {contact.mdcp_score ? Math.round(contact.mdcp_score) : "—"}
                     </p>
                   </div>
                   <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
                     <p className="text-xs text-slate-400 mb-1">Priority</p>
                     <p className="text-2xl font-bold text-green-400">
-                      {contact.urgency_level || "HIGH"}
+                      {contact.urgency_level || "—"}
                     </p>
                   </div>
                   <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
-                    <p className="text-xs text-slate-400 mb-1">Data Quality</p>
+                    <p className="text-xs text-slate-400 mb-1">Status</p>
                     <p className="text-2xl font-bold text-yellow-400">
-                      {enrichmentData.metadata?.completeness_score || "95"}%
+                      {contact.enrichment_status || "pending"}
+                    </p>
+                  </div>
+                  <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700">
+                    <p className="text-xs text-slate-400 mb-1">Profile Size</p>
+                    <p className="text-2xl font-bold text-purple-400">
+                      {fullProfile ? `${(fullProfile.length / 1000).toFixed(1)}K` : "—"}
                     </p>
                   </div>
                 </div>
 
-                {/* Profile Overview */}
                 {fullProfile && (
                   <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                    <h3 className="text-lg font-medium text-cyan-400 mb-4">Profile Overview</h3>
+                    <h3 className="text-lg font-medium text-cyan-400 mb-4">Profile Preview</h3>
                     <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed max-h-96 overflow-y-auto">
-                      {extractSection("COMPREHENSIVE PROFILE:", "**Company Profile:").substring(0, 1000)}...
+                      {fullProfile.substring(0, 2000)}...
+                      <div className="mt-4">
+                        <button
+                          onClick={() => setActiveTab('full')}
+                          className="text-cyan-400 hover:text-cyan-300 text-sm"
+                        >
+                          → View Full Profile
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Company Tab */}
             {activeTab === 'company' && (
-              <div className="space-y-6 max-h-[70vh] overflow-y-auto">
+              <div className="space-y-6">
                 <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                  <h3 className="text-xl font-medium text-cyan-400 mb-4">Company Profile: {contact.company || "Gantry"}</h3>
+                  <h3 className="text-xl font-medium text-cyan-400 mb-4">Company Information</h3>
                   <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                    {extractSection("**Company Profile:", "**Individual Profile:")}
+                    {fullProfile || "No company data available"}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Individual Profile Tab */}
-            {activeTab === 'person' && (
-              <div className="space-y-6 max-h-[70vh] overflow-y-auto">
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                  <h3 className="text-xl font-medium text-cyan-400 mb-4">Individual Profile: {contact.name}</h3>
-                  <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                    {extractSection("**Individual Profile:", "**AI Score")}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Personality Tab */}
-            {activeTab === 'personality' && (
-              <div className="space-y-6 max-h-[70vh] overflow-y-auto">
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                  <h3 className="text-xl font-medium text-purple-400 mb-4">Personality Assessment</h3>
-                  <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                    {extractSection("### 6. Personality Detail", "### 8. Sales Opportunity")}
-                  </div>
-                </div>
-
-                {enrichmentData.ai_analysis?.ai_score_reasoning && (
-                  <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                    <h3 className="text-lg font-medium text-purple-400 mb-4">AI Score Reasoning</h3>
-                    <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                      {extractSection("**AI Score Reasoning:", "**Relationship Tips:")}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Sales Intel Tab */}
-            {activeTab === 'sales' && (
-              <div className="space-y-6 max-h-[70vh] overflow-y-auto">
-                {/* All 18 sections displayed */}
-                {[
-                  { num: "8", title: "Sales Opportunity Talking Points", color: "green" },
-                  { num: "9", title: "Deals & Transactions", color: "green" },
-                  { num: "10", title: "Updated Fields", color: "blue" },
-                  { num: "11", title: "Company News & Fun Facts", color: "blue" },
-                  { num: "12", title: "Trigger Events", color: "yellow" },
-                  { num: "13", title: "Competitive Intelligence", color: "orange" },
-                  { num: "14", title: "Warm Introduction Paths", color: "green" },
-                  { num: "15", title: "Engagement Preferences", color: "cyan" },
-                  { num: "16", title: "Decision Making Style", color: "blue" },
-                  { num: "17", title: "Budget Authority", color: "green" },
-                  { num: "18", title: "Success Metrics", color: "purple" }
-                ].map((section) => (
-                  <div key={section.num} className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                    <h3 className={`text-lg font-medium text-${section.color}-400 mb-4`}>{section.title}</h3>
-                    <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                      {extractSection(`### ${section.num}.`, `### ${parseInt(section.num) + 1}.`)}
-                    </div>
-                  </div>
-                ))}
-
-                {/* Pain Points */}
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                  <h3 className="text-lg font-medium text-red-400 mb-4 flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5" />
-                    Pain Points
-                  </h3>
-                  <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                    {extractSection("**Pain Points:", "**Outreach Approach:")}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Outreach Tab */}
             {activeTab === 'outreach' && (
               <div className="space-y-6">
                 <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="flex items-center gap-2 text-lg font-medium text-cyan-400">
                       <Mail className="w-5 h-5" />
-                      Outreach Approach
+                      Outreach Intelligence
                     </h3>
                     <button
-                      onClick={() => copyToClipboard(extractSection("**Outreach Approach:**", null))}
+                      onClick={() => copyToClipboard(fullProfile)}
                       className="px-3 py-1 bg-slate-700 text-white rounded hover:bg-slate-600 flex items-center gap-1 text-sm"
                     >
                       <Copy className="w-3 h-3" />
@@ -402,28 +337,8 @@ export default function ContactEnrichmentView({
                     </button>
                   </div>
                   <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">
-                    {extractSection("**Outreach Approach:**", null)}
+                    {fullProfile || "No outreach data available"}
                   </div>
-                </div>
-
-                {/* Full Raw Profile */}
-                <div className="bg-slate-900/50 rounded-xl p-6 border border-slate-700">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-medium text-slate-400">Complete Raw Profile</h3>
-                    <button
-                      onClick={() => copyToClipboard(fullProfile)}
-                      className="px-3 py-1 bg-slate-700 text-white rounded hover:bg-slate-600 flex items-center gap-1 text-sm"
-                    >
-                      <Copy className="w-3 h-3" />
-                      Copy All
-                    </button>
-                  </div>
-                  <details className="cursor-pointer">
-                    <summary className="text-sm text-slate-500 hover:text-slate-300">Click to expand full profile...</summary>
-                    <div className="mt-4 bg-slate-800 p-4 rounded text-slate-300 whitespace-pre-wrap text-xs font-mono max-h-96 overflow-y-auto">
-                      {fullProfile}
-                    </div>
-                  </details>
                 </div>
               </div>
             )}
@@ -431,19 +346,11 @@ export default function ContactEnrichmentView({
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-6 border-t border-slate-700 bg-slate-900/50">
+        <div className="p-6 border-t border-slate-700 bg-slate-900/50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-400">
-              <p>Last Enriched: {contact.enrichment_date || new Date().toLocaleString()}</p>
-              <p>
-                Data Quality: <span className="text-green-400 font-medium">
-                  {enrichmentData.metadata?.data_quality || 'EXCELLENT'}
-                </span> • 
-                Completeness: <span className="text-cyan-400 font-medium">
-                  {enrichmentData.metadata?.completeness_score || 95}%
-                </span>
-              </p>
+              <p>Enrichment Status: <span className="text-cyan-400 font-medium">{contact.enrichment_status || 'pending'}</span></p>
+              <p>Last Updated: {contact.enrichment_date || 'Never'} • Profile Length: {fullProfile.length.toLocaleString()} chars</p>
             </div>
             <button
               onClick={onClose}

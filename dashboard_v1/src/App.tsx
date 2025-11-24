@@ -121,21 +121,36 @@ function App() {
 
   const fetchAnalytics = async () => {
     try {
-      const response = await fetch(API_BASE + "/api/analytics/dashboard");
-      if (!response.ok) {
-        throw new Error(`Failed to fetch analytics: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setAnalytics(data);
+      // Calculate analytics from contacts since there's no dedicated endpoint
+      const enriched = contacts.filter(c => c.enrichment_status === 'complete').length;
+      const pending = contacts.filter(c => !c.enrichment_status || c.enrichment_status === 'pending').length;
+      const scored = contacts.filter(c => c.priority_score).length;
+      const avgScore = contacts.reduce((sum, c) => sum + (c.priority_score || 0), 0) / (scored || 1);
+      
+      setAnalytics({
+        total_contacts: contacts.length,
+        enriched_contacts: enriched,
+        pending_enrichment: pending,
+        avg_opportunity_score: avgScore,
+        contacts_last_30_days: contacts.length,
+        high_priority_contacts: contacts.filter(c => (c.priority_score || 0) >= 80).length,
+        scored_contacts: scored,
+        pending_scoring: contacts.length - scored
+      });
     } catch (error) {
-      console.error("Error fetching analytics:", error);
+      console.error("Error calculating analytics:", error);
     }
   };
 
   useEffect(() => {
     fetchContacts();
-    fetchAnalytics();
   }, []);
+
+  useEffect(() => {
+    if (contacts.length > 0) {
+      fetchAnalytics();
+    }
+  }, [contacts]);
 
   const handleImportFromHubSpot = async () => {
     if (!confirm("Import up to 100 new contacts from HubSpot?")) return;
@@ -155,7 +170,6 @@ function App() {
           `Total in HubSpot: ${data.total_in_hubspot}`
         );
         fetchContacts();
-        fetchAnalytics();
       } else {
         alert(`Import failed: ${data.message || data.error}`);
       }
@@ -184,7 +198,6 @@ function App() {
           `Urgency: ${data.tiers?.urgency_level || 'N/A'}`
         );
         fetchContacts();
-        fetchAnalytics();
       } else {
         alert(`Scoring failed: ${data.error}`);
       }
@@ -217,7 +230,6 @@ function App() {
           `Total: ${data.total}`
         );
         fetchContacts();
-        fetchAnalytics();
       } else {
         alert(`Batch scoring failed: ${data.error}`);
       }
@@ -235,41 +247,52 @@ function App() {
       alert("Please select contacts to enrich");
       return;
     }
-
+  
     if (!confirm(`Enrich ${selectedContacts.size} selected contact(s)?`)) {
       return;
     }
-
+  
     setIsLoading(true);
     setShowBatchProgress(true);
-
+  
     try {
       const contactIds = Array.from(selectedContacts);
-      const response = await fetch(API_BASE + "/api/contacts/enrich-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contact_ids: contactIds }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        alert(
-          `Batch enrichment started for ${contactIds.length} contact(s)!\n` +
-          `Check the progress below.`
-        );
-        fetchContacts();
-        fetchAnalytics();
-      } else {
-        alert(`Batch enrichment failed: ${data.message || data.error}`);
+      let successCount = 0;
+      let failCount = 0;
+      
+      for (const contactId of contactIds) {
+        try {
+          const response = await fetch(API_BASE + `/api/contacts/${contactId}/enrich`, {
+            method: "POST",
+          });
+          
+          if (response.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch (err) {
+          failCount++;
+        }
       }
+  
+      alert(
+        `Enrichment complete!\n` +
+        `Success: ${successCount}\n` +
+        `Failed: ${failCount}`
+      );
+      
+      fetchContacts();
+      setSelectedContacts(new Set()); // Clear selection after enrichment
     } catch (error) {
       console.error("Error enriching contacts:", error);
-      alert("Failed to start batch enrichment");
+      alert("Failed to enrich contacts");
     } finally {
       setIsLoading(false);
+      setShowBatchProgress(false);
     }
   };
+
 
   const handleSort = (key: keyof Contact) => {
     setSortConfig((prev) => ({
@@ -777,28 +800,15 @@ function App() {
       {activeTab === "intelligence" && <ApexIntelligenceDashboard contacts={contacts} />}
 
       {showEnrichmentView && selectedContact && (
-        <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto">
-          <div className="container mx-auto px-4 py-8">
-            <div className="bg-slate-900 rounded-lg max-w-6xl mx-auto">
-              <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                <h2 className="text-2xl font-bold">Contact Intelligence</h2>
-                <button
-                  onClick={() => {
-                    setShowEnrichmentView(false);
-                    setSelectedContact(null);
-                  }}
-                  className="p-2 hover:bg-slate-800 rounded"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <div className="p-6">
-                <ContactEnrichmentView contactId={selectedContact.id} />
-              </div>
-            </div>
-          </div>
-        </div>
+        <ContactEnrichmentView 
+          contactId={selectedContact.id}
+          onClose={() => {
+            setShowEnrichmentView(false);
+            setSelectedContact(null);
+          }}
+        />
       )}
+
 
       {showRawData && selectedRawData && (
         <RawDataViewer
