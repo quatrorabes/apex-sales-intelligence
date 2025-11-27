@@ -1,0 +1,52 @@
+{
+  "name": "API Health Check",
+  "request": {
+    "type": "http",
+    "url": "https://app.requestly.io/echo",
+    "scripts": {
+      "preRequest": "",
+      "postResponse": ""
+    },
+    "method": "GET",
+    "queryParams": [
+      {
+        "id": 1764037389518,
+        "key": "API Health Check",
+        "value": "{{base_url}}/api/health",
+        "isEnabled": true
+      },
+      {
+        "id": 1764037416908,
+        "key": "Import from HubSpot",
+        "value": "{{base_url}}/api/hubspot/import",
+        "isEnabled": true
+      },
+      {
+        "id": 1764037432451,
+        "key": "Get All Contacts",
+        "value": "{{base_url}}/api/contacts",
+        "isEnabled": true
+      },
+      {
+        "id": 1764037443565,
+        "key": "Get Contact by ID",
+        "value": "{{base_url}}/api/contacts/1",
+        "isEnabled": true
+      },
+      {
+        "id": 1764037444871,
+        "key": "Enrich Contact",
+        "value": "{{base_url}}/api/contacts/1/enrich",
+        "isEnabled": true
+      }
+    ],
+    "headers": [],
+    "body": null,
+    "contentType": "text/plain",
+    "auth": {
+      "currentAuthType": "INHERIT",
+      "authConfigStore": {}
+    },
+    "pathVariables": []
+  }
+}

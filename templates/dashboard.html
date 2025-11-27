@@ -1,0 +1,439 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+	<title>APEX Dashboard</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body { 
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+			background: #f5f7fa;
+		}
+		.header {
+			background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+			color: white;
+			padding: 20px;
+			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+		}
+		.header h1 { font-size: 24px; }
+		.stats-bar {
+			display: flex;
+			gap: 20px;
+			padding: 20px;
+			background: white;
+			border-bottom: 1px solid #e1e8ed;
+		}
+		.stat-card {
+			flex: 1;
+			text-align: center;
+		}
+		.stat-number {
+			font-size: 32px;
+			font-weight: bold;
+			color: #667eea;
+		}
+		.stat-label {
+			color: #657786;
+			font-size: 14px;
+			margin-top: 5px;
+		}
+		.container {
+			display: flex;
+			height: calc(100vh - 140px);
+		}
+		.contacts-panel {
+			width: 400px;
+			background: white;
+			border-right: 1px solid #e1e8ed;
+			overflow-y: auto;
+		}
+		.contact-item {
+			padding: 15px;
+			border-bottom: 1px solid #f0f3f7;
+			cursor: pointer;
+			transition: background 0.2s;
+		}
+		.contact-item:hover { background: #f8f9fa; }
+		.contact-item.selected { background: #f0f3ff; }
+		.contact-name { 
+			font-weight: 600; 
+			color: #14171a;
+			margin-bottom: 5px;
+		}
+		.contact-company { 
+			color: #657786; 
+			font-size: 14px;
+		}
+		.contact-badges {
+			display: flex;
+			gap: 8px;
+			margin-top: 8px;
+		}
+		.badge {
+			padding: 2px 8px;
+			border-radius: 12px;
+			font-size: 12px;
+			font-weight: 500;
+		}
+		.badge.enriched { 
+			background: #d4f4dd; 
+			color: #1e7e34;
+		}
+		.badge.scored { 
+			background: #fff3cd; 
+			color: #856404;
+		}
+		.badge.content { 
+			background: #cce5ff; 
+			color: #004085;
+		}
+		.badge.peer { 
+			background: #f8d7da; 
+			color: #721c24;
+		}
+		.detail-panel {
+			flex: 1;
+			padding: 20px;
+			overflow-y: auto;
+		}
+		.detail-card {
+			background: white;
+			border-radius: 8px;
+			padding: 20px;
+			margin-bottom: 20px;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+		}
+		.detail-card h3 {
+			color: #14171a;
+			margin-bottom: 15px;
+			font-size: 18px;
+		}
+		.info-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 15px;
+		}
+		.info-item label {
+			color: #657786;
+			font-size: 12px;
+			text-transform: uppercase;
+			display: block;
+			margin-bottom: 5px;
+		}
+		.info-item value {
+			color: #14171a;
+			font-size: 14px;
+		}
+		.action-buttons {
+			display: flex;
+			gap: 10px;
+			margin-top: 20px;
+		}
+		.btn {
+			padding: 10px 20px;
+			border: none;
+			border-radius: 6px;
+			font-size: 14px;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.2s;
+		}
+		.btn-primary {
+			background: #667eea;
+			color: white;
+		}
+		.btn-primary:hover {
+			background: #5a67d8;
+		}
+		.btn-secondary {
+			background: white;
+			color: #667eea;
+			border: 2px solid #667eea;
+		}
+		.score-display {
+			display: flex;
+			gap: 20px;
+			margin-top: 15px;
+		}
+		.score-item {
+			text-align: center;
+		}
+		.score-value {
+			font-size: 24px;
+			font-weight: bold;
+			color: #667eea;
+		}
+		.score-label {
+			font-size: 12px;
+			color: #657786;
+			margin-top: 5px;
+		}
+		.content-preview {
+			background: #f8f9fa;
+			padding: 15px;
+			border-radius: 6px;
+			font-family: monospace;
+			font-size: 13px;
+			line-height: 1.6;
+			max-height: 300px;
+			overflow-y: auto;
+			white-space: pre-wrap;
+		}
+		.loading {
+			display: inline-block;
+			width: 20px;
+			height: 20px;
+			border: 3px solid #f3f3f3;
+			border-top: 3px solid #667eea;
+			border-radius: 50%;
+			animation: spin 1s linear infinite;
+			margin-left: 10px;
+		}
+		@keyframes spin {
+			0% { transform: rotate(0deg); }
+			100% { transform: rotate(360deg); }
+		}
+		.empty-state {
+			text-align: center;
+			padding: 40px;
+			color: #657786;
+		}
+	</style>
+</head>
+<body>
+	<div class="header">
+		<h1>🎯 APEX Sales Intelligence Dashboard</h1>
+	</div>
+	
+	<div class="stats-bar">
+		<div class="stat-card">
+			<div class="stat-number" id="stat-total">0</div>
+			<div class="stat-label">Total Contacts</div>
+		</div>
+		<div class="stat-card">
+			<div class="stat-number" id="stat-enriched">0</div>
+			<div class="stat-label">Enriched</div>
+		</div>
+		<div class="stat-card">
+			<div class="stat-number" id="stat-scored">0</div>
+			<div class="stat-label">Scored</div>
+		</div>
+		<div class="stat-card">
+			<div class="stat-number" id="stat-content">0</div>
+			<div class="stat-label">Content Generated</div>
+		</div>
+	</div>
+	
+	<div class="container">
+		<div class="contacts-panel" id="contacts-panel">
+			<div class="empty-state">Loading contacts...</div>
+		</div>
+		
+		<div class="detail-panel" id="detail-panel">
+			<div class="empty-state">
+				<h3>Select a contact to view details</h3>
+				<p>Choose from the list on the left to see enrichment, scoring, and content generation options.</p>
+			</div>
+		</div>
+	</div>
+	
+	<script>
+		let currentContact = null;
+		let contacts = [];
+		
+		// Load dashboard stats
+		async function loadStats() {
+			const response = await fetch('/api/dashboard/stats');
+			const stats = await response.json();
+			
+			document.getElementById('stat-total').textContent = stats.total_contacts;
+			document.getElementById('stat-enriched').textContent = stats.enriched_contacts;
+			document.getElementById('stat-scored').textContent = stats.scored_contacts;
+			document.getElementById('stat-content').textContent = stats.content_generated;
+		}
+		
+		// Load contacts list
+		async function loadContacts() {
+			const response = await fetch('/api/contacts');
+			contacts = await response.json();
+			
+			const panel = document.getElementById('contacts-panel');
+			
+			if (contacts.length === 0) {
+				panel.innerHTML = '<div class="empty-state">No contacts found</div>';
+				return;
+			}
+			
+			panel.innerHTML = contacts.map(contact => {
+				const isPeer = ['broker', 'principal', 'ccim', 'banker'].some(
+					term => (contact.title || '').toLowerCase().includes(term)
+				);
+				
+				return `
+					<div class="contact-item" onclick="selectContact(${contact.id})">
+						<div class="contact-name">${contact.name}</div>
+						<div class="contact-company">${contact.title || 'No title'} at ${contact.company || 'No company'}</div>
+						<div class="contact-badges">
+							${contact.enrichment_status === 'complete' ? '<span class="badge enriched">Enriched</span>' : ''}
+							${contact.priority_score ? '<span class="badge scored">Score: ' + Math.round(contact.priority_score) + '</span>' : ''}
+							${contact.has_content === 'yes' ? '<span class="badge content">Content</span>' : ''}
+							${isPeer ? '<span class="badge peer">Peer</span>' : ''}
+						</div>
+					</div>
+				`;
+			}).join('');
+		}
+		
+		// Select and show contact details
+		async function selectContact(contactId) {
+			// Update selection UI
+			document.querySelectorAll('.contact-item').forEach(item => {
+				item.classList.remove('selected');
+			});
+			event.currentTarget.classList.add('selected');
+			
+			// Load contact details
+			const response = await fetch(`/api/contacts/${contactId}`);
+			currentContact = await response.json();
+			
+			const isPeer = ['broker', 'principal', 'ccim', 'banker'].some(
+				term => (currentContact.title || '').toLowerCase().includes(term)
+			);
+			
+			const detailPanel = document.getElementById('detail-panel');
+			detailPanel.innerHTML = `
+				<div class="detail-card">
+					<h3>${currentContact.name}</h3>
+					<div class="info-grid">
+						<div class="info-item">
+							<label>Title</label>
+							<value>${currentContact.title || 'Not specified'}</value>
+						</div>
+						<div class="info-item">
+							<label>Company</label>
+							<value>${currentContact.company || 'Not specified'}</value>
+						</div>
+						<div class="info-item">
+							<label>Email</label>
+							<value>${currentContact.email || 'Not specified'}</value>
+						</div>
+						<div class="info-item">
+							<label>Phone</label>
+							<value>${currentContact.phone || 'Not specified'}</value>
+						</div>
+						<div class="info-item">
+							<label>Type</label>
+							<value>${isPeer ? '🤝 Industry Peer (Referral Partner)' : '🎯 Prospect (Potential Client)'}</value>
+						</div>
+						<div class="info-item">
+							<label>Enrichment Status</label>
+							<value>${currentContact.enrichment_status || 'Not enriched'}</value>
+						</div>
+					</div>
+					
+					${currentContact.priority_score ? `
+						<div class="score-display">
+							<div class="score-item">
+								<div class="score-value">${Math.round(currentContact.priority_score)}</div>
+								<div class="score-label">Priority Score</div>
+							</div>
+							<div class="score-item">
+								<div class="score-value">${Math.round(currentContact.rss_score || 0)}</div>
+								<div class="score-label">Role Score</div>
+							</div>
+							<div class="score-item">
+								<div class="score-value">${Math.round(currentContact.mdcp_score || 0)}</div>
+								<div class="score-label">Data Score</div>
+							</div>
+						</div>
+					` : ''}
+					
+					<div class="action-buttons">
+						<button class="btn btn-primary" onclick="enrichContact(${contactId})" 
+							${currentContact.enrichment_status === 'complete' ? 'disabled' : ''}>
+							${currentContact.enrichment_status === 'complete' ? '✓ Enriched' : '🔍 Enrich Contact'}
+						</button>
+						<button class="btn btn-secondary" onclick="generateContent(${contactId})">
+							✉️ Generate Content
+						</button>
+					</div>
+				</div>
+				
+				${currentContact.enrichment_preview ? `
+					<div class="detail-card">
+						<h3>Enrichment Preview</h3>
+						<div class="content-preview">${currentContact.enrichment_preview}</div>
+					</div>
+				` : ''}
+				
+				${currentContact.email_1_body ? `
+					<div class="detail-card">
+						<h3>Generated Email</h3>
+						<div class="content-preview">${currentContact.email_1_body}</div>
+					</div>
+				` : ''}
+			`;
+		}
+		
+		// Enrich contact
+		async function enrichContact(contactId) {
+			const btn = event.target;
+			btn.innerHTML = 'Enriching... <span class="loading"></span>';
+			btn.disabled = true;
+			
+			try {
+				const response = await fetch(`/api/contacts/${contactId}/enrich`, {
+					method: 'POST'
+				});
+				const result = await response.json();
+				
+				if (result.success) {
+					alert(`✅ Enrichment complete! Profile size: ${result.data_size} characters\nScores: Priority=${Math.round(result.scores.priority_score)}`);
+					loadContacts();
+					loadStats();
+					selectContact(contactId);
+				} else {
+					alert('❌ Enrichment failed: ' + result.error);
+				}
+			} catch (error) {
+				alert('Error: ' + error.message);
+			}
+		}
+		
+		// Generate content
+		async function generateContent(contactId) {
+			const btn = event.target;
+			btn.innerHTML = 'Generating... <span class="loading"></span>';
+			btn.disabled = true;
+			
+			try {
+				const response = await fetch(`/api/contacts/${contactId}/generate`, {
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({
+						type: 'email',
+						relationship: 'cold'
+					})
+				});
+				const result = await response.json();
+				
+				if (result.success) {
+					alert(`✅ Content generated!\nType: ${result.is_peer ? 'Peer/Referral' : 'Prospect/Client'}`);
+					selectContact(contactId);
+				} else {
+					alert('❌ Generation failed');
+				}
+			} catch (error) {
+				alert('Error: ' + error.message);
+			} finally {
+				btn.innerHTML = '✉️ Generate Content';
+				btn.disabled = false;
+			}
+		}
+		
+		// Initialize dashboard
+		loadStats();
+		loadContacts();
+	</script>
+</body>
+</html>

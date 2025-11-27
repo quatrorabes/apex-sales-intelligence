@@ -15,7 +15,9 @@ from openai import AsyncOpenAI
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DB_FILE = "sales_angel.db"
+import os
+DB_FILE = os.path.join(os.path.expanduser("~/projects/apex"), "apex.db")
+
 
 class ContentGenerator:
     """
@@ -440,3 +442,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    

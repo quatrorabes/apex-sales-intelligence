@@ -1,4 +1,4 @@
- #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 EMAIL GENERATOR - AI-POWERED QUALITY CONTENT
 Generates 3 personalized email variants using OpenAI GPT-4
@@ -12,6 +12,13 @@ from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
+
+from config import DB_PATH
+
+def __init__(self, db_path=None):
+    from config import DB_PATH
+    self.db_path = db_path or DB_PATH or DB_PATH
+    
 
 # Initialize OpenAI client
 try:
@@ -310,7 +317,7 @@ def print_email_report(contact_data, variants):
 
 if __name__ == "__main__":
     print()
-    print("🚀 SALES ANGEL - EMAIL GENERATOR (QUALITY VERSION)")
+    print("🚀 APEX EMAIL GENERATOR")
     print()
 
     # Test with sample prospect
@@ -358,3 +365,4 @@ if __name__ == "__main__":
     print("3. Send test batch to 5-10 prospects")
     print("4. Track open rates and responses")
     print()
+    

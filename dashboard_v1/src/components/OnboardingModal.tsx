@@ -197,40 +197,67 @@ export default function OnboardingModal({ onComplete, onClose }: OnboardingModal
           )}
 
           {step === 2 && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">Who are your target customers?</h3>
-                <p className="text-sm text-slate-400 mb-4">Select the types of professionals you want to reach</p>
-                
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium text-cyan-400">Commercial Real Estate Professionals</h4>
-                  {[
-                    { value: 'cre_brokers', label: 'CRE Brokers (Investment Sales)' },
-                    { value: 'cre_leasing', label: 'Commercial Leasing Brokers' },
-                    { value: 'mortgage_brokers', label: 'Commercial Mortgage Brokers' },
-                    { value: 'developers', label: 'Real Estate Developers' },
-                    { value: 'property_managers', label: 'Property/Asset Managers' },
-                    { value: 'cre_lenders', label: 'CRE Lenders (Banks)' },
-                    { value: 'investors', label: 'Real Estate Investors/Funds' }
-                  ].map(vertical => (
-                    <label
-                      key={vertical.value}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 hover:border-slate-600 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={preferences.target_verticals.includes(vertical.value)}
-                        onChange={() => toggleVertical(vertical.value)}
-                        className="text-blue-500"
-                      />
-                      <span className="text-white">{vertical.label}</span>
-                    </label>
-                  ))}
-                </div>
+            <div style={{ padding: '24px' }}>
+              <h2 style={{ marginBottom: '24px' }}>Your Products and Services</h2>
+            
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
+                  Products (up to 5)
+                </label>
+                {[0, 1, 2, 3, 4].map(i => (
+                  <input
+                    key={`product-${i}`}
+                    type="text"
+                    placeholder={`Product ${i + 1}${i === 0 ? ' (e.g., SBA 504 loans)' : ''}`}
+                    style={{ 
+                      width: '100%', 
+                      padding: '8px', 
+                      marginBottom: '8px',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px'
+                    }}
+                    value={preferences.products?.[i] || ''}
+                    onChange={(e) => {
+                      const newProducts = [...(preferences.products || [])];
+                      newProducts[i] = e.target.value;
+                      setPreferences({...preferences, products: newProducts.filter(Boolean)});
+                    }}
+                  />
+                ))}
               </div>
+            
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
+                  Services (up to 5)
+                </label>
+                {[0, 1, 2, 3, 4].map(i => (
+                  <input
+                    key={`service-${i}`}
+                    type="text"
+                    placeholder={`Service ${i + 1}${i === 0 ? ' (e.g., Free consultation)' : ''}`}
+                    style={{ 
+                      width: '100%', 
+                      padding: '8px', 
+                      marginBottom: '8px',
+                      border: '1px solid #ddd',
+                      borderRadius: '4px'
+                    }}
+                    value={preferences.services?.[i] || ''}
+                    onChange={(e) => {
+                      const newServices = [...(preferences.services || [])];
+                      newServices[i] = e.target.value;
+                      setPreferences({...preferences, services: newServices.filter(Boolean)});
+                    }}
+                  />
+                ))}
+              </div>
+            
+              {/* Repeat for value_propositions, target_customers, personal_differentiators, company_differentiators */}
+            
+              <button onClick={() => setStep(3)}>Next →</button>
             </div>
           )}
-
+    
           {step === 3 && (
             <div className="space-y-6">
               <div>

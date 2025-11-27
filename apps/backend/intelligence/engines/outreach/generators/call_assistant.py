@@ -7,11 +7,22 @@ import sys
 from datetime import datetime
 import os
 
+from config import DB_PATH
+
+class CallAssistant:
+	"""Live call assistant - displays script as you dial"""
+	
+	def __init__(self, db_path=None):
+		self.db_path = db_path or DB_PATH  # ✅ Just use it
+		self._init_tables()
+		
+
 class CallAssistant:
 		"""Live call assistant - displays script as you dial"""
 	
-		def __init__(self, db_path='sales_angel.db'):
-				self.db_path = db_path
+		def __init__(self, db_path=None):
+				from config import DB_PATH
+				self.db_path = db_path or DB_PATH
 			
 		def get_contact(self, contact_id):
 				"""Get contact info and scripts"""

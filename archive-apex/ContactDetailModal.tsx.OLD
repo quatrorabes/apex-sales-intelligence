@@ -1,0 +1,1518 @@
+import React, { useState, useEffect } from 'react';
+
+interface Contact {
+  id: number;
+  name: string;
+  firstname?: string;
+  lastname?: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  title?: string;
+  linkedin_url?: string;
+  enrichment_status?: string;
+  enrichment_data?: string;
+  profile_content?: string;
+  enrichment_count?: number;
+  last_enriched_at?: string;
+  enrichment_date?: string;
+  mdcp_score?: number;
+  rss_score?: number;
+  priority_score?: number;
+  urgency_level?: string;
+  mdcp_tier?: string;
+  rss_tier?: string;
+  persona_type?: string;
+  persona_tier?: string;
+  recommended_action?: string;
+  lead_status?: string;
+  lifecycle_stage?: string;
+  relationship_level?: string;
+  email_1_subject?: string;
+  email_1_body?: string;
+  email_2_subject?: string;
+  email_2_body?: string;
+  email_3_subject?: string;
+  email_3_body?: string;
+  call_script_1?: string;
+  call_script_2?: string;
+  call_script_3?: string;
+  linkedin_request?: string;
+  linkedin_followup?: string;
+  content_generated_at?: string;
+}
+
+interface ContactDetailModalProps {
+  contact: Contact;
+  onClose: () => void;
+  onUpdate?: () => void;
+  onEnrich?: (contactId: number) => void;
+}
+
+interface ParsedIntelligence {
+  // Personal Profile
+  overview: string;
+  background: string[];
+  education: string[];
+  recent_mentions: string[];
+  professional_network: string[];
+  
+  // Company Profile
+  company_overview: string;
+  company_products: string[];
+  company_leadership: string[];
+  company_news: string[];
+  company_financials: string;
+  
+  // Personality
+  personality_assessment: string;
+  mbti_type: string;
+  key_traits: string[];
+  
+  // Chat Things (Strategic Intelligence)
+  pain_points: string[];
+  sba_interests: string[];
+  key_insights: string[];
+  sales_talking_points: string[];
+}
+
+const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
+  contact,
+  onClose,
+  onUpdate,
+  onEnrich
+}) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'personal' | 'company' | 'personality' | 'chat-things' | 'content'>('overview');
+  const [rawIntelligence, setRawIntelligence] = useState<string>('');
+  const [parsedSections, setParsedSections] = useState<ParsedIntelligence>({
+    overview: '',
+    background: [],
+    education: [],
+    recent_mentions: [],
+    professional_network: [],
+    company_overview: '',
+    company_products: [],
+    company_leadership: [],
+    company_news: [],
+    company_financials: '',
+    personality_assessment: '',
+    mbti_type: '',
+    key_traits: [],
+    pain_points: [],
+    sba_interests: [],
+    key_insights: [],
+    sales_talking_points: []
+  });
+  const [generatedContent, setGeneratedContent] = useState<any>({
+    email: [
+      { subject: '', body: '' },
+      { subject: '', body: '' },
+      { subject: '', body: '' }
+    ],
+    call: ['', '', ''],
+    linkedin: ['', '']
+  });
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const [copiedField, setCopiedField] = useState('');
+
+  // Check if contact is enriched
+  const isEnriched = Boolean(contact.profile_content) || contact.enrichment_status === 'complete';
+  const enrichmentDate = contact.last_enriched_at || contact.enrichment_date;
+  const enrichmentCount = contact.enrichment_count || 0;
+
+  // Parse enrichment data on mount
+  useEffect(() => {
+    if (contact.profile_content) {
+      setRawIntelligence(contact.profile_content);
+      const sections = parseProfileSections(contact.profile_content);
+      setParsedSections(sections);
+    } else if (contact.enrichment_data) {
+      try {
+        const parsed = JSON.parse(contact.enrichment_data);
+        if (parsed.full_profile_text || parsed.perplexity_insights) {
+          const text = parsed.full_profile_text || parsed.perplexity_insights;
+          setRawIntelligence(text);
+          const sections = parseProfileSections(text);
+          setParsedSections(sections);
+        }
+      } catch (e) {
+        console.error('Failed to parse enrichment data:', e);
+      }
+    }
+
+    // Load existing generated content
+    if (contact.email_1_subject || contact.email_1_body) {
+      setGeneratedContent({
+        email: [
+          { subject: contact.email_1_subject || '', body: contact.email_1_body || '' },
+          { subject: contact.email_2_subject || '', body: contact.email_2_body || '' },
+          { subject: contact.email_3_subject || '', body: contact.email_3_body || '' }
+        ],
+        call: [
+          contact.call_script_1 || '',
+          contact.call_script_2 || '',
+          contact.call_script_3 || ''
+        ],
+        linkedin: [
+          contact.linkedin_request || '',
+          contact.linkedin_followup || ''
+        ]
+      });
+    }
+  }, [contact]);
+
+  const cleanText = (text: string): string => {
+    return text
+      .replace(/\*\*/g, '')                    // Remove bold **
+      .replace(/\*([^*]+)\*/g, '$1')           // Remove single asterisks
+      .replace(/\[(\d+)\]/g, '')               // Remove citation numbers [1], [2]
+      .replace(/\[(.*?)\]/g, '$1')             // Remove brackets but keep content
+      .replace(/_([^_]+)_/g, '$1')             // Remove underscores used for italics
+      .replace(/\n\s*[-•]\s*/g, '\n')          // Clean up list markers
+      .replace(/\s+/g, ' ')                    // Normalize whitespace
+      .trim();
+  };
+
+  const parseProfileSections = (text: string): ParsedIntelligence => {
+    const sections: ParsedIntelligence = {
+      overview: '',
+      background: [],
+      education: [],
+      recent_mentions: [],
+      professional_network: [],
+      company_overview: '',
+      company_products: [],
+      company_leadership: [],
+      company_news: [],
+      company_financials: '',
+      personality_assessment: '',
+      mbti_type: '',
+      key_traits: [],
+      pain_points: [],
+      sba_interests: [],
+      key_insights: [],
+      sales_talking_points: []
+    };
+    
+    // Helper to clean markdown and URLs
+    const cleanText = (str: string) => 
+      str.replace(/\*\*/g, '')
+          .replace(/###?/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // Keep link text, remove URL
+          .trim();
+    
+    // PERSON PROFILE - Consistent numbered sections
+    const overviewMatch = text.match(/###\s*1\.\s*Overview[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (overviewMatch) sections.overview = cleanText(overviewMatch[1]);
+    
+    const backgroundMatch = text.match(/###\s*2\.\s*Background[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (backgroundMatch) {
+      sections.background = backgroundMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    const educationMatch = text.match(/###\s*3\.\s*Education[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (educationMatch) {
+      sections.education = educationMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 5);
+    }
+    
+    const recentMatch = text.match(/###\s*4\.\s*Recent Mentions[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (recentMatch) {
+      sections.recent_mentions = recentMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    const socialMatch = text.match(/###\s*5\.\s*Social Profiles[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (socialMatch) {
+      sections.professional_network = socialMatch[1]
+        .split(/\n\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 10 && (s.includes('LinkedIn') || s.includes('Twitter') || s.includes('Facebook') || s.includes('Instagram')));
+    }
+    
+    // PERSONALITY - Sections 6 & 7
+    const personalityDetailMatch = text.match(/###\s*6\.\s*Personality Detail[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    const personalitySummaryMatch = text.match(/###\s*7\.\s*Myers-Briggs.*?Summary[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    
+    if (personalityDetailMatch || personalitySummaryMatch) {
+      const personalityText = (personalityDetailMatch ? personalityDetailMatch[1] : '') + '\n' + 
+                              (personalitySummaryMatch ? personalitySummaryMatch[1] : '');
+      sections.personality_assessment = cleanText(personalityText);
+      
+      // Extract MBTI type
+      const mbtiMatch = personalityText.match(/\b(INTJ|INTP|ENTJ|ENTP|INFJ|INFP|ENFJ|ENFP|ISTJ|ISFJ|ESTJ|ESFJ|ISTP|ISFP|ESTP|ESFP)\b/);
+      if (mbtiMatch) sections.mbti_type = mbtiMatch[1];
+    }
+    
+    // SALES TALKING POINTS - Section 8
+    const talkingPointsMatch = text.match(/###\s*8\.\s*Sales Opportunity[^\n]*\n+(.*?)(?=\n##\s*\*?\*?Company Profile|---)/is);
+    if (talkingPointsMatch) {
+      sections.sales_talking_points = talkingPointsMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    // COMPANY PROFILE - After "## **Company Profile:" header
+    const companyOverviewMatch = text.match(/##\s*\*?\*?Company Profile[^\n]*\n+###\s*1\.\s*Overview[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (companyOverviewMatch) sections.company_overview = cleanText(companyOverviewMatch[1]);
+    
+    const companyProductsMatch = text.match(/###\s*2\.\s*Products\s*&\s*Services[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (companyProductsMatch) {
+      sections.company_products = companyProductsMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    const companyLeadershipMatch = text.match(/###\s*3\.\s*Leadership[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (companyLeadershipMatch) {
+      sections.company_leadership = companyLeadershipMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 10);
+    }
+    
+    const companyMarketMatch = text.match(/###\s*4\.\s*Market\s*&\s*Competitors[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (companyMarketMatch) {
+      sections.company_news = companyMarketMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    const companyNewsMatch = text.match(/###\s*5\.\s*Recent News[^\n]*\n+(.*?)(?=\n###\s*\d+\.|---)/is);
+    if (companyNewsMatch) {
+      const newsItems = companyNewsMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+      sections.company_news = [...(sections.company_news || []), ...newsItems];
+    }
+    
+    const companyFunFactsMatch = text.match(/###\s*6\.\s*(?:Company\s*)?Fun Facts[^\n]*\n+(.*?)(?=\n##\s*STRATEGIC|---)/is);
+    if (companyFunFactsMatch) sections.company_financials = cleanText(companyFunFactsMatch[1]);
+    
+    // STRATEGIC INTELLIGENCE SECTION - Always after "## STRATEGIC INTELLIGENCE SECTION"
+    const painPointsMatch = text.match(/###\s*\*?\*?Pain Points\s*[–-][^\n]*\*?\*?\n+(.*?)(?=\n###\s*\*?\*?SBA|$)/is);
+    if (painPointsMatch) {
+      sections.pain_points = painPointsMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    const sbaMatch = text.match(/###\s*\*?\*?SBA Financing Interest\s*[–-][^\n]*\*?\*?\n+(.*?)(?=\n###\s*\*?\*?Key Insights|$)/is);
+    if (sbaMatch) {
+      sections.sba_interests = sbaMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    const insightsMatch = text.match(/###\s*\*?\*?Key Insights:\s*[^\n]*\*?\*?\n+(.*?)(?=---|\*\(Most details|$)/is);
+    if (insightsMatch) {
+      sections.key_insights = insightsMatch[1]
+        .split(/\n\s*[-•]\s*/)
+        .map(s => cleanText(s))
+        .filter(s => s.length > 20);
+    }
+    
+    return sections;
+  };
+  
+
+  const handleEnrich = async () => {
+    if (onEnrich) {
+      await onEnrich(contact.id);
+      if (onUpdate) onUpdate();
+    }
+  };
+
+  const handleGenerateAllContent = async () => {
+    setIsGenerating(true);
+    setGenerationError('');
+
+    try {
+      // Call the Python script via backend API endpoint
+      const response = await fetch(`http://localhost:8000/api/contacts/${contact.id}/generate-content-unified`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Generation failed');
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Reload contact data to get generated content
+        if (onUpdate) await onUpdate();
+        
+        // Update local state
+        setGeneratedContent({
+          email: [
+            { subject: data.emails?.email_1?.subject || '', body: data.emails?.email_1?.body || '' },
+            { subject: data.emails?.email_2?.subject || '', body: data.emails?.email_2?.body || '' },
+            { subject: data.emails?.email_3?.subject || '', body: data.emails?.email_3?.body || '' }
+          ],
+          call: [
+            data.scripts?.script_1_cold_call || '',
+            data.scripts?.script_2_followup || '',
+            data.scripts?.script_3_executive || ''
+          ],
+          linkedin: [
+            data.linkedin?.connection_note || '',
+            data.linkedin?.followup_message || ''
+          ]
+        });
+
+        setActiveTab('content');
+      }
+    } catch (error: any) {
+      console.error('Content generation error:', error);
+      setGenerationError(error.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyText = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(''), 2000);
+  };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'Never';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const isPeer = contact.relationship_level === 'peer' || contact.persona_type?.includes('Referral');
+
+  const getScoreColor = (score: number) => {
+    if (score >= 70) return '#10b981';
+    if (score >= 50) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  const getUrgencyColor = (urgency: string) => {
+    switch (urgency?.toUpperCase()) {
+      case 'IMMEDIATE': return '#ef4444';
+      case 'HIGH': return '#f59e0b';
+      case 'MEDIUM': return '#3b82f6';
+      default: return '#6b7280';
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: '#0a0f1f',
+        borderRadius: '12px',
+        maxWidth: '1200px',
+        width: '100%',
+        maxHeight: '90vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid #1e293b'
+      }}>
+        
+        {/* Header with Gradient */}
+        <div style={{
+          background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+          padding: '24px 32px',
+          color: 'white',
+          position: 'relative'
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '6px',
+              color: 'white',
+              fontSize: '20px',
+              width: '32px',
+              height: '32px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            ✕
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              fontWeight: 'bold'
+            }}>
+              {contact.name?.charAt(0) || '?'}
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
+                {contact.name}
+              </h2>
+              <p style={{ margin: '4px 0 0', opacity: 0.9, fontSize: '14px' }}>
+                {contact.title} at {contact.company}
+                {isPeer && <span style={{ marginLeft: '8px' }}>🤝 Referral Partner</span>}
+              </p>
+
+              {/* Score Badges */}
+              <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+                    {contact.priority_score !== null ? Math.round(contact.priority_score) : '—'}
+                  </div>
+                  <div style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase' }}>Priority</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+                    {contact.mdcp_score !== null ? Math.round(contact.mdcp_score) : '—'}
+                  </div>
+                  <div style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase' }}>Role</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+                    {contact.rss_score !== null ? Math.round(contact.rss_score) : '—'}
+                  </div>
+                  <div style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase' }}>Data</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid #1e293b',
+          backgroundColor: '#0f1629',
+          padding: '0 32px',
+          overflow: 'auto'
+        }}>
+          {[
+            { id: 'overview', label: '📋 Overview' },
+            { id: 'personal', label: '👤 Personal' },
+            { id: 'company', label: '🏢 Company' },
+            { id: 'personality', label: '🧠 Personality' },
+            { id: 'chat-things', label: '💡 Chat Things' },
+            { id: 'content', label: '✉️ Content' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '16px 20px',
+                color: activeTab === tab.id ? '#6366f1' : '#94a3b8',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                borderBottom: activeTab === tab.id ? '2px solid #6366f1' : '2px solid transparent',
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content Area */}
+        <div style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '32px',
+          backgroundColor: '#0a0f1f'
+        }}>
+          
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <OverviewTab 
+              contact={contact}
+              isEnriched={isEnriched}
+              enrichmentDate={enrichmentDate}
+              enrichmentCount={enrichmentCount}
+              handleEnrich={handleEnrich}
+              formatDate={formatDate}
+              getScoreColor={getScoreColor}
+              getUrgencyColor={getUrgencyColor}
+            />
+          )}
+
+          {/* PERSONAL PROFILE TAB */}
+          {activeTab === 'personal' && (
+            <PersonalProfileTab 
+              parsedSections={parsedSections}
+              contact={contact}
+              rawIntelligence={rawIntelligence}
+            />
+          )}
+
+          {/* COMPANY PROFILE TAB */}
+          {activeTab === 'company' && (
+            <CompanyProfileTab 
+              parsedSections={parsedSections}
+              rawIntelligence={rawIntelligence}
+            />
+          )}
+
+          {/* PERSONALITY TAB */}
+          {activeTab === 'personality' && (
+            <PersonalityTab 
+              parsedSections={parsedSections}
+              rawIntelligence={rawIntelligence}
+            />
+          )}
+
+          {/* CHAT THINGS TAB */}
+          {activeTab === 'chat-things' && (
+            <ChatThingsTab 
+              parsedSections={parsedSections}
+              rawIntelligence={rawIntelligence}
+            />
+          )}
+
+          {/* GENERATED CONTENT TAB */}
+          {activeTab === 'content' && (
+            <GeneratedContentTab
+              isEnriched={isEnriched}
+              isGenerating={isGenerating}
+              generationError={generationError}
+              generatedContent={generatedContent}
+              handleGenerateAllContent={handleGenerateAllContent}
+              copyText={copyText}
+              copiedField={copiedField}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// OVERVIEW TAB COMPONENT
+const OverviewTab: React.FC<any> = ({
+  contact,
+  isEnriched,
+  enrichmentDate,
+  enrichmentCount,
+  handleEnrich,
+  formatDate,
+  getScoreColor,
+  getUrgencyColor
+}) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    {/* Contact Info Card */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <h3 style={{ 
+        margin: '0 0 16px', 
+        color: '#e2e8f0', 
+        fontSize: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        📇 Contact Information
+      </h3>
+      
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <InfoField label="EMAIL" value={contact.email} copyable />
+        <InfoField label="PHONE" value={contact.phone || 'N/A'} copyable />
+        <InfoField label="COMPANY" value={contact.company || 'N/A'} />
+        <InfoField label="TITLE" value={contact.title || 'N/A'} />
+      </div>
+    </div>
+
+    {/* Scoring Card */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <h3 style={{ 
+        margin: '0 0 16px', 
+        color: '#e2e8f0', 
+        fontSize: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        🎯 Apex Scoring
+      </h3>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+        <ScoreCard 
+          label="MDCP Score"
+          value={contact.mdcp_score}
+          tier={contact.mdcp_tier}
+          color={getScoreColor(contact.mdcp_score || 0)}
+        />
+        <ScoreCard 
+          label="RSS Score"
+          value={contact.rss_score}
+          tier={contact.rss_tier}
+          color={getScoreColor(contact.rss_score || 0)}
+        />
+        <ScoreCard 
+          label="Priority"
+          value={contact.priority_score}
+          tier={contact.urgency_level}
+          color={getUrgencyColor(contact.urgency_level || '')}
+        />
+      </div>
+
+      {contact.recommended_action && (
+        <div style={{
+          marginTop: '16px',
+          padding: '12px',
+          backgroundColor: '#1e293b',
+          borderRadius: '6px',
+          color: '#94a3b8',
+          fontSize: '14px'
+        }}>
+          <strong style={{ color: '#e2e8f0' }}>Recommended Action:</strong> {contact.recommended_action}
+        </div>
+      )}
+    </div>
+
+    {/* Enrichment Status */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+        <h3 style={{ margin: 0, color: '#e2e8f0', fontSize: '16px' }}>
+          🤖 AI Intelligence Status
+        </h3>
+        <span style={{
+          padding: '4px 12px',
+          borderRadius: '12px',
+          fontSize: '12px',
+          fontWeight: '500',
+          backgroundColor: isEnriched ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+          color: isEnriched ? '#10b981' : '#f59e0b'
+        }}>
+          {isEnriched ? '✓ Enriched' : '⏳ Not Enriched'}
+        </span>
+      </div>
+
+      {isEnriched ? (
+        <div style={{ color: '#94a3b8', fontSize: '14px', lineHeight: '1.6' }}>
+          <p style={{ margin: '0 0 8px' }}>Enhanced enrichment with strategic insights</p>
+          <div style={{ display: 'flex', gap: '24px', marginTop: '12px' }}>
+            <div>
+              <strong style={{ color: '#6366f1' }}>Last Enriched:</strong>{' '}
+              {formatDate(enrichmentDate)}
+            </div>
+            <div>
+              <strong style={{ color: '#6366f1' }}>Times Enriched:</strong>{' '}
+              {enrichmentCount} {enrichmentCount === 1 ? 'time' : 'times'}
+            </div>
+          </div>
+          <button
+            onClick={handleEnrich}
+            style={{
+              marginTop: '16px',
+              background: 'rgba(99, 102, 241, 0.2)',
+              color: '#6366f1',
+              border: '1px solid rgba(99, 102, 241, 0.3)',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            🔄 Re-Enrich Contact
+          </button>
+        </div>
+      ) : (
+        <>
+          <p style={{ margin: '0 0 16px', color: '#94a3b8', fontSize: '14px' }}>
+            Enrich this contact to generate AI-powered insights about pain points, SBA interests, and conversation starters.
+          </p>
+          <button
+            onClick={handleEnrich}
+            style={{
+              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+              color: 'white',
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontWeight: '500',
+              cursor: 'pointer'
+            }}
+          >
+            ✨ Enrich Contact
+          </button>
+        </>
+      )}
+    </div>
+  </div>
+);
+
+// PERSONAL PROFILE TAB
+const PersonalProfileTab: React.FC<any> = ({ parsedSections, contact, rawIntelligence }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    {!rawIntelligence ? (
+      <EmptyState icon="👤" title="No Personal Profile Yet" />
+    ) : (
+      <>
+        {/* Contact Info Summary Card */}
+        <ValueCard
+          icon="👤"
+          title={contact.name}
+          subtitle={`${contact.title} at ${contact.company}`}
+          items={[
+            contact.email ? `📧 ${contact.email}` : '',
+            contact.phone ? `📞 ${contact.phone}` : '',
+            contact.linkedin_url ? `🔗 LinkedIn Profile` : ''
+          ].filter(Boolean)}
+          color="#3b82f6"
+          compact
+        />
+
+        {parsedSections.overview && (
+          <ValueCard
+            icon="📊"
+            title="Overview"
+            subtitle="Current role and focus"
+            items={[parsedSections.overview]}
+            color="#3b82f6"
+          />
+        )}
+
+        {parsedSections.background && parsedSections.background.length > 0 && (
+          <ValueCard
+            icon="📚"
+            title="Background"
+            subtitle="Work history and achievements"
+            items={parsedSections.background}
+            color="#3b82f6"
+          />
+        )}
+
+        {parsedSections.education && parsedSections.education.length > 0 && (
+          <ValueCard
+            icon="🎓"
+            title="Education"
+            subtitle="Degrees and institutions"
+            items={parsedSections.education}
+            color="#3b82f6"
+          />
+        )}
+
+        {parsedSections.recent_mentions && parsedSections.recent_mentions.length > 0 && (
+          <ValueCard
+            icon="📰"
+            title="Recent Mentions & Online Presence"
+            subtitle="News, posts, and media coverage"
+            items={parsedSections.recent_mentions}
+            color="#3b82f6"
+          />
+        )}
+
+        {parsedSections.professional_network && parsedSections.professional_network.length > 0 && (
+          <ValueCard
+            icon="🤝"
+            title="Professional Network"
+            subtitle="Industry associations and connections"
+            items={parsedSections.professional_network}
+            color="#3b82f6"
+          />
+        )}
+      </>
+    )}
+  </div>
+);
+
+// COMPANY PROFILE TAB
+const CompanyProfileTab: React.FC<any> = ({ parsedSections, rawIntelligence }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    {!rawIntelligence ? (
+      <EmptyState icon="🏢" title="No Company Profile Yet" />
+    ) : (
+      <>
+        {parsedSections.company_overview && (
+          <ValueCard
+            icon="🏢"
+            title="Company Overview"
+            subtitle="Mission, founding, and headquarters"
+            items={[parsedSections.company_overview]}
+            color="#8b5cf6"
+          />
+        )}
+
+        {parsedSections.company_products && parsedSections.company_products.length > 0 && (
+          <ValueCard
+            icon="📦"
+            title="Products & Services"
+            subtitle="Key offerings and markets"
+            items={parsedSections.company_products}
+            color="#8b5cf6"
+          />
+        )}
+
+        {parsedSections.company_leadership && parsedSections.company_leadership.length > 0 && (
+          <ValueCard
+            icon="👔"
+            title="Leadership"
+            subtitle="Key executives and founders"
+            items={parsedSections.company_leadership}
+            color="#8b5cf6"
+          />
+        )}
+
+        {parsedSections.company_news && parsedSections.company_news.length > 0 && (
+          <ValueCard
+            icon="📢"
+            title="Recent News"
+            subtitle="Major announcements and deals"
+            items={parsedSections.company_news}
+            color="#8b5cf6"
+          />
+        )}
+
+        {parsedSections.company_financials && (
+          <ValueCard
+            icon="💰"
+            title="Financial Information"
+            subtitle="Revenue and funding details"
+            items={[parsedSections.company_financials]}
+            color="#8b5cf6"
+          />
+        )}
+      </>
+    )}
+  </div>
+);
+
+// PERSONALITY TAB
+const PersonalityTab: React.FC<any> = ({ parsedSections, rawIntelligence }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    {!rawIntelligence ? (
+      <EmptyState icon="🧠" title="No Personality Assessment Yet" />
+    ) : (
+      <>
+        {parsedSections.mbti_type && (
+          <div style={{
+            backgroundColor: '#7c3aed',
+            background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+            borderRadius: '12px',
+            padding: '28px',
+            textAlign: 'center',
+            color: 'white'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '12px' }}>🧠</div>
+            <h2 style={{ margin: '0 0 8px', fontSize: '32px', fontWeight: 'bold' }}>
+              {parsedSections.mbti_type}
+            </h2>
+            <p style={{ margin: 0, fontSize: '14px', opacity: 0.9 }}>
+              Myers-Briggs Personality Type
+            </p>
+          </div>
+        )}
+
+        {parsedSections.key_traits && parsedSections.key_traits.length > 0 && (
+          <ValueCard
+            icon="✨"
+            title="Key Traits"
+            subtitle="Dominant personality characteristics"
+            items={parsedSections.key_traits}
+            color="#a855f7"
+          />
+        )}
+
+        {parsedSections.personality_assessment && (
+          <ValueCard
+            icon="🎯"
+            title="Personality Assessment"
+            subtitle="Complete profile and interpretation"
+            items={[parsedSections.personality_assessment]}
+            color="#a855f7"
+          />
+        )}
+      </>
+    )}
+  </div>
+);
+
+// CHAT THINGS TAB (Strategic Intelligence)
+const ChatThingsTab: React.FC<any> = ({ parsedSections, rawIntelligence }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    {!rawIntelligence ? (
+      <EmptyState icon="💡" title="No Strategic Intelligence Yet" />
+    ) : (
+      <>
+        {parsedSections.pain_points && parsedSections.pain_points.length > 0 && (
+          <ValueCard
+            icon="🎯"
+            title="Pain Points"
+            subtitle="Challenges they're likely facing"
+            items={parsedSections.pain_points}
+            color="#ef4444"
+          />
+        )}
+        
+        {parsedSections.sba_interests && parsedSections.sba_interests.length > 0 && (
+          <ValueCard
+            icon="🏦"
+            title="SBA Financing Value Props"
+            subtitle="Why SBA loans make sense for them"
+            items={parsedSections.sba_interests}
+            color="#10b981"
+          />
+        )}
+        
+        {parsedSections.key_insights && parsedSections.key_insights.length > 0 && (
+          <ValueCard
+            icon="💎"
+            title="Key Insights"
+            subtitle="Critical things to reference in conversation"
+            items={parsedSections.key_insights}
+            color="#6366f1"
+          />
+        )}
+
+        {parsedSections.sales_talking_points && parsedSections.sales_talking_points.length > 0 && (
+          <ValueCard
+            icon="💼"
+            title="Sales Talking Points"
+            subtitle="Conversation starters and value propositions"
+            items={parsedSections.sales_talking_points}
+            color="#f59e0b"
+          />
+        )}
+
+        {(!parsedSections.pain_points || parsedSections.pain_points.length === 0) && 
+         (!parsedSections.sba_interests || parsedSections.sba_interests.length === 0) &&
+         (!parsedSections.key_insights || parsedSections.key_insights.length === 0) && (
+          <div style={{
+            backgroundColor: '#0f1629',
+            border: '1px solid #1e293b',
+            borderRadius: '8px',
+            padding: '40px',
+            textAlign: 'center',
+            color: '#94a3b8'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+            <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>Strategic Intelligence Not Found</h3>
+            <p style={{ margin: 0 }}>The enrichment profile doesn't contain parsed talking points.<br/>Try re-enriching this contact.</p>
+          </div>
+        )}
+      </>
+    )}
+  </div>
+);
+
+// GENERATED CONTENT TAB
+const GeneratedContentTab: React.FC<any> = ({
+  isEnriched,
+  isGenerating,
+  generationError,
+  generatedContent,
+  handleGenerateAllContent,
+  copyText,
+  copiedField
+}) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    {/* Generation Controls */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <h3 style={{ margin: '0 0 16px', color: '#e2e8f0', fontSize: '16px' }}>
+        ✨ Content Generation
+      </h3>
+      <p style={{ margin: '0 0 16px', color: '#94a3b8', fontSize: '14px' }}>
+        {isEnriched
+          ? 'Generate personalized outreach content based on AI intelligence' 
+          : '⚠️ Enrich this contact first for better content quality'}
+      </p>
+
+      <button
+        onClick={handleGenerateAllContent}
+        disabled={isGenerating || !isEnriched}
+        style={{
+          background: (isGenerating || !isEnriched)
+            ? '#64748b' 
+            : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+          color: 'white',
+          border: 'none',
+          padding: '12px 24px',
+          borderRadius: '6px',
+          fontSize: '14px',
+          fontWeight: '500',
+          cursor: (isGenerating || !isEnriched) ? 'not-allowed' : 'pointer',
+          opacity: (isGenerating || !isEnriched) ? 0.6 : 1
+        }}
+      >
+        {isGenerating ? '⏳ Generating...' : '✨ Generate All Content (3 Emails + 3 Calls + LinkedIn)'}
+      </button>
+
+      {generationError && (
+        <div style={{
+          marginTop: '12px',
+          padding: '12px',
+          backgroundColor: 'rgba(239, 68, 68, 0.2)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          borderRadius: '6px',
+          color: '#ef4444',
+          fontSize: '14px'
+        }}>
+          ❌ {generationError}
+        </div>
+      )}
+    </div>
+
+    {/* Email Sequences */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <h3 style={{ 
+        margin: '0 0 20px', 
+        color: '#e2e8f0', 
+        fontSize: '18px',
+        fontWeight: '600'
+      }}>
+        📧 Email Sequence (3 Emails)
+      </h3>
+
+      {generatedContent.email.map((email: any, index: number) => (
+        <ContentCard
+          key={`email-${index}`}
+          title={`Email ${index + 1} - ${['Introduction (Day 1)', 'Value Add (Day 4)', 'Breakup (Day 7)'][index]}`}
+          content={email}
+          type="email"
+          index={index}
+          onCopy={copyText}
+          copiedField={copiedField}
+        />
+      ))}
+    </div>
+
+    {/* Call Scripts */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <h3 style={{ 
+        margin: '0 0 20px', 
+        color: '#e2e8f0', 
+        fontSize: '18px',
+        fontWeight: '600'
+      }}>
+        📞 Call Scripts (3 Scripts)
+      </h3>
+
+      {generatedContent.call.map((script: string, index: number) => (
+        <ContentCard
+          key={`call-${index}`}
+          title={`Script ${index + 1} - ${['Cold Call', 'Follow-up Call', 'Executive Briefing'][index]}`}
+          content={script}
+          type="call"
+          index={index}
+          onCopy={copyText}
+          copiedField={copiedField}
+        />
+      ))}
+    </div>
+
+    {/* LinkedIn Messages */}
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: '1px solid #1e293b',
+      borderRadius: '8px',
+      padding: '20px'
+    }}>
+      <h3 style={{ 
+        margin: '0 0 20px', 
+        color: '#e2e8f0', 
+        fontSize: '18px',
+        fontWeight: '600'
+      }}>
+        💼 LinkedIn Messages (2 Messages)
+      </h3>
+
+      {generatedContent.linkedin.map((message: string, index: number) => (
+        <ContentCard
+          key={`linkedin-${index}`}
+          title={index === 0 ? 'Connection Request' : 'Follow-up Message'}
+          content={message}
+          type="linkedin"
+          index={index}
+          onCopy={copyText}
+          copiedField={copiedField}
+        />
+      ))}
+    </div>
+  </div>
+);
+
+// REUSABLE VALUE CARD COMPONENT (Like SBA Financing)
+const ValueCard: React.FC<{
+  icon: string;
+  title: string;
+  subtitle: string;
+  items: string[];
+  color: string;
+  compact?: boolean;
+}> = ({ icon, title, subtitle, items, color, compact }) => {
+  return (
+    <div style={{
+      backgroundColor: '#0f1629',
+      border: `2px solid ${color}33`,
+      borderRadius: '12px',
+      padding: compact ? '20px' : '28px',
+      boxShadow: `0 4px 20px ${color}15`
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: compact ? '12px' : '16px' }}>
+        <div style={{ 
+          fontSize: compact ? '24px' : '32px',
+          width: compact ? '40px' : '50px',
+          height: compact ? '40px' : '50px',
+          borderRadius: '10px',
+          background: `${color}22`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          {icon}
+        </div>
+        <div>
+          <h3 style={{ 
+            margin: 0, 
+            color: color, 
+            fontSize: compact ? '16px' : '18px',
+            fontWeight: '700',
+            letterSpacing: '0.3px'
+          }}>
+            {title}
+          </h3>
+          <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: compact ? '12px' : '13px' }}>
+            {subtitle}
+          </p>
+        </div>
+      </div>
+
+      <div style={{
+        marginTop: compact ? '12px' : '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: compact ? '8px' : '16px'
+      }}>
+        {items.map((item, idx) => (
+          <div 
+            key={idx} 
+            style={{
+              padding: compact ? '12px' : '16px',
+              backgroundColor: '#1e293b',
+              borderRadius: '8px',
+              borderLeft: `4px solid ${color}`,
+              color: '#e2e8f0',
+              fontSize: '14px',
+              lineHeight: '1.7',
+              fontWeight: '400'
+            }}
+          >
+            {item}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Helper Components
+const InfoField: React.FC<{ label: string; value: string; copyable?: boolean }> = ({ label, value, copyable }) => (
+  <div>
+    <div style={{ 
+      fontSize: '11px', 
+      color: '#64748b', 
+      marginBottom: '4px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px',
+      fontWeight: '500'
+    }}>
+      {label}
+    </div>
+    <div style={{ 
+      color: '#e2e8f0', 
+      fontSize: '14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    }}>
+      {value}
+      {copyable && value !== 'N/A' && (
+        <button
+          onClick={() => navigator.clipboard.writeText(value)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#64748b',
+            cursor: 'pointer',
+            padding: '2px',
+            fontSize: '14px'
+          }}
+          title="Copy to clipboard"
+        >
+          📋
+        </button>
+      )}
+    </div>
+  </div>
+);
+
+const ScoreCard: React.FC<{ label: string; value?: number; tier?: string; color: string }> = ({ 
+  label, 
+  value, 
+  tier, 
+  color 
+}) => (
+  <div style={{
+    padding: '16px',
+    backgroundColor: '#1e293b',
+    borderRadius: '6px',
+    textAlign: 'center'
+  }}>
+    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>
+      {label}
+    </div>
+    <div style={{ fontSize: '32px', fontWeight: 'bold', color, marginBottom: '4px' }}>
+      {value !== null && value !== undefined ? Math.round(value) : '—'}
+    </div>
+    {tier && (
+      <div style={{
+        fontSize: '12px',
+        padding: '4px 8px',
+        borderRadius: '12px',
+        backgroundColor: `${color}33`,
+        color: color,
+        display: 'inline-block',
+        fontWeight: '500'
+      }}>
+        {tier}
+      </div>
+    )}
+  </div>
+);
+
+const EmptyState: React.FC<{ icon: string; title: string }> = ({ icon, title }) => (
+  <div style={{
+    backgroundColor: '#0f1629',
+    border: '1px solid #1e293b',
+    borderRadius: '8px',
+    padding: '40px',
+    textAlign: 'center',
+    color: '#94a3b8'
+  }}>
+    <div style={{ fontSize: '48px', marginBottom: '16px' }}>{icon}</div>
+    <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>{title}</h3>
+    <p style={{ margin: 0 }}>Enrich this contact first to view insights</p>
+  </div>
+);
+
+const ContentCard: React.FC<{
+  title: string;
+  content: any;
+  type: 'email' | 'call' | 'linkedin';
+  index: number;
+  onCopy: (text: string, field: string) => void;
+  copiedField: string;
+}> = ({ title, content, type, index, onCopy, copiedField }) => {
+  const hasContent = type === 'email' 
+    ? (content.subject || content.body)
+    : Boolean(content);
+
+  const fieldId = `${type}-${index}`;
+
+  return (
+    <div style={{
+      marginBottom: '24px',
+      padding: '20px',
+      backgroundColor: '#1e293b',
+      borderRadius: '8px',
+      border: '1px solid #334155'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '15px', fontWeight: '600' }}>
+          {title}
+        </h4>
+      </div>
+
+      {hasContent ? (
+        type === 'email' ? (
+          <>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <strong style={{ color: '#cbd5e1', fontSize: '13px' }}>Subject:</strong>
+                <button
+                  onClick={() => onCopy(content.subject, `${fieldId}-subject`)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copiedField === `${fieldId}-subject` ? '#10b981' : '#64748b',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    padding: '4px 8px'
+                  }}
+                  title="Copy to clipboard"
+                >
+                  {copiedField === `${fieldId}-subject` ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </div>
+              <div style={{ 
+                color: '#e2e8f0', 
+                fontSize: '14px',
+                padding: '12px',
+                backgroundColor: '#0f1629',
+                borderRadius: '6px',
+                fontWeight: '500'
+              }}>
+                {content.subject}
+              </div>
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <strong style={{ color: '#cbd5e1', fontSize: '13px' }}>Body:</strong>
+                <button
+                  onClick={() => onCopy(content.body, `${fieldId}-body`)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copiedField === `${fieldId}-body` ? '#10b981' : '#64748b',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    padding: '4px 8px'
+                  }}
+                  title="Copy to clipboard"
+                >
+                  {copiedField === `${fieldId}-body` ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </div>
+              <div style={{ 
+                color: '#94a3b8', 
+                fontSize: '14px',
+                padding: '16px',
+                backgroundColor: '#0f1629',
+                borderRadius: '6px',
+                lineHeight: '1.7',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {content.body}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <strong style={{ color: '#cbd5e1', fontSize: '13px' }}>
+                {type === 'call' ? 'Script:' : 'Message:'}
+              </strong>
+              <button
+                onClick={() => onCopy(content, fieldId)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: copiedField === fieldId ? '#10b981' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  padding: '4px 8px'
+                }}
+                title="Copy to clipboard"
+              >
+                {copiedField === fieldId ? '✓ Copied' : '📋 Copy'}
+              </button>
+            </div>
+            <div style={{ 
+              color: '#94a3b8', 
+              fontSize: '14px',
+              padding: '16px',
+              backgroundColor: '#0f1629',
+              borderRadius: '6px',
+              lineHeight: '1.7',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {content}
+            </div>
+          </div>
+        )
+      ) : (
+        <div style={{
+          color: '#64748b',
+          fontSize: '14px',
+          fontStyle: 'italic',
+          textAlign: 'center',
+          padding: '32px',
+          backgroundColor: '#0f1629',
+          borderRadius: '6px'
+        }}>
+          Content will appear here after generation
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ContactDetailModal;

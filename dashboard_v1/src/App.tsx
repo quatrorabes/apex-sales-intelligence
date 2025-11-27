@@ -1,855 +1,818 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useState, useEffect } from 'react';
 import {
+  ChevronUp,
+  ChevronDown,
   Search,
-  Users,
-  TrendingUp,
-  Brain,
-  Sparkles,
-  Zap,
-  RefreshCw,
-  Clock,
-  List,
-  Grid,
-  ArrowUpDown,
-  CheckCircle2,
-  Eye,
-  Mail,
-  Phone,
-  MessageSquare,
-  Building,
-  Briefcase,
-  X,
-  Upload,
-  FileText,
-  Database,
   Download,
-  Target
-} from "lucide-react";
-import ContactEnrichmentView from "./components/ContactEnrichmentView";
-import ContactDetailModal from "./components/ContactDetailModal";
+  Users,
+  Gauge,
+  Activity,
+  Sparkles,
+  Database,
+} from 'lucide-react';
+
+import ApexIntelligence from "./components/ApexIntelligence";
 import CadenceDashboard from "./components/CadenceDashboard";
+import ContactEnrichmentView from "./components/ContactEnrichmentView";
 import RawDataViewer from "./components/RawDataViewer";
-import { ApexIntelligenceDashboard } from "./components/ApexIntelligence";
-import BatchProgress from "./components/BatchProgress";
-import OnboardingModal from './components/OnboardingModal';
+import ContactDetailModal from "./components/ContactDetailModal";
 
-export interface Contact {
-  id: number;
-  hubspot_id?: string;
-  name: string;
-  firstname?: string;
-  lastname?: string;
-  title: string | null;
-  company: string | null;
-  email: string | null;
-  phone?: string | null;
-  linkedin_url?: string | null;
-  enrichment_status?: "pending" | "processing" | "complete" | "failed" | null;
-  enrichment_data?: any;
-  opportunity_score?: number;
-  dashboard?: any;
-  generated_scripts?: any;
-  pain_points?: string[];
-  talking_points?: string[];
-  trigger_events?: string[];
-  mdcp_score?: number;
-  rss_score?: number;
-  priority_score?: number;
-  mdcp_tier?: string;
-  rss_tier?: string;
-  urgency_level?: string;
-  recommended_action?: string;
-  persona_tier?: string;
-  persona_type?: string;
-  last_scored?: string;
+type MainTabId = 'contacts' | 'apex' | 'cadence' | 'enrichment' | 'raw';
+
+interface MainTab {
+  id: MainTabId;
+  label: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number }>;
 }
 
-interface Analytics {
-  total_contacts: number;
-  enriched_contacts: number;
-  pending_enrichment: number;
-  avg_opportunity_score: number;
-  contacts_last_30_days: number;
-  high_priority_contacts: number;
-  scored_contacts?: number;
-  pending_scoring?: number;
-}
+const MAIN_TABS: MainTab[] = [
+  {
+    id: 'contacts',
+    label: 'All Contacts',
+    description: 'Scored contact list with MDCP/RSS/priority',
+    icon: Users,
+  },
+  {
+    id: 'apex',
+    label: 'Apex Intelligence',
+    description: 'CRE-focused scoring and urgency board',
+    icon: Gauge,
+  },
+  {
+    id: 'cadence',
+    label: 'Cadence',
+    description: 'Outreach sequencing and prioritization',
+    icon: Activity,
+  },
+  {
+    id: 'enrichment',
+    label: 'Enrichment',
+    description: 'Enhanced Perplexity + OpenAI research view',
+    icon: Sparkles,
+  },
+  {
+    id: 'raw',
+    label: 'Raw Data',
+    description: 'Full JSON / HubSpot raw contact data',
+    icon: Database,
+  },
+];
 
-function App() {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [analytics, setAnalytics] = useState<Analytics>({
-    total_contacts: 0,
-    enriched_contacts: 0,
-    pending_enrichment: 0,
-    avg_opportunity_score: 0,
-    contacts_last_30_days: 0,
-    high_priority_contacts: 0,
-    scored_contacts: 0,
-    pending_scoring: 0
-  });
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState("all");
+// ---------- ROOT APP SHELL WITH O3PRO TABS ----------
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<MainTabId>('contacts');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [showEnrichmentView, setShowEnrichmentView] = useState(false);
-  const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("contacts");
-  const [viewMode, setViewMode] = useState<"list" | "card">("list");
-  const [showBatchProgress, setShowBatchProgress] = useState(false);
-  const [sortConfig, setSortConfig] = useState<{
-    key: keyof Contact;
-    direction: "asc" | "desc";
-  }>({ key: "name", direction: "asc" });
-  const [showRawData, setShowRawData] = useState(false);
-  const [selectedRawData, setSelectedRawData] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
 
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  
-  const fetchContacts = async () => {
-    try {
-      const response = await fetch(API_BASE + "/api/contacts");
-      if (!response.ok) {
-        throw new Error(`Failed to fetch contacts: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setContacts(data);
-    } catch (error) {
-      console.error("Error fetching contacts:", error);
-      setContacts([]);
-    }
-  };
+  const current = MAIN_TABS.find((t) => t.id === activeTab)!;
 
-  const fetchAnalytics = async () => {
-    try {
-      const enriched = contacts.filter(c => c.enrichment_status === 'complete').length;
-      const pending = contacts.filter(c => !c.enrichment_status || c.enrichment_status === 'pending').length;
-      const scored = contacts.filter(c => c.priority_score).length;
-      const avgScore = contacts.reduce((sum, c) => sum + (c.priority_score || 0), 0) / (scored || 1);
-      
-      setAnalytics({
-        total_contacts: contacts.length,
-        enriched_contacts: enriched,
-        pending_enrichment: pending,
-        avg_opportunity_score: avgScore,
-        contacts_last_30_days: contacts.length,
-        high_priority_contacts: contacts.filter(c => (c.priority_score || 0) >= 80).length,
-        scored_contacts: scored,
-        pending_scoring: contacts.length - scored
-      });
-    } catch (error) {
-      console.error("Error calculating analytics:", error);
-    }
-  };
-
-  useEffect(() => {
-    fetchContacts();
-  }, []);
-
-  useEffect(() => {
-    if (contacts.length > 0) {
-      fetchAnalytics();
-    }
-  }, [contacts]);
-
-  const handleImportFromHubSpot = async () => {
-    if (!confirm("Import up to 100 new contacts from HubSpot?")) return;
-    
-    setIsLoading(true);
-    try {
-      const response = await fetch(API_BASE + "/api/hubspot/import", {
-        method: "POST",
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        alert(
-          `Successfully imported ${data.imported} new contacts!\n` +
-          `Skipped ${data.existing} existing contacts\n` +
-          `Filtered out ${data.filtered} contacts\n` +
-          `Total in HubSpot: ${data.total_in_hubspot}`
-        );
-        fetchContacts();
-      } else {
-        alert(`Import failed: ${data.message || data.error}`);
-      }
-    } catch (error) {
-      console.error("Error importing from HubSpot:", error);
-      alert("Failed to import contacts from HubSpot");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleScoreContact = async (contactId: number) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(API_BASE + `/api/contacts/${contactId}/score`, {
-        method: "POST",
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        alert(
-          `Contact scored successfully!\n\n` +
-          `Priority Score: ${Math.round(data.scores.priority_score)}\n` +
-          `MDCP Score: ${Math.round(data.scores.mdcp_score)}\n` +
-          `RSS Score: ${Math.round(data.scores.rss_score)}\n` +
-          `Urgency: ${data.scores.urgency_level || 'N/A'}`
-        );
-        fetchContacts();
-      } else {
-        alert(`Scoring failed: ${data.error}`);
-      }
-    } catch (error) {
-      console.error("Error scoring contact:", error);
-      alert("Failed to score contact");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleScoreBatch = async () => {
-    if (!confirm("Score up to 50 unscored contacts?")) return;
-    
-    setIsLoading(true);
-    setShowBatchProgress(true);
-    try {
-      const response = await fetch(API_BASE + "/api/contacts/score-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 50 }),
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        alert(
-          `Batch scoring complete!\n` +
-          `Scored: ${data.scored}\n` +
-          `Failed: ${data.failed}\n` +
-          `Total: ${data.total}`
-        );
-        fetchContacts();
-      } else {
-        alert(`Batch scoring failed: ${data.error}`);
-      }
-    } catch (error) {
-      console.error("Error in batch scoring:", error);
-      alert("Failed to score contacts");
-    } finally {
-      setIsLoading(false);
-      setShowBatchProgress(false);
-    }
-  };
-
-  const handleEnrichSelected = async () => {
-    if (selectedContacts.size === 0) {
-      alert("Please select contacts to enrich");
-      return;
-    }
-  
-    if (!confirm(`Enrich ${selectedContacts.size} selected contact(s)?`)) {
-      return;
-    }
-  
-    setIsLoading(true);
-    setShowBatchProgress(true);
-  
-    try {
-      const contactIds = Array.from(selectedContacts);
-      let successCount = 0;
-      let failCount = 0;
-      
-      for (const contactId of contactIds) {
-        try {
-          const response = await fetch(API_BASE + `/api/contacts/${contactId}/enrich`, {
-            method: "POST",
-          });
-          
-          if (response.ok) {
-            successCount++;
-          } else {
-            failCount++;
-          }
-        } catch (err) {
-          failCount++;
-        }
-      }
-  
-      alert(
-        `Enrichment complete!\n` +
-        `Success: ${successCount}\n` +
-        `Failed: ${failCount}`
-      );
-      
-      fetchContacts();
-      setSelectedContacts(new Set());
-    } catch (error) {
-      console.error("Error enriching contacts:", error);
-      alert("Failed to enrich contacts");
-    } finally {
-      setIsLoading(false);
-      setShowBatchProgress(false);
-    }
-  };
-
-  const handleSort = (key: keyof Contact) => {
-    setSortConfig((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
-    }));
-  };
-
-  const filteredContacts = useMemo(() => {
-    let filtered = contacts.filter((contact) => {
-      const matchesSearch =
-        contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesStatus =
-        filterStatus === "all" ||
-        contact.enrichment_status === filterStatus;
-
-      return matchesSearch && matchesStatus;
-    });
-
-    filtered.sort((a, b) => {
-      const aValue = a[sortConfig.key];
-      const bValue = b[sortConfig.key];
-
-      if (aValue == null) return 1;
-      if (bValue == null) return -1;
-
-      if (typeof aValue === "string" && typeof bValue === "string") {
-        return sortConfig.direction === "asc"
-          ? aValue.localeCompare(bValue)
-          : bValue.localeCompare(aValue);
-      }
-
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        return sortConfig.direction === "asc"
-          ? aValue - bValue
-          : bValue - aValue;
-      }
-
-      return 0;
-    });
-
-    return filtered;
-  }, [contacts, searchTerm, filterStatus, sortConfig]);
-
-  const toggleContactSelection = (contactId: number) => {
-    setSelectedContacts((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(contactId)) {
-        newSet.delete(contactId);
-      } else {
-        newSet.add(contactId);
-      }
-      return newSet;
-    });
-  };
-
-  const getScoreTierClass = (score?: number): string => {
-    if (!score) return "bg-gray-600 text-gray-300";
-    if (score >= 80) return "bg-red-600 text-white";
-    if (score >= 65) return "bg-orange-500 text-white";
-    if (score >= 50) return "bg-blue-500 text-white";
-    return "bg-gray-500 text-gray-300";
-  };
-
-  const getUrgencyBadgeClass = (urgency?: string): string => {
-    if (!urgency) return "";
-    const level = urgency.toLowerCase();
-    if (level === "immediate") return "bg-red-600 text-white";
-    if (level === "high") return "bg-orange-500 text-white";
-    if (level === "medium") return "bg-blue-500 text-white";
-    return "bg-gray-500 text-gray-300";
-  };
-
-  const handleViewEnrichment = (contact: Contact) => {
-    setSelectedContact(contact);
-    setShowEnrichmentView(true);
-  };
-
-  const handleViewRawData = (contact: Contact) => {
-    setSelectedRawData(contact);
-    setShowRawData(true);
+  // Callback for when enrichment completes
+  const handleEnrichmentComplete = async (updatedContact: Contact) => {
+    console.log("Enrichment completed for:", updatedContact);
+    // Close modal and refresh contact list
+    setSelectedContact(null);
+    // Trigger refresh in ContactsBoard (passed down as prop)
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg">
-                <Sparkles className="w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-                  APEX Sales Intelligence
-                </h1>
-                <p className="text-sm text-slate-400">AI-Powered Contact Enrichment * Scoring</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleImportFromHubSpot}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Upload className="w-4 h-4" />
-                Import from HubSpot
-              </button>
-
-              <button
-                onClick={handleScoreBatch}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Target className="w-4 h-4" />
-                Score Batch
-              </button>
-
-              {selectedContacts.size > 0 && (
-                <button
-                  onClick={handleEnrichSelected}
-                  disabled={isLoading}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Brain className="w-4 h-4" />
-                  Enrich Selected ({selectedContacts.size})
-                </button>
-              )}
-              
-              <button
-                onClick={() => setShowOnboarding(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-              >
-                <Target className="w-4 h-4" />
-                Configure ICP
-              </button>
-            </div>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #0a0f1f 0%, #1e293b 100%)',
+        color: '#e5e7eb',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Inter", sans-serif',
+      }}
+    >
+      {/* GLOBAL HEADER */}
+      <header
+        style={{
+          padding: '24px 32px 16px 32px',
+          borderBottom: '1px solid rgba(148,163,184,0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 999,
+              background:
+                'conic-gradient(from 180deg at 50% 50%, #6366f1 0deg, #22c55e 120deg, #eab308 240deg, #6366f1 360deg)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#0f172a',
+              fontWeight: 800,
+              fontSize: 16,
+            }}
+          >
+            AI
           </div>
-
-          <div className="flex gap-4 mt-4">
-            <button
-              onClick={() => setActiveTab("contacts")}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "contacts"
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
+          <div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: 0.4,
+              }}
             >
-              <Users className="w-4 h-4 inline mr-2" />
-              Contacts
-            </button>
-            <button
-              onClick={() => setActiveTab("cadence")}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "cadence"
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              <MessageSquare className="w-4 h-4 inline mr-2" />
-              Cadence
-            </button>
-            <button
-              onClick={() => setActiveTab("intelligence")}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                activeTab === "intelligence"
-                  ? "bg-blue-600 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-            >
-              <Brain className="w-4 h-4 inline mr-2" />
               Apex Intelligence
-            </button>
+            </div>
+            <div style={{ fontSize: 13, color: '#9ca3af' }}>
+              End-to-end AI sales intelligence · Enrichment · Scoring · Content
+            </div>
           </div>
         </div>
       </header>
 
-      {activeTab === "contacts" && (
-        <div className="container mx-auto px-4 py-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-              <div className="flex items-center justify-between mb-2">
-                <Users className="w-5 h-5 text-blue-400" />
-                <span className="text-sm text-slate-400">Total</span>
-              </div>
-              <div className="text-3xl font-bold">{analytics.total_contacts}</div>
-              <div className="text-sm text-slate-400 mt-1">Contacts</div>
-            </div>
-
-            <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-              <div className="flex items-center justify-between mb-2">
-                <Target className="w-5 h-5 text-purple-400" />
-                <span className="text-sm text-slate-400">Scored</span>
-              </div>
-              <div className="text-3xl font-bold">{analytics.scored_contacts || 0}</div>
-              <div className="text-sm text-slate-400 mt-1">
-                {analytics.pending_scoring || 0} pending
-              </div>
-            </div>
-
-            <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-              <div className="flex items-center justify-between mb-2">
-                <Brain className="w-5 h-5 text-green-400" />
-                <span className="text-sm text-slate-400">Enriched</span>
-              </div>
-              <div className="text-3xl font-bold">{analytics.enriched_contacts}</div>
-              <div className="text-sm text-slate-400 mt-1">
-                {analytics.pending_enrichment} pending
-              </div>
-            </div>
-
-            <div className="bg-slate-900 rounded-lg p-6 border border-slate-800">
-              <div className="flex items-center justify-between mb-2">
-                <TrendingUp className="w-5 h-5 text-orange-400" />
-                <span className="text-sm text-slate-400">Avg Score</span>
-              </div>
-              <div className="text-3xl font-bold">
-                {analytics.avg_opportunity_score
-                  ? analytics.avg_opportunity_score.toFixed(1)
-                  : "—"}
-              </div>
-              <div className="text-sm text-slate-400 mt-1">Opportunity</div>
-            </div>
-          </div>
-
-          <div className="flex flex-col md:flex-row gap-4 mb-6">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search contacts..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+      {/* MAIN NAV TABS */}
+      <nav
+        style={{
+          display: 'flex',
+          gap: 8,
+          padding: '12px 32px 4px 32px',
+          borderBottom: '1px solid rgba(148,163,184,0.25)',
+          background: 'rgba(15,23,42,0.85)',
+          backdropFilter: 'blur(12px)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+        }}
+      >
+        {MAIN_TABS.map((tab) => {
+          const Icon = tab.icon;
+          const active = tab.id === activeTab;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 14px',
+                borderRadius: '999px',
+                border: active
+                  ? '1px solid rgba(129,140,248,0.9)'
+                  : '1px solid rgba(148,163,184,0.35)',
+                background: active
+                  ? 'linear-gradient(135deg, rgba(79,70,229,0.35), rgba(147,51,234,0.35))'
+                  : 'transparent',
+                color: active ? '#e5e7eb' : '#9ca3af',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.18s',
+              }}
             >
-              <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="complete">Complete</option>
-              <option value="failed">Failed</option>
-            </select>
+              <Icon size={16} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => setViewMode("list")}
-                className={`p-2 rounded-lg ${
-                  viewMode === "list"
-                    ? "bg-blue-600"
-                    : "bg-slate-800 hover:bg-slate-700"
-                }`}
-              >
-                <List className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => setViewMode("card")}
-                className={`p-2 rounded-lg ${
-                  viewMode === "card"
-                    ? "bg-blue-600"
-                    : "bg-slate-800 hover:bg-slate-700"
-                }`}
-              >
-                <Grid className="w-5 h-5" />
-              </button>
-            </div>
+      {/* CURRENT TAB DESCRIPTION */}
+      <div
+        style={{
+          padding: '12px 32px 8px 32px',
+          fontSize: 12,
+          color: '#9ca3af',
+        }}
+      >
+        {current.description}
+      </div>
+
+      {/* TAB CONTENT AREA */}
+      <main style={{ padding: '0 24px 32px 24px' }}>
+        {activeTab === 'contacts' && (
+          <ContactsBoard 
+            selectedContact={selectedContact}
+            onSelectContact={setSelectedContact}
+          />
+        )}
+        {activeTab === 'apex' && (
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
+            <ApexIntelligence />
           </div>
-
-          {viewMode === "list" ? (
-            <div className="bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-slate-800">
-                  <tr>
-                    <th className="px-4 py-3 text-left">
-                      <input
-                        type="checkbox"
-                        checked={selectedContacts.size === contacts.length && contacts.length > 0}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedContacts(new Set(contacts.map((c) => c.id)));
-                          } else {
-                            setSelectedContacts(new Set());
-                          }
-                        }}
-                        className="rounded border-slate-600"
-                      />
-                    </th>
-                    <th
-                      className="px-4 py-3 text-left cursor-pointer hover:bg-slate-700"
-                      onClick={() => handleSort("name")}
-                    >
-                      <div className="flex items-center gap-2">
-                        Name
-                        <ArrowUpDown className="w-4 h-4" />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-left">Company</th>
-                    <th className="px-4 py-3 text-left">Title</th>
-                    <th
-                      className="px-4 py-3 text-left cursor-pointer hover:bg-slate-700"
-                      onClick={() => handleSort("priority_score")}
-                    >
-                      <div className="flex items-center gap-2">
-                        Score
-                        <ArrowUpDown className="w-4 h-4" />
-                      </div>
-                    </th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredContacts.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
-                        No contacts found. Import contacts to get started.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredContacts.map((contact) => (
-                      <tr
-                        key={contact.id}
-                        className="border-t border-slate-800 hover:bg-slate-800/50"
-                      >
-                        <td className="px-4 py-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedContacts.has(contact.id)}
-                            onChange={() => toggleContactSelection(contact.id)}
-                            className="rounded border-slate-600"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <div>
-                            <div className="font-medium">{contact.name}</div>
-                            <div className="text-sm text-slate-400">{contact.email}</div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">{contact.company || "—"}</td>
-                        <td className="px-4 py-3">{contact.title || "—"}</td>
-                        <td className="px-4 py-3">
-                          {contact.priority_score ? (
-                            <div className="flex flex-col gap-1">
-                              <span
-                                className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-sm font-bold ${getScoreTierClass(
-                                  contact.priority_score
-                                )}`}
-                              >
-                                {Math.round(contact.priority_score)}
-                              </span>
-                              {contact.urgency_level && (
-                                <span
-                                  className={`text-xs px-2 py-0.5 rounded ${getUrgencyBadgeClass(
-                                    contact.urgency_level
-                                  )}`}
-                                >
-                                  {contact.urgency_level}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-slate-500">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {contact.enrichment_status === "complete" ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-900/50 text-green-300">
-                              <CheckCircle2 className="w-3 h-3 mr-1" />
-                              Complete
-                            </span>
-                          ) : contact.enrichment_status === "processing" ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-900/50 text-blue-300">
-                              <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                              Processing
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-slate-800 text-slate-400">
-                              <Clock className="w-3 h-3 mr-1" />
-                              Pending
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            {!contact.priority_score && (
-                              <button
-                                onClick={() => handleScoreContact(contact.id)}
-                                className="p-1.5 hover:bg-slate-700 rounded"
-                                title="Score Contact"
-                              >
-                                <Target className="w-4 h-4" />
-                              </button>
-                            )}
-                            {contact.enrichment_status === "complete" && (
-                              <>
-                                <button
-                                  onClick={() => handleViewEnrichment(contact)}
-                                  className="p-1.5 hover:bg-slate-700 rounded"
-                                  title="View Intelligence"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleViewRawData(contact)}
-                                  className="p-1.5 hover:bg-slate-700 rounded"
-                                  title="View Raw Data"
-                                >
-                                  <Database className="w-4 h-4" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredContacts.map((contact) => (
-                <div
-                  key={contact.id}
-                  className="bg-slate-900 rounded-lg border border-slate-800 p-4 hover:border-blue-500 transition-colors"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-lg">{contact.name}</h3>
-                      {contact.title && (
-                        <p className="text-sm text-slate-400">{contact.title}</p>
-                      )}
-                      {contact.company && (
-                        <p className="text-sm text-blue-400">{contact.company}</p>
-                      )}
-                    </div>
-                    {contact.priority_score && (
-                      <span
-                        className={`px-3 py-1 rounded-full text-sm font-bold ${getScoreTierClass(
-                          contact.priority_score
-                        )}`}
-                      >
-                        {Math.round(contact.priority_score)}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-2 mb-4">
-                    {contact.email && (
-                      <div className="flex items-center gap-2 text-sm text-slate-300">
-                        <Mail className="w-4 h-4 text-slate-500" />
-                        {contact.email}
-                      </div>
-                    )}
-                    {contact.phone && (
-                      <div className="flex items-center gap-2 text-sm text-slate-300">
-                        <Phone className="w-4 h-4 text-slate-500" />
-                        {contact.phone}
-                      </div>
-                    )}
-                  </div>
-
-                  {contact.urgency_level && (
-                    <div className="mb-3">
-                      <span
-                        className={`text-xs px-2 py-1 rounded ${getUrgencyBadgeClass(
-                          contact.urgency_level
-                        )}`}
-                      >
-                        {contact.urgency_level} Urgency
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    {!contact.priority_score && (
-                      <button
-                        onClick={() => handleScoreContact(contact.id)}
-                        className="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 rounded text-sm"
-                      >
-                        Score
-                      </button>
-                    )}
-                    {contact.enrichment_status === "complete" && (
-                      <button
-                        onClick={() => handleViewEnrichment(contact)}
-                        className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm"
-                      >
-                        View Intel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === "cadence" && <CadenceDashboard contacts={contacts} />}
-
-      {activeTab === "intelligence" && <ApexIntelligenceDashboard contacts={contacts} />}
-
-      {showEnrichmentView && selectedContact && (
-        <ContactEnrichmentView 
-          contactId={selectedContact.id}
-          onClose={() => {
-            setShowEnrichmentView(false);
-            setSelectedContact(null);
-          }}
-        />
-      )}
-
-      {showRawData && selectedRawData && (
-        <RawDataViewer
-          data={selectedRawData}
-          onClose={() => {
-            setShowRawData(false);
-            setSelectedRawData(null);
-          }}
-        />
-      )}
-
-      {showOnboarding && (
-        <OnboardingModal
-          onComplete={(prefs) => {
-            console.log('Preferences saved:', prefs);
-            setShowOnboarding(false);
-            fetchContacts();
-          }}
-          onClose={() => setShowOnboarding(false)}
-        />
-      )}
-
-      {showBatchProgress && <BatchProgress onClose={() => setShowBatchProgress(false)} />}
-
-      {isLoading && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-lg p-8 flex flex-col items-center gap-4">
-            <RefreshCw className="w-12 h-12 animate-spin text-blue-500" />
-            <p className="text-lg">Processing...</p>
+        )}
+        {activeTab === 'cadence' && (
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
+            <CadenceDashboard />
           </div>
-        </div>
+        )}
+        {activeTab === 'enrichment' && (
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
+            <ContactEnrichmentView />
+          </div>
+        )}
+        {activeTab === 'raw' && (
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
+            <RawDataViewer />
+          </div>
+        )}
+      </main>
+
+      {/* CONTACT DETAIL MODAL */}
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          onClose={() => setSelectedContact(null)}
+          onEnrichmentComplete={handleEnrichmentComplete}
+        />
       )}
     </div>
   );
 }
 
-export default App;
+// ---------- CONTACTS BOARD (YOUR DARK MAIN DASH) ----------
+
+interface Contact {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  title: string;
+  lead_status?: string;
+  lifecycle_stage?: string;
+  mdcp_score?: number;
+  rss_score?: number;
+  priority_score?: number;
+  urgency_level?: string;
+  mdcp_tier?: string;
+  rss_tier?: string;
+  enrichment_status?: string;
+  profile_content?: string;
+}
+
+type SortField =
+  | 'name'
+  | 'title'
+  | 'company'
+  | 'lifecycle_stage'
+  | 'lead_status'
+  | 'priority_score'
+  | 'mdcp_score'
+  | 'rss_score';
+
+interface ContactsBoardProps {
+  selectedContact: Contact | null;
+  onSelectContact: (contact: Contact) => void;
+}
+
+function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sortField, setSortField] = useState<SortField>('priority_score');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterTier, setFilterTier] = useState<string>('all');
+
+  useEffect(() => {
+    fetchContacts();
+  }, []);
+
+  const fetchContacts = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/contacts');
+      const data = await res.json();
+      // backend returns a flat list in many places; support either shape
+      setContacts((data.contacts as Contact[]) || (data as Contact[]) || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
+
+  const filtered = contacts.filter((c) => {
+    const q = searchTerm.toLowerCase();
+    const matchesSearch =
+      c.name.toLowerCase().includes(q) ||
+      c.company?.toLowerCase().includes(q) ||
+      c.email?.toLowerCase().includes(q) ||
+      c.title?.toLowerCase().includes(q);
+
+    const matchesTier = filterTier === 'all' || c.mdcp_tier === filterTier;
+
+    return matchesSearch && matchesTier;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    let aVal: any = a[sortField];
+    let bVal: any = b[sortField];
+    if (aVal == null) aVal = sortDir === 'asc' ? Infinity : -Infinity;
+    if (bVal == null) bVal = sortDir === 'asc' ? Infinity : -Infinity;
+    if (typeof aVal === 'string') {
+      aVal = aVal.toLowerCase();
+      bVal = (bVal as string | undefined)?.toLowerCase() || '';
+    }
+    if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const stats = [
+    { label: 'Total Contacts', value: contacts.length, color: '#6366f1' },
+    {
+      label: 'HOT Leads',
+      value: contacts.filter((c) => c.mdcp_tier === 'HOT').length,
+      color: '#22c55e',
+    },
+    {
+      label: 'Warm',
+      value: contacts.filter((c) => c.mdcp_tier === 'WARM').length,
+      color: '#f97316',
+    },
+    {
+      label: 'Scored',
+      value: contacts.filter((c) => c.priority_score != null).length,
+      color: '#0ea5e9',
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          height: '70vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#9ca3af',
+          fontSize: 18,
+        }}
+      >
+        Loading contacts…
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '16px 8px 0 8px' }}>
+      {/* Stats */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 16,
+          marginBottom: 24,
+        }}
+      >
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              background: 'rgba(15,23,42,0.9)',
+              borderRadius: 12,
+              padding: 16,
+              border: '1px solid rgba(148,163,184,0.35)',
+              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: 0.6,
+                color: '#9ca3af',
+                marginBottom: 6,
+              }}
+            >
+              {s.label}
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>
+              {s.value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Search + Tier Filter */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
+          <Search
+            size={18}
+            style={{ position: 'absolute', left: 12, top: 10, color: '#64748b' }}
+          />
+          <input
+            type="text"
+            placeholder="Search name, company, email, or title…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              paddingLeft: 38,
+              paddingRight: 14,
+              paddingTop: 8,
+              paddingBottom: 8,
+              borderRadius: 8,
+              border: '1px solid rgba(148,163,184,0.4)',
+              background: 'rgba(15,23,42,0.85)',
+              color: '#e5e7eb',
+              fontSize: 14,
+              outline: 'none',
+            }}
+          />
+        </div>
+        <select
+          value={filterTier}
+          onChange={(e) => setFilterTier(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(148,163,184,0.5)',
+            background: 'rgba(15,23,42,0.9)',
+            color: '#e5e7eb',
+            fontSize: 13,
+            cursor: 'pointer',
+          }}
+        >
+          <option value="all">All tiers</option>
+          <option value="HOT">🔥 HOT</option>
+          <option value="WARM">🟡 WARM</option>
+          <option value="COLD">❄️ COLD</option>
+        </select>
+        <button
+          type="button"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid rgba(99,102,241,0.6)',
+            background: 'rgba(79,70,229,0.25)',
+            color: '#e5e7eb',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          <Download size={16} />
+          Export
+        </button>
+      </div>
+
+      {/* Table */}
+      <div
+        style={{
+          background: 'rgba(15,23,42,0.95)',
+          borderRadius: 14,
+          border: '1px solid rgba(30,64,175,0.7)',
+          boxShadow: '0 20px 45px rgba(15,23,42,0.95)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: 13,
+            }}
+          >
+            <thead>
+              <tr
+                style={{
+                  background: 'rgba(15,23,42,1)',
+                  borderBottom: '1px solid rgba(51,65,85,0.8)',
+                }}
+              >
+                <SortableTh label="Name" field="name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortableTh label="Title" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortableTh
+                  label="Company"
+                  field="company"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Lifecycle"
+                  field="lifecycle_stage"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Status"
+                  field="lead_status"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Priority"
+                  field="priority_score"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="MDCP"
+                  field="mdcp_score"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="RSS"
+                  field="rss_score"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((c) => {
+                const priorityColor = getScoreColor(c.priority_score);
+                const mdcpColor = getScoreColor(c.mdcp_score);
+                const rssColor = getScoreColor(c.rss_score);
+                const isSelected = selectedContact?.id === c.id;
+                
+                return (
+                  <tr
+                    key={c.id}
+                    onClick={() => onSelectContact(c)}
+                    style={{
+                      borderBottom: '1px solid rgba(31,41,55,0.9)',
+                      transition: 'background 0.18s',
+                      cursor: 'pointer',
+                      background: isSelected 
+                        ? 'rgba(33, 128, 141, 0.15)' 
+                        : 'transparent',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'rgba(30,64,175,0.25)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'transparent';
+                      } else {
+                        e.currentTarget.style.background = 'rgba(33, 128, 141, 0.15)';
+                      }
+                    }}
+                  >
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 999,
+                            background:
+                              'linear-gradient(135deg, #6366f1 0%, #4f46e5 40%, #0ea5e9 100%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'white',
+                            fontSize: 12,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {c.name
+                            .split(' ')
+                            .map((n) => n[0])
+                            .join('')
+                            .substring(0, 3)
+                            .toUpperCase()}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 500, color: '#e5e7eb' }}>
+                            {c.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                            {c.email}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={tdStyle}>{c.title || '—'}</td>
+                    <td style={tdStyle}>{c.company || '—'}</td>
+                    <td style={tdStyle}>
+                      <span style={{ color: '#9ca3af' }}>
+                        {c.lifecycle_stage || '—'}
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      <span style={{ color: '#9ca3af' }}>
+                        {c.lead_status || '—'}
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      <ScorePill value={c.priority_score} colors={priorityColor} />
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <ScorePill value={c.mdcp_score} colors={mdcpColor} />
+                        <TierBadge tier={c.mdcp_tier} />
+                      </div>
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <ScorePill value={c.rss_score} colors={rssColor} />
+                        <TierBadge tier={c.rss_tier} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {sorted.length === 0 && (
+                <tr>
+                  <td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
+                    No contacts match your filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 16,
+          fontSize: 12,
+          color: '#9ca3af',
+          textAlign: 'right',
+        }}
+      >
+        Showing {sorted.length} of {contacts.length} contacts
+      </div>
+    </div>
+  );
+}
+
+// ---------- SMALL PRESENTATIONAL HELPERS ----------
+
+function getScoreColor(score?: number) {
+  if (score == null) {
+    return { color: '#9ca3af', bg: 'rgba(31,41,55,0.9)' };
+  }
+  if (score >= 80) {
+    return { color: '#22c55e', bg: 'rgba(22,163,74,0.16)' };
+  }
+  if (score >= 60) {
+    return { color: '#f97316', bg: 'rgba(245,158,11,0.14)' };
+  }
+  return { color: '#f97373', bg: 'rgba(220,38,38,0.18)' };
+}
+
+function TierBadge({ tier }: { tier?: string }) {
+  const map: Record<
+    string,
+    { bg: string; border: string; color: string }
+  > = {
+    HOT: {
+      bg: 'rgba(22,163,74,0.12)',
+      border: 'rgba(22,163,74,0.6)',
+      color: '#22c55e',
+    },
+    WARM: {
+      bg: 'rgba(245,158,11,0.10)',
+      border: 'rgba(245,158,11,0.6)',
+      color: '#fbbf24',
+    },
+    COLD: {
+      bg: 'rgba(148,163,184,0.15)',
+      border: 'rgba(148,163,184,0.6)',
+      color: '#e5e7eb',
+    },
+  };
+  const style = map[tier || 'COLD'] || map['COLD'];
+  return (
+    <span
+      style={{
+        padding: '3px 8px',
+        borderRadius: 999,
+        fontSize: 11,
+        border: `1px solid ${style.border}`,
+        background: style.bg,
+        color: style.color,
+        textTransform: 'uppercase',
+        fontWeight: 600,
+      }}
+    >
+      {tier || 'COLD'}
+    </span>
+  );
+}
+
+function ScorePill({
+  value,
+  colors,
+}: {
+  value?: number;
+  colors: { color: string; bg: string };
+}) {
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        minWidth: 32,
+        padding: '4px 10px',
+        borderRadius: 999,
+        fontSize: 13,
+        textAlign: 'center',
+        background: colors.bg,
+        color: colors.color,
+        fontWeight: 600,
+      }}
+    >
+      {value != null ? Math.round(value) : '—'}
+    </span>
+  );
+}
+
+function SortableTh(props: {
+  label: string;
+  field: SortField;
+  sortField: SortField;
+  sortDir: 'asc' | 'desc';
+  onSort: (field: SortField) => void;
+}) {
+  const { label, field, sortField, sortDir, onSort } = props;
+  const active = sortField === field;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      style={{
+        padding: 12,
+        textAlign: 'left',
+        fontSize: 11,
+        fontWeight: 600,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6,
+        cursor: 'pointer',
+        color: active ? '#e5e7eb' : '#9ca3af',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {label}
+        {active && (sortDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+      </span>
+    </th>
+  );
+}
+
+const tdStyle: React.CSSProperties = {
+  padding: 12,
+  fontSize: 13,
+  color: '#e5e7eb',
+};
