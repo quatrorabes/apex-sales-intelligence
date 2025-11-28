@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Mail, Phone, MessageSquare, Copy, Check, Sparkles, RefreshCw, Loader, ChevronRight } from 'lucide-react';
-import './ContentGenerator.css';
+import "../styles/ContentGenerator.css";
+
 
 interface ContentGeneratorProps {
   contactId: number;

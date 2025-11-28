@@ -10,7 +10,9 @@ import subprocess
 import sys
 import os
 from typing import Dict
-from config import DB_PATH
+DB_PATH = "/Users/chrisrabenold/projects/apex/apex.db"
+
+# from config import DB_PATH
 
 # Ensure we're in the right directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

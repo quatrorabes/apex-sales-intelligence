@@ -9,16 +9,17 @@ import {
   Activity,
   Sparkles,
   Database,
-  Target
 } from 'lucide-react';
-import ApexIntelligence from './components/ApexIntelligence';
-import CadenceDashboard from './components/CadenceDashboard';
-import ContactEnrichmentView from './components/ContactEnrichmentView';
-import RawDataViewer from './components/RawDataViewer';
-import ContactDetailModal from './components/ContactDetailModal';
-import WhyMeTab from './components/WhyMeTab';  // ✅ MOVED HERE
 
-type MainTabId = 'contacts' | 'apex' | 'cadence' | 'enrichment' | 'raw' | 'whyme';
+import ApexIntelligence from "./components/ApexIntelligence";
+import CadenceDashboard from "./components/CadenceDashboard";
+import ContactEnrichmentView from "./components/ContactEnrichmentView";
+import RawDataViewer from "./components/RawDataViewer";
+import ContactDetailModal from "./components/ContactDetailModal";
+import WhyMeTab from './components/WhyMeTab';
+
+
+type MainTabId = 'contacts' | 'apex' | 'cadence' | 'enrichment' | 'raw';
 
 interface MainTab {
   id: MainTabId;
@@ -35,7 +36,7 @@ const MAIN_TABS: MainTab[] = [
     icon: Users,
   },
   {
-    id: 'apex',  // ✅ FIXED - No import here
+    id: 'apex',import WhyMeTab from './components/WhyMeTab';
     label: 'Apex Intelligence',
     description: 'CRE-focused scoring and urgency board',
     icon: Gauge,
@@ -55,18 +56,13 @@ const MAIN_TABS: MainTab[] = [
   {
     id: 'raw',
     label: 'Raw Data',
-    description: 'Full JSON + HubSpot raw contact data',
+    description: 'Full JSON / HubSpot raw contact data',
     icon: Database,
-  },
-  {
-    id: 'whyme',  // ✅ ADD WHY ME TAB
-    label: 'Why Me?',
-    description: 'Value proposition builder for personalization',
-    icon: Target,
   },
 ];
 
 // ---------- HUBSPOT IMPORT BUTTON ----------
+
 function HubSpotImportButton() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -74,20 +70,26 @@ function HubSpotImportButton() {
   const handleImport = async () => {
     setImporting(true);
     setResult(null);
+    
     try {
       const res = await fetch('http://localhost:8000/api/hubspot/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
+      
       const data = await res.json();
       setResult(data);
-
+      
       // Auto-hide success message after 5 seconds
       if (data.success) {
         setTimeout(() => setResult(null), 5000);
       }
     } catch (err) {
-      setResult({ success: false, error: 'Network error', message: String(err) });
+      setResult({ 
+        success: false, 
+        error: 'Network error', 
+        message: String(err) 
+      });
     } finally {
       setImporting(false);
     }
@@ -105,8 +107,8 @@ function HubSpotImportButton() {
           padding: '10px 18px',
           borderRadius: 8,
           border: '1px solid rgba(99,102,241,0.7)',
-          background: importing
-            ? 'rgba(71,85,105,0.5)'
+          background: importing 
+            ? 'rgba(71,85,105,0.5)' 
             : 'linear-gradient(135deg, rgba(79,70,229,0.5), rgba(99,102,241,0.4))',
           color: '#e5e7eb',
           fontSize: 14,
@@ -119,7 +121,7 @@ function HubSpotImportButton() {
         <Database size={18} />
         {importing ? 'Importing from HubSpot...' : 'Import from HubSpot'}
       </button>
-
+      
       {result && (
         <div
           style={{
@@ -127,19 +129,22 @@ function HubSpotImportButton() {
             borderRadius: 6,
             fontSize: 12,
             fontWeight: 500,
-            background: result.success ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.15)',
-            border: result.success
-              ? '1px solid rgba(22,163,74,0.5)'
-              : '1px solid rgba(220,38,38,0.5)',
+            background: result.success 
+              ? 'rgba(22,163,74,0.15)' 
+              : 'rgba(220,38,38,0.15)',
+            border: `1px solid ${result.success ? 'rgba(22,163,74,0.5)' : 'rgba(220,38,38,0.5)'}`,
             color: result.success ? '#22c55e' : '#f87171',
             maxWidth: 320,
           }}
         >
-          {result.success
-            ? `✅ Imported ${result.imported} new contacts${
-                result.filtered > 0 ? ` (${result.filtered} filtered)` : ''
-              }`
-            : `❌ ${result.message || 'Import failed'}`}
+          {result.success ? (
+            <>
+              ✅ Imported {result.imported} new contacts
+              {result.filtered > 0 && ` (${result.filtered} filtered)`}
+            </>
+          ) : (
+            <>❌ {result.message || 'Import failed'}</>
+          )}
         </div>
       )}
     </div>
@@ -147,6 +152,7 @@ function HubSpotImportButton() {
 }
 
 // ---------- ROOT APP SHELL WITH O3PRO TABS ----------
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<MainTabId>('contacts');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -155,7 +161,7 @@ export default function App() {
 
   // Callback for when enrichment completes
   const handleEnrichmentComplete = async (updatedContact: Contact) => {
-    console.log('Enrichment completed for', updatedContact);
+    console.log("Enrichment completed for:", updatedContact);
     // Close modal and refresh contact list
     setSelectedContact(null);
     // Trigger refresh in ContactsBoard (passed down as prop)
@@ -178,7 +184,7 @@ export default function App() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 16,
+          gap: '16px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -200,7 +206,13 @@ export default function App() {
             AI
           </div>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 0.4 }}>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: 0.4,
+              }}
+            >
               Apex Intelligence
             </div>
             <div style={{ fontSize: 13, color: '#9ca3af' }}>
@@ -208,7 +220,7 @@ export default function App() {
             </div>
           </div>
         </div>
-
+        
         {/* HubSpot Import Button */}
         <HubSpotImportButton />
       </header>
@@ -261,41 +273,70 @@ export default function App() {
       </nav>
 
       {/* CURRENT TAB DESCRIPTION */}
-      <div style={{ padding: '12px 32px 8px 32px', fontSize: 12, color: '#9ca3af' }}>
+      <div
+        style={{
+          padding: '12px 32px 8px 32px',
+          fontSize: 12,
+          color: '#9ca3af',
+        }}
+      >
         {current.description}
       </div>
 
       {/* TAB CONTENT AREA */}
       <main style={{ padding: '0 24px 32px 24px' }}>
         {activeTab === 'contacts' && (
-          <ContactsBoard
+          <ContactsBoard 
             selectedContact={selectedContact}
             onSelectContact={setSelectedContact}
           />
         )}
         {activeTab === 'apex' && (
-          <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
             <ApexIntelligence />
           </div>
         )}
         {activeTab === 'cadence' && (
-          <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
             <CadenceDashboard />
           </div>
         )}
         {activeTab === 'enrichment' && (
-          <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
             <ContactEnrichmentView />
           </div>
         )}
         {activeTab === 'raw' && (
-          <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
+          <div
+            style={{
+              marginTop: 16,
+              borderRadius: 16,
+              overflow: 'hidden',
+              background: '#020617',
+            }}
+          >
             <RawDataViewer />
-          </div>
-        )}
-        {activeTab === 'whyme' && (  // ✅ ADD WHY ME TAB CONTENT
-          <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
-            <WhyMeTab />
           </div>
         )}
       </main>
@@ -313,6 +354,7 @@ export default function App() {
 }
 
 // ---------- CONTACTS BOARD (YOUR DARK MAIN DASH) ----------
+
 interface Contact {
   id: number;
   name: string;
@@ -332,7 +374,15 @@ interface Contact {
   profile_content?: string;
 }
 
-type SortField = 'name' | 'title' | 'company' | 'lifecycle_stage' | 'lead_status' | 'priority_score' | 'mdcp_score' | 'rss_score';
+type SortField =
+  | 'name'
+  | 'title'
+  | 'company'
+  | 'lifecycle_stage'
+  | 'lead_status'
+  | 'priority_score'
+  | 'mdcp_score'
+  | 'rss_score';
 
 interface ContactsBoardProps {
   selectedContact: Contact | null;
@@ -355,7 +405,8 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
     try {
       const res = await fetch('http://localhost:8000/api/contacts');
       const data = await res.json();
-      setContacts((data.contacts as Contact[]) || (data as Contact[]));
+      // backend returns a flat list in many places; support either shape
+      setContacts((data.contacts as Contact[]) || (data as Contact[]) || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -379,22 +430,21 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
       c.company?.toLowerCase().includes(q) ||
       c.email?.toLowerCase().includes(q) ||
       c.title?.toLowerCase().includes(q);
+
     const matchesTier = filterTier === 'all' || c.mdcp_tier === filterTier;
+
     return matchesSearch && matchesTier;
   });
 
   const sorted = [...filtered].sort((a, b) => {
     let aVal: any = a[sortField];
     let bVal: any = b[sortField];
-
-    if (aVal === null) aVal = sortDir === 'asc' ? Infinity : -Infinity;
-    if (bVal === null) bVal = sortDir === 'asc' ? Infinity : -Infinity;
-
+    if (aVal == null) aVal = sortDir === 'asc' ? Infinity : -Infinity;
+    if (bVal == null) bVal = sortDir === 'asc' ? Infinity : -Infinity;
     if (typeof aVal === 'string') {
       aVal = aVal.toLowerCase();
-      bVal = (bVal as string | undefined)?.toLowerCase();
+      bVal = (bVal as string | undefined)?.toLowerCase() || '';
     }
-
     if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
     if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
     return 0;
@@ -402,15 +452,36 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
 
   const stats = [
     { label: 'Total Contacts', value: contacts.length, color: '#6366f1' },
-    { label: 'HOT Leads', value: contacts.filter((c) => c.mdcp_tier === 'HOT').length, color: '#22c55e' },
-    { label: 'Warm', value: contacts.filter((c) => c.mdcp_tier === 'WARM').length, color: '#f97316' },
-    { label: 'Scored', value: contacts.filter((c) => c.priority_score != null).length, color: '#0ea5e9' },
+    {
+      label: 'HOT Leads',
+      value: contacts.filter((c) => c.mdcp_tier === 'HOT').length,
+      color: '#22c55e',
+    },
+    {
+      label: 'Warm',
+      value: contacts.filter((c) => c.mdcp_tier === 'WARM').length,
+      color: '#f97316',
+    },
+    {
+      label: 'Scored',
+      value: contacts.filter((c) => c.priority_score != null).length,
+      color: '#0ea5e9',
+    },
   ];
 
   if (loading) {
     return (
-      <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 18 }}>
-        Loading contacts...
+      <div
+        style={{
+          height: '70vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#9ca3af',
+          fontSize: 18,
+        }}
+      >
+        Loading contacts…
       </div>
     );
   }
@@ -418,7 +489,14 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
   return (
     <div style={{ padding: '16px 8px 0 8px' }}>
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 16,
+          marginBottom: 24,
+        }}
+      >
         {stats.map((s) => (
           <div
             key={s.label}
@@ -430,21 +508,42 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
               boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
             }}
           >
-            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, color: '#9ca3af', marginBottom: 6 }}>
+            <div
+              style={{
+                fontSize: 11,
+                textTransform: 'uppercase',
+                letterSpacing: 0.6,
+                color: '#9ca3af',
+                marginBottom: 6,
+              }}
+            >
               {s.label}
             </div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>
+              {s.value}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Search & Filter */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Search + Tier Filter */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
         <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
-          <Search size={18} style={{ position: 'absolute', left: 12, top: 10, color: '#64748b' }} />
+          <Search
+            size={18}
+            style={{ position: 'absolute', left: 12, top: 10, color: '#64748b' }}
+          />
           <input
             type="text"
-            placeholder="Search name, company, email, or title"
+            placeholder="Search name, company, email, or title…"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
@@ -462,7 +561,6 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
             }}
           />
         </div>
-
         <select
           value={filterTier}
           onChange={(e) => setFilterTier(e.target.value)}
@@ -478,10 +576,9 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
         >
           <option value="all">All tiers</option>
           <option value="HOT">🔥 HOT</option>
-          <option value="WARM">WARM</option>
-          <option value="COLD">COLD</option>
+          <option value="WARM">🟡 WARM</option>
+          <option value="COLD">❄️ COLD</option>
         </select>
-
         <button
           type="button"
           style={{
@@ -506,7 +603,7 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
       {/* Table */}
       <div
         style={{
-          background: 'rgba(15,23,42,0.95)',
+          background: 'rgba(15,23,42,0.95)',  // This should already be dark
           borderRadius: 14,
           border: '1px solid rgba(30,64,175,0.7)',
           boxShadow: '0 20px 45px rgba(15,23,42,0.95)',
@@ -514,17 +611,64 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
         }}
       >
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: 13,
+            }}
+          >
             <thead>
-              <tr style={{ background: 'rgba(15,23,42,1)', borderBottom: '1px solid rgba(51,65,85,0.8)' }}>
+              <tr
+                style={{
+                  background: 'rgba(15,23,42,1)',
+                  borderBottom: '1px solid rgba(51,65,85,0.8)',
+                }}
+              >
                 <SortableTh label="Name" field="name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
                 <SortableTh label="Title" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Company" field="company" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Lifecycle" field="lifecycle_stage" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Status" field="lead_status" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Priority" field="priority_score" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="MDCP" field="mdcp_score" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="RSS" field="rss_score" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
+                <SortableTh
+                  label="Company"
+                  field="company"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Lifecycle"
+                  field="lifecycle_stage"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Status"
+                  field="lead_status"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="Priority"
+                  field="priority_score"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="MDCP"
+                  field="mdcp_score"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
+                <SortableTh
+                  label="RSS"
+                  field="rss_score"
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={handleSort}
+                />
               </tr>
             </thead>
             <tbody>
@@ -533,7 +677,7 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
                 const mdcpColor = getScoreColor(c.mdcp_score);
                 const rssColor = getScoreColor(c.rss_score);
                 const isSelected = selectedContact?.id === c.id;
-
+                
                 return (
                   <tr
                     key={c.id}
@@ -542,14 +686,21 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
                       borderBottom: '1px solid rgba(31,41,55,0.9)',
                       transition: 'background 0.18s',
                       cursor: 'pointer',
-                      background: isSelected ? 'rgba(33, 128, 141, 0.15)' : 'transparent',
+                      background: isSelected 
+                        ? 'rgba(33, 128, 141, 0.15)' 
+                        : 'transparent',
                     }}
                     onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'rgba(30,64,175,0.25)';
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'rgba(30,64,175,0.25)';
+                      }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'transparent';
-                      else e.currentTarget.style.background = 'rgba(33, 128, 141, 0.15)';
+                      if (!isSelected) {
+                        e.currentTarget.style.background = 'transparent';
+                      } else {
+                        e.currentTarget.style.background = 'rgba(33, 128, 141, 0.15)';
+                      }
                     }}
                   >
                     <td style={tdStyle}>
@@ -559,7 +710,8 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
                             width: 32,
                             height: 32,
                             borderRadius: 999,
-                            background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 40%, #0ea5e9 100%)',
+                            background:
+                              'linear-gradient(135deg, #6366f1 0%, #4f46e5 40%, #0ea5e9 100%)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -576,18 +728,26 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
                             .toUpperCase()}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 500, color: '#e5e7eb' }}>{c.name}</div>
-                          <div style={{ fontSize: 11, color: '#9ca3af' }}>{c.email}</div>
+                          <div style={{ fontWeight: 500, color: '#e5e7eb' }}>
+                            {c.name}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                            {c.email}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td style={tdStyle}>{c.title}</td>
-                    <td style={tdStyle}>{c.company}</td>
+                    <td style={tdStyle}>{c.title || '—'}</td>
+                    <td style={tdStyle}>{c.company || '—'}</td>
                     <td style={tdStyle}>
-                      <span style={{ color: '#9ca3af' }}>{c.lifecycle_stage}</span>
+                      <span style={{ color: '#9ca3af' }}>
+                        {c.lifecycle_stage || '—'}
+                      </span>
                     </td>
                     <td style={tdStyle}>
-                      <span style={{ color: '#9ca3af' }}>{c.lead_status}</span>
+                      <span style={{ color: '#9ca3af' }}>
+                        {c.lead_status || '—'}
+                      </span>
                     </td>
                     <td style={tdStyle}>
                       <ScorePill value={c.priority_score} colors={priorityColor} />
@@ -619,7 +779,14 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
         </div>
       </div>
 
-      <div style={{ marginTop: 16, fontSize: 12, color: '#9ca3af', textAlign: 'right' }}>
+      <div
+        style={{
+          marginTop: 16,
+          fontSize: 12,
+          color: '#9ca3af',
+          textAlign: 'right',
+        }}
+      >
         Showing {sorted.length} of {contacts.length} contacts
       </div>
     </div>
@@ -627,21 +794,42 @@ function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps)
 }
 
 // ---------- SMALL PRESENTATIONAL HELPERS ----------
+
 function getScoreColor(score?: number) {
-  if (score == null) return { color: '#9ca3af', bg: 'rgba(31,41,55,0.9)' };
-  if (score >= 80) return { color: '#22c55e', bg: 'rgba(22,163,74,0.16)' };
-  if (score >= 60) return { color: '#f97316', bg: 'rgba(245,158,11,0.14)' };
+  if (score == null) {
+    return { color: '#9ca3af', bg: 'rgba(31,41,55,0.9)' };
+  }
+  if (score >= 80) {
+    return { color: '#22c55e', bg: 'rgba(22,163,74,0.16)' };
+  }
+  if (score >= 60) {
+    return { color: '#f97316', bg: 'rgba(245,158,11,0.14)' };
+  }
   return { color: '#f97373', bg: 'rgba(220,38,38,0.18)' };
 }
 
 function TierBadge({ tier }: { tier?: string }) {
-  const map: Record<string, { bg: string; border: string; color: string }> = {
-    HOT: { bg: 'rgba(22,163,74,0.12)', border: 'rgba(22,163,74,0.6)', color: '#22c55e' },
-    WARM: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.6)', color: '#fbbf24' },
-    COLD: { bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.6)', color: '#e5e7eb' },
+  const map: Record<
+    string,
+    { bg: string; border: string; color: string }
+  > = {
+    HOT: {
+      bg: 'rgba(22,163,74,0.12)',
+      border: 'rgba(22,163,74,0.6)',
+      color: '#22c55e',
+    },
+    WARM: {
+      bg: 'rgba(245,158,11,0.10)',
+      border: 'rgba(245,158,11,0.6)',
+      color: '#fbbf24',
+    },
+    COLD: {
+      bg: 'rgba(148,163,184,0.15)',
+      border: 'rgba(148,163,184,0.6)',
+      color: '#e5e7eb',
+    },
   };
   const style = map[tier || 'COLD'] || map['COLD'];
-
   return (
     <span
       style={{
@@ -660,7 +848,13 @@ function TierBadge({ tier }: { tier?: string }) {
   );
 }
 
-function ScorePill({ value, colors }: { value?: number; colors: { color: string; bg: string } }) {
+function ScorePill({
+  value,
+  colors,
+}: {
+  value?: number;
+  colors: { color: string; bg: string };
+}) {
   return (
     <span
       style={{
@@ -689,7 +883,6 @@ function SortableTh(props: {
 }) {
   const { label, field, sortField, sortDir, onSort } = props;
   const active = sortField === field;
-
   return (
     <th
       onClick={() => onSort(field)}
@@ -716,6 +909,7 @@ function SortableTh(props: {
 const tdStyle: React.CSSProperties = {
   padding: 12,
   fontSize: 13,
-  color: '#e5e7eb',
-  background: 'transparent',
+  color: '#e5e7eb',  // Make sure this is light
+  background: 'transparent',  // Add this if missing
 };
+

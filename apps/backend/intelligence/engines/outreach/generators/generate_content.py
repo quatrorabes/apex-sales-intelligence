@@ -16,6 +16,8 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 import os
+from whyme_helper import get_user_preferences, format_business_context
+
 DB_FILE = os.path.join(os.path.expanduser("~/projects/apex"), "apex.db")
 
 
@@ -30,6 +32,11 @@ class ContentGenerator:
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY required in .env")
         self.model = "gpt-4o"  # Latest and best model
+
+    
+    def get_user_prefs(self):
+        """Load Why Me? preferences"""
+        return get_user_preferences()
 
     async def generate_email_sequence(self, contact: Dict, profile: str) -> Dict:
         """Generate 3-email sequence"""

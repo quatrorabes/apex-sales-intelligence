@@ -1,61 +1,84 @@
 #!/usr/bin/env python3
 """
-Value Matching Engine
-Matches user's products/services to contact's needs
+Value Matcher - AI-Powered Product-to-Pain Matching
+Analyzes enrichment data to match user's products/services to contact needs
 """
-import os
-import json
-from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()  # ✅ Add this line
+import json
+import sqlite3
+import os
+import sys
+from openai import OpenAI
+from datetime import datetime
+
+# Add generators to path for whyme_helper
+GENERATORS_PATH = os.path.join(os.path.dirname(__file__), 'generators')
+sys.path.insert(0, GENERATORS_PATH)
+
+from whyme_helper import get_user_preferences
 
 class ValueMatcher:
-    def __init__(self):
-        api_key = os.getenv('OPENAI_API_KEY')
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment")
-        self.client = OpenAI(api_key=api_key)
+    """Matches user's Why Me? offerings to contact pain points"""
     
-    def match(self, user_prefs, contact_profile):
-        """Match user's products to contact's needs"""
+    def __init__(self, db_path=None):
+        self.db_path = db_path or '/Users/chrisrabenold/projects/apex/apex.db'
+        self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+    
+    def match(self, contact):
+        """Match best product to contact's needs using AI"""
         
-        # Extract user's offerings
-        products = json.loads(user_prefs.get('products', '[]'))
-        services = json.loads(user_prefs.get('services', '[]'))
-        values = json.loads(user_prefs.get('value_propositions', '[]'))
-        targets = json.loads(user_prefs.get('target_customers', '[]'))
-        personal = json.loads(user_prefs.get('personal_differentiators', '[]'))
-        company = json.loads(user_prefs.get('company_differentiators', '[]'))
+        # Get user preferences
+        prefs = get_user_preferences()
+        if not prefs or not prefs['products']:
+            return {
+                'success': False,
+                'error': 'No products defined in Why Me? tab'
+            }
         
-        # Extract contact's needs
-        pain_points = contact_profile.get('pain_points', [])
-        profile_text = contact_profile.get('profile_content', '')[:2000]
+        # Extract profile sections
+        profile = contact.get('profile_content', '')
         
-        prompt = f"""You are a sales intelligence AI. Match the seller's offerings to the buyer's needs.
+        if not profile:
+            return {
+                'success': False,
+                'error': 'Contact not enriched yet'
+            }
+        
+        # Extract relevant sections
+        pain_points = self._extract_section(profile, '9. Pain Points')
+        product_fit = self._extract_section(profile, '10. Product Fit')
+        
+        # Build matching prompt
+        prompt = f"""
+You are an AI sales intelligence analyst. Analyze this contact and match them to the best offering.
 
-SELLER (User):
-Products: {', '.join(products)}
-Services: {', '.join(services)}
-Value Props: {', '.join(values)}
-Target Customers: {', '.join(targets)}
-Personal Edge: {', '.join(personal)}
-Company Edge: {', '.join(company)}
+YOUR OFFERINGS:
+Products: {', '.join(prefs['products'])}
+Services: {', '.join(prefs['services'])}
+Value Propositions: {'. '.join(prefs['value_propositions'])}
 
-BUYER (Contact):
-Name: {contact_profile.get('firstname')} {contact_profile.get('lastname')}
-Title: {contact_profile.get('jobtitle')}
-Company: {contact_profile.get('company')}
-Pain Points: {', '.join(pain_points) if pain_points else 'Unknown'}
-Profile: {profile_text}
+CONTACT PROFILE:
+Name: {contact.get('name')}
+Title: {contact.get('title')}
+Company: {contact.get('company')}
 
-OUTPUT (JSON only):
+THEIR PAIN POINTS:
+{pain_points[:1000] if pain_points else 'Not available'}
+
+EXISTING PRODUCT FIT ANALYSIS:
+{product_fit[:1000] if product_fit else 'Not available'}
+
+TASK:
+1. Select the #1 BEST product/service that fits this contact's needs
+2. Explain WHY in 2-3 sentences (reference their specific pain points)
+3. Suggest the best outreach angle (what to emphasize)
+
+Return ONLY valid JSON:
 {{
-  "best_product": "exact product name from list",
-  "best_service": "exact service name from list", 
-  "fit_score": 85,
-  "reasoning": "2-sentence explanation of why this fits",
-  "talking_points": ["point 1", "point 2", "point 3"]
+  "best_product": "exact product name from YOUR OFFERINGS list",
+  "reasoning": "2-3 sentence explanation referencing their pain points",
+  "suggested_angle": "what to emphasize in outreach",
+  "confidence": "HIGH/MEDIUM/LOW"
 }}
 """
         
@@ -63,26 +86,86 @@ OUTPUT (JSON only):
             response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "You are a sales matching AI. Return ONLY valid JSON."},
+                    {"role": "system", "content": "You are a sales intelligence analyst. Return only valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=500
+                response_format={"type": "json_object"}
             )
             
             result = json.loads(response.choices[0].message.content)
+            
+            # Save to database
+            conn = sqlite3.connect(self.db_path)
+            conn.execute("""
+                UPDATE contacts 
+                SET product_match = ?,
+                    match_reasoning = ?,
+                    suggested_angle = ?,
+                    match_confidence = ?,
+                    matched_at = ?
+                WHERE id = ?
+            """, (
+                result.get('best_product', ''),
+                result.get('reasoning', ''),
+                result.get('suggested_angle', ''),
+                result.get('confidence', 'MEDIUM'),
+                datetime.now().isoformat(),
+                contact['id']
+            ))
+            conn.commit()
+            conn.close()
+            
             return {
                 'success': True,
                 'match': result
             }
-            
+        
         except Exception as e:
             return {
                 'success': False,
-                'error': str(e)
+                'error': f'Matching failed: {str(e)}'
             }
+    
+    def _extract_section(self, profile, section_title):
+        """Extract specific section from enrichment profile"""
+        if section_title not in profile:
+            return None
+        
+        # Find section
+        start = profile.find(section_title)
+        if start == -1:
+            return None
+        
+        # Find next section (starts with number followed by period)
+        next_section = start + len(section_title)
+        for i in range(next_section, len(profile) - 3):
+            if profile[i].isdigit() and profile[i+1] == '.' and profile[i+2] == ' ':
+                return profile[start:i].strip()
+        
+        # If no next section found, return to end
+        return profile[start:].strip()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # Test
+    if len(sys.argv) < 2:
+        print("Usage: python value_matcher.py <contact_id>")
+        sys.exit(1)
+    
+    contact_id = int(sys.argv[1])
+    
+    conn = sqlite3.connect('/Users/chrisrabenold/projects/apex/apex.db')
+    conn.row_factory = sqlite3.Row
+    contact = dict(conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone())
+    conn.close()
+    
     matcher = ValueMatcher()
-    print("✅ ValueMatcher initialized")
+    result = matcher.match(contact)
+    
+    if result['success']:
+        print("✅ Match Found!")
+        print(f"Best Product: {result['match']['best_product']}")
+        print(f"Reasoning: {result['match']['reasoning']}")
+        print(f"Angle: {result['match']['suggested_angle']}")
+    else:
+        print(f"❌ Error: {result['error']}")

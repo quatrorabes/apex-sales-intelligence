@@ -8,22 +8,14 @@ import os
 import sqlite3
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
-# Add to each script at the top
 from config import DB_PATH
+from whyme_helper import get_user_preferences, format_business_context
 
-class UnifiedCallScriptGenerator:
-    """The ULTIMATE call script generator combining all approaches"""
-    
-    def __init__(self, db_path=None):
-        self.db_path = db_path or DB_PATH  # ✅ Just use it
-        self._init_tables()
-        self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
-        self.openai_key = os.getenv("OPENAI_API_KEY")
-        # ... rest stays the same
-        
+
+
 
 load_dotenv()
 
@@ -31,7 +23,6 @@ class UnifiedCallScriptGenerator:
     """The ULTIMATE call script generator combining all approaches"""
     
     def __init__(self, db_path=None):
-        from config import DB_PATH
         self.db_path = db_path or DB_PATH
         self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
         self.openai_key = os.getenv("OPENAI_API_KEY")
@@ -77,30 +68,55 @@ class UnifiedCallScriptGenerator:
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute("""
-            SELECT firstname, lastname, company, phone, jobtitle,
-                   score, tier, profile_content, deep_intel,
-                   personality_profile, key_intelligence
+            SELECT id, name, firstname, lastname, email, phone, 
+                   company, job_title, title,
+                   profile_content, enrichment_data, pain_points,
+                   mdcp_score, priority_score, mdcp_tier
             FROM contacts 
-            WHERE id = ? AND enriched = 1
+            WHERE id = ?
         """, (contact_id,))
         
         row = cursor.fetchone()
         conn.close()
         
-        return dict(row) if row else None
+        if not row:
+            return None
+        
+        # Convert to dict and handle missing fields
+        profile = dict(row)
+        
+        # Extract name components
+        if not profile.get('firstname') or not profile.get('lastname'):
+            full_name = profile.get('name', '')
+            parts = full_name.split(' ', 1)
+            profile['firstname'] = parts[0] if parts else ''
+            profile['lastname'] = parts[1] if len(parts) > 1 else ''
+        
+        # Use job_title or title
+        if not profile.get('job_title'):
+            profile['job_title'] = profile.get('title', 'Professional')
+        
+        # Add score and tier for backwards compatibility
+        profile['score'] = profile.get('priority_score') or profile.get('mdcp_score') or 0
+        profile['tier'] = profile.get('mdcp_tier', 'UNKNOWN')
+        
+        return profile
     
     def detect_disc_profile(self, profile: Dict) -> str:
         """Auto-detect DISC profile from enrichment data"""
-        personality = profile.get('personality_profile', '').lower()
+        # Check enrichment_data first
+        enrichment = profile.get('enrichment_data', '')
+        profile_content = profile.get('profile_content', '')
+        combined = f"{enrichment} {profile_content}".lower()
         
-        # Simple detection logic (enhance with ML later)
-        if any(word in personality for word in ['direct', 'results', 'decisive']):
+        # Simple detection logic
+        if any(word in combined for word in ['direct', 'results', 'decisive', 'competitive', 'driven']):
             return 'D'
-        elif any(word in personality for word in ['social', 'enthusiastic', 'people']):
+        elif any(word in combined for word in ['social', 'enthusiastic', 'people', 'outgoing', 'expressive']):
             return 'I'
-        elif any(word in personality for word in ['steady', 'patient', 'supportive']):
+        elif any(word in combined for word in ['steady', 'patient', 'supportive', 'reliable', 'consistent']):
             return 'S'
-        elif any(word in personality for word in ['analytical', 'precise', 'detailed']):
+        elif any(word in combined for word in ['analytical', 'precise', 'detailed', 'systematic', 'accurate']):
             return 'C'
         else:
             return 'D'  # Default to Direct
@@ -108,11 +124,13 @@ class UnifiedCallScriptGenerator:
     def generate_script(self, profile: Dict, variant: int) -> str:
         """Generate script using best approach based on variant"""
         
-        # Extract data
-        name = f"{profile.get('firstname','')} {profile.get('lastname','')}"
-        title = profile.get('jobtitle','')
-        company = profile.get('company','')
-        intel = (profile.get('profile_content') or profile.get('deep_intel', ''))[:1200]
+        # Extract data with safe defaults
+        firstname = profile.get('firstname', '')
+        lastname = profile.get('lastname', '')
+        name = f"{firstname} {lastname}".strip() or profile.get('name', 'Contact')
+        title = profile.get('job_title') or profile.get('title', 'Professional')
+        company = profile.get('company', 'their company')
+        intel = (profile.get('profile_content') or profile.get('enrichment_data', ''))[:1200]
         
         # Detect personality
         disc = self.detect_disc_profile(profile)
@@ -166,7 +184,7 @@ IF "Too busy": [Response respecting their {approach['pace']}]
 ════════════════════════════════════
 """
         
-        # Use Perplexity for generation (like File #1)
+        # Use Perplexity for generation
         payload = {
             "model": "sonar-pro",
             "messages": [{"role": "user", "content": prompt}],
@@ -190,19 +208,19 @@ IF "Too busy": [Response respecting their {approach['pace']}]
     
     def fallback_script(self, profile: Dict, variant: int, disc: str) -> str:
         """Fallback if API fails"""
-        name = f"{profile.get('firstname','')}"
-        company = profile.get('company','')
+        firstname = profile.get('firstname', '')
+        company = profile.get('company', 'the company')
         approach = self.disc_approaches[disc]
         
         return f"""
 ════════════════════════════════════
 CALL SCRIPT – {self.script_styles[variant]}
-{name} at {company}
+{firstname} at {company}
 Personality: {disc}-Type
 ════════════════════════════════════
 
 📞 OPENER:
-"Hi {name}, I know you're busy so I'll be brief..."
+"Hi {firstname}, I know you're busy so I'll be brief..."
 
 🎯 HOOK / VALUE:
 "We help companies like {company} [specific benefit]."
@@ -231,6 +249,7 @@ IF "Too busy": "I understand - when works better?"
         """Generate all 3 variants with personality optimization"""
         profile = self.get_profile(contact_id)
         if not profile:
+            print(f"❌ Contact {contact_id} not found")
             return None
         
         disc = self.detect_disc_profile(profile)
@@ -238,8 +257,8 @@ IF "Too busy": "I understand - when works better?"
         
         print(f"\n🎯 Generating scripts for {profile['firstname']} {profile['lastname']}")
         print(f"   Detected personality: {disc}-Type")
-        print(f"   Company: {profile['company']}")
-        print(f"   Score: {profile['score']} | Tier: {profile['tier']}\n")
+        print(f"   Company: {profile.get('company', 'N/A')}")
+        print(f"   Score: {profile.get('score', 0)} | Tier: {profile.get('tier', 'N/A')}\n")
         
         for variant in (1, 2, 3):
             print(f"   Variant {variant} ({self.script_styles[variant]})... ", end="", flush=True)
@@ -266,11 +285,11 @@ IF "Too busy": "I understand - when works better?"
             WHERE id=?
         """, (
             scripts[1], scripts[2], scripts[3],
-            datetime.utcnow().isoformat(), contact_id
+            datetime.now(timezone.utc).isoformat(), contact_id
         ))
         conn.commit()
         conn.close()
-
+        
 # CLI Interface
 if __name__ == "__main__":
     import sys
@@ -278,7 +297,7 @@ if __name__ == "__main__":
     generator = UnifiedCallScriptGenerator()
     
     if len(sys.argv) < 2:
-        print("Usage: python call_script_generator_unified.py <contact_id>")
+        print("Usage: python call_script_generator_unified.py tact_id>")
         sys.exit(1)
     
     contact_id = int(sys.argv[1])
