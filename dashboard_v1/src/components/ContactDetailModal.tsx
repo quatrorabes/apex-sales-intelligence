@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   X, Sparkles, Loader, Mail, Phone, Linkedin, Target, Lightbulb,
-  PhoneCall, StickyNote, Copy, Check, Zap, FileText, User, Building2, 
-  Award, TrendingUp, Package
+  PhoneCall, StickyNote, Copy, Check, Zap, FileText, User, Building2,
+  Award, TrendingUp, ChevronRight, Rocket
 } from 'lucide-react';
+import ActivityLogger from './ActivityLogger';
+import ActivityTimeline from './ActivityTimeline';
 
 interface Contact {
   id: number;
@@ -58,10 +60,12 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   const [activeContentTab, setActiveContentTab] = useState<ContentTab>('email');
   const [enriching, setEnriching] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [localContact, setLocalContact] = useState<Contact>(contact);
+  const [localContact, setLocalContact] = useState(contact);
   const [notes, setNotes] = useState(contact.notes || '');
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showEnrichSuccess, setShowEnrichSuccess] = useState(false);
+  const [showGenerateSuccess, setShowGenerateSuccess] = useState(false);
+  const [justEnriched, setJustEnriched] = useState(false);
 
   useEffect(() => {
     fetch(`http://localhost:8000/api/contacts/${contact.id}`)
@@ -74,7 +78,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   }, [contact.id]);
 
   const isEnriched = localContact.enrichment_status === 'completed' && localContact.profile_content && localContact.profile_content.length > 0;
-  const hasContent = localContact.email_1_subject || localContact.email_1_body || localContact.call_script_1 || localContact.linkedin_connect;
+  const hasContent = !!(localContact.email_1_subject || localContact.email_1_body || localContact.call_script_1 || localContact.linkedin_connect);
 
   const extractSection = (sectionNumber: string, sectionName: string): string | null => {
     const profile = localContact.profile_content || '';
@@ -110,6 +114,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   const handleEnrich = async () => {
     setEnriching(true);
     setShowEnrichSuccess(false);
+    setJustEnriched(false);
     try {
       const res = await fetch(`http://localhost:8000/api/contacts/${contact.id}/enrich`, { method: 'POST' });
       const data = await res.json();
@@ -119,7 +124,10 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
         setLocalContact(updatedContact);
         onEnrichmentComplete?.(updatedContact);
         setShowEnrichSuccess(true);
-        setTimeout(() => setShowEnrichSuccess(false), 3000);
+        setJustEnriched(true);
+        setViewMode('intelligence');
+        setActiveIntelTab('pain-points');
+        setTimeout(() => setShowEnrichSuccess(false), 5000);
       }
     } catch (err) {
       console.error('Enrichment failed:', err);
@@ -130,19 +138,27 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
 
   const handleGenerateContent = async () => {
     setGenerating(true);
+    setShowGenerateSuccess(false);
     try {
-      await fetch(`http://localhost:8000/api/contacts/${contact.id}/generate-content`, {
+      const res = await fetch(`http://localhost:8000/api/contacts/${contact.id}/generate-content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content_type: 'all' }),
       });
-      // Always refresh to get any content that was saved
+      const data = await res.json();
       const updatedRes = await fetch(`http://localhost:8000/api/contacts/${contact.id}`);
       const updatedContact = await updatedRes.json();
       setLocalContact(updatedContact);
+      onEnrichmentComplete?.(updatedContact);
+      if (data.success || data.results) {
+        setShowGenerateSuccess(true);
+        setJustEnriched(false);
+        setViewMode('outreach');
+        setActiveContentTab('email');
+        setTimeout(() => setShowGenerateSuccess(false), 3000);
+      }
     } catch (err) {
       console.error('Content generation failed:', err);
-      // Still try to refresh
       try {
         const updatedRes = await fetch(`http://localhost:8000/api/contacts/${contact.id}`);
         const updatedContact = await updatedRes.json();
@@ -176,223 +192,623 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', borderRadius: 20, width: '95%', maxWidth: 1400, height: '90vh', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.95)', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', flexDirection: 'column' }}>
-
-        {/* HEADER */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(148,163,184,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexShrink: 0 }}>
-          <div>
-            <h2 style={{ margin: 0, color: '#f1f5f9', fontSize: 24, fontWeight: 700 }}>{localContact.name}</h2>
-            <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: 14 }}>{localContact.title} at {localContact.company}</p>
-            <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-              {localContact.email && <span style={{ color: '#64748b', fontSize: 13 }}>{localContact.email}</span>}
-              {localContact.phone && <span style={{ color: '#64748b', fontSize: 13 }}>{localContact.phone}</span>}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button onClick={handleEnrich} disabled={enriching} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: showEnrichSuccess ? 'rgba(16,185,129,0.2)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: showEnrichSuccess ? '#10b981' : '#fff', fontSize: 13, fontWeight: 600, cursor: enriching ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-              {enriching ? <><Loader size={16} className="animate-spin" />Enriching...</> : showEnrichSuccess ? <><Check size={16} />Enriched!</> : <><Sparkles size={16} />{isEnriched ? 'Re-Enrich' : 'Enrich'}</>}
-            </button>
-            <button onClick={onClose} style={{ background: 'rgba(148,163,184,0.1)', border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#94a3b8' }}><X size={20} /></button>
-          </div>
-        </div>
-
-        {/* MODE TABS */}
-        <div style={{ display: 'flex', borderBottom: '1px solid rgba(148,163,184,0.2)', flexShrink: 0 }}>
-          {[{ id: 'intelligence', label: 'Intelligence', icon: Target }, { id: 'dossier', label: 'Dossier', icon: FileText }, { id: 'outreach', label: 'Outreach', icon: Mail }].map((mode) => {
-            const Icon = mode.icon;
-            return (
-              <button key={mode.id} onClick={() => setViewMode(mode.id as ViewMode)} style={{ flex: 1, padding: 16, border: 'none', borderBottom: viewMode === mode.id ? '3px solid #6366f1' : '3px solid transparent', background: viewMode === mode.id ? 'rgba(99,102,241,0.1)' : 'transparent', color: viewMode === mode.id ? '#e5e7eb' : '#9ca3af', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-                <Icon size={18} />{mode.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* INTELLIGENCE TAB */}
-        {viewMode === 'intelligence' && (
-          <>
-            <div style={{ display: 'flex', gap: 8, padding: '12px 24px', borderBottom: '1px solid rgba(148,163,184,0.2)', background: 'rgba(15,23,42,0.5)', flexShrink: 0 }}>
-              {[{ id: 'pain-points', label: 'Pain Points', icon: Target }, { id: 'product-fit', label: 'Product Fit', icon: Sparkles }, { id: 'insights', label: 'Insights', icon: Lightbulb }, { id: 'call-prep', label: 'Call Prep', icon: PhoneCall }, { id: 'notes', label: 'Notes', icon: StickyNote }].map((tab) => {
-                const Icon = tab.icon;
-                return (<button key={tab.id} onClick={() => setActiveIntelTab(tab.id as IntelTab)} style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: activeIntelTab === tab.id ? 'rgba(99,102,241,0.15)' : 'transparent', color: activeIntelTab === tab.id ? '#e5e7eb' : '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><Icon size={14} />{tab.label}</button>);
-              })}
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-              {!isEnriched ? (
-                <EmptyState icon={<Sparkles size={48} />} title="Ready to Unlock Intelligence" subtitle="Click the Enrich button above." />
-              ) : (
-                <>
-                  {activeIntelTab === 'pain-points' && <ContentSection title="Pain Points" content={localContact.pain_points || dossierData.painPoints} icon={<Target size={18} color="#6366f1" />} />}
-                  {activeIntelTab === 'product-fit' && <ContentSection title="Product Fit" content={localContact.product_match || dossierData.productFit} icon={<Sparkles size={18} color="#6366f1" />} />}
-                  {activeIntelTab === 'insights' && <ContentSection title="Key Insights" content={localContact.talking_points || dossierData.keyInsights} icon={<Lightbulb size={18} color="#6366f1" />} />}
-                  {activeIntelTab === 'call-prep' && (
-                    <>
-                      <ContentSection title="Recommended Action" content={localContact.recommended_action || dossierData.finalNote} icon={<PhoneCall size={18} color="#6366f1" />} />
-                      <div style={{ display: 'flex', gap: 16, marginTop: 24 }}>
-                        <ScoreCard label="MDCP" value={localContact.mdcp_score} color="#6366f1" />
-                        <ScoreCard label="RSS" value={localContact.rss_score} color="#10b981" />
-                        <ScoreCard label="Priority" value={localContact.priority_score} color="#f59e0b" />
-                      </div>
-                    </>
-                  )}
-                  {activeIntelTab === 'notes' && (
-                    <div>
-                      <h4 style={{ color: '#e5e7eb', marginBottom: 12 }}>Internal Notes</h4>
-                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={handleSaveNotes} placeholder="Add notes..." style={{ width: '100%', minHeight: 250, padding: 16, borderRadius: 10, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(15,23,42,0.6)', color: '#e5e7eb', fontSize: 14, lineHeight: 1.6, resize: 'vertical' }} />
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* DOSSIER TAB */}
-        {viewMode === 'dossier' && (
-          <>
-            <div style={{ display: 'flex', gap: 8, padding: '12px 24px', borderBottom: '1px solid rgba(148,163,184,0.2)', background: 'rgba(15,23,42,0.5)', flexShrink: 0 }}>
-              {[{ id: 'professional', label: 'Professional', icon: User }, { id: 'company', label: 'Company', icon: Building2 }, { id: 'personality', label: 'Personality', icon: Award }].map((tab) => {
-                const Icon = tab.icon;
-                return (<button key={tab.id} onClick={() => setActiveDossierTab(tab.id as DossierTab)} style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: activeDossierTab === tab.id ? 'rgba(99,102,241,0.15)' : 'transparent', color: activeDossierTab === tab.id ? '#e5e7eb' : '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}><Icon size={14} />{tab.label}</button>);
-              })}
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-              {!isEnriched ? (
-                <EmptyState icon={<FileText size={48} />} title="No Dossier Available" subtitle="Enrich this contact first." />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {activeDossierTab === 'professional' && (
-                    <>
-                      <DossierCard title="Overview" content={dossierData.overview} icon={<User size={16} color="#6366f1" />} />
-                      <DossierCard title="Background" content={dossierData.background} icon={<FileText size={16} color="#6366f1" />} />
-                      <DossierCard title="Education" content={dossierData.education} icon={<Award size={16} color="#6366f1" />} />
-                      <DossierCard title="Recent Mentions" content={dossierData.recentMentions} icon={<TrendingUp size={16} color="#6366f1" />} />
-                    </>
-                  )}
-                  {activeDossierTab === 'company' && (
-                    <>
-                      <DossierCard title="Company Overview" content={dossierData.companyOverview} icon={<Building2 size={16} color="#6366f1" />} />
-                    </>
-                  )}
-                  {activeDossierTab === 'personality' && (
-                    <>
-                      <DossierCard title="Personality" content={dossierData.personality} icon={<Award size={16} color="#6366f1" />} />
-                      <DossierCard title="Myers-Briggs" content={dossierData.myersBriggs} icon={<User size={16} color="#6366f1" />} />
-                      <DossierCard title="Social Profiles" content={dossierData.socialProfiles} icon={<Linkedin size={16} color="#6366f1" />} />
-                    </>
-                  )}
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: 20
+        }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            borderRadius: 20,
+            width: '95%',
+            maxWidth: 1400,
+            height: '90vh',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.95)',
+            border: '1px solid rgba(99,102,241,0.3)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* SUCCESS BANNER */}
+          {showEnrichSuccess && (
+            <div style={{ background: 'linear-gradient(135deg, #10b981, #059669)', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'white', marginBottom: 4 }}>
+                  <Sparkles size={18} style={{ display: 'inline', marginRight: 8 }} />
+                  Intelligence Unlocked!
                 </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* OUTREACH TAB */}
-        {viewMode === 'outreach' && (
-          <>
-            <div style={{ display: 'flex', gap: 8, padding: '12px 24px', borderBottom: '1px solid rgba(148,163,184,0.2)', background: 'rgba(15,23,42,0.5)', flexShrink: 0, alignItems: 'center' }}>
-              {[{ id: 'email', label: 'Email', icon: Mail, color: '#6366f1' }, { id: 'call', label: 'Call Scripts', icon: PhoneCall, color: '#10b981' }, { id: 'linkedin', label: 'LinkedIn', icon: Linkedin, color: '#0ea5e9' }].map((tab) => {
-                const Icon = tab.icon;
-                return (<button key={tab.id} onClick={() => setActiveContentTab(tab.id as ContentTab)} style={{ padding: '10px 20px', borderRadius: 8, border: activeContentTab === tab.id ? `1px solid ${tab.color}` : '1px solid transparent', background: activeContentTab === tab.id ? `${tab.color}15` : 'transparent', color: activeContentTab === tab.id ? tab.color : '#9ca3af', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}><Icon size={16} />{tab.label}</button>);
-              })}
-              <button onClick={handleGenerateContent} disabled={generating || !isEnriched} style={{ marginLeft: 'auto', padding: '10px 20px', borderRadius: 8, border: 'none', background: generating ? 'rgba(99,102,241,0.3)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: generating || !isEnriched ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 8, opacity: !isEnriched ? 0.5 : 1 }}>
-                {generating ? <><Loader size={16} className="animate-spin" />Generating...</> : <><Zap size={16} />Generate All Content</>}
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>
+                  Explore insights, personality, and company intel
+                </div>
+              </div>
+              <button
+                onClick={() => { setViewMode('outreach'); setShowEnrichSuccess(false); }}
+                style={{
+                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '10px 20px',
+                  color: 'white',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <Rocket size={16} style={{ display: 'inline', marginRight: 6 }} />
+                Generate Outreach →
               </button>
             </div>
+          )}
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
-              {!isEnriched ? (
-                <EmptyState icon={<Mail size={48} />} title="Enrich First" subtitle="Generate intelligence before creating outreach content." />
-              ) : !hasContent ? (
-                <EmptyState icon={<Zap size={48} />} title="Ready to Generate" subtitle='Click "Generate All Content" to create personalized outreach.' />
-              ) : (
-                <>
-                  {/* EMAIL TAB */}
-                  {activeContentTab === 'email' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                      {(localContact.email_1_subject || localContact.email_1_body) ? (
-                        [1, 2, 3].map((num) => {
+          {/* HEADER */}
+          <div style={{ padding: '20px 32px', borderBottom: '1px solid rgba(148,163,184,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 999,
+                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: 18,
+                  fontWeight: 700
+                }}>
+                  {localContact.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, color: '#e5e7eb', marginBottom: 4 }}>{localContact.name}</h2>
+                  <div style={{ fontSize: 13, color: '#9ca3af' }}>{localContact.title} at {localContact.company}</div>
+                </div>
+                <StatusBadge contact={localContact} />
+              </div>
+              <div style={{ display: 'flex', gap: 12, fontSize: 12, color: '#9ca3af' }}>
+                {localContact.email && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} />{localContact.email}</div>}
+                {localContact.phone && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={14} />{localContact.phone}</div>}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={handleEnrich}
+                disabled={enriching}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(99,102,241,0.5)',
+                  background: enriching ? 'rgba(30,41,59,0.5)' : 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2))',
+                  color: enriching ? '#64748b' : '#a5b4fc',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: enriching ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                {enriching ? (
+                  <>
+                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    Enriching...
+                  </>
+                ) : showEnrichSuccess ? (
+                  <>
+                    <Check size={16} />
+                    Enriched!
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} />
+                    {isEnriched ? 'Re-Enrich' : 'Enrich'}
+                  </>
+                )}
+              </button>
+              <button onClick={onClose} style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid rgba(148,163,184,0.3)', background: 'rgba(30,41,59,0.6)', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+
+          {/* GENERATE CONTENT CTA */}
+          {justEnriched && !hasContent && !showEnrichSuccess && (
+            <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15))', padding: '16px 32px', borderBottom: '1px solid rgba(99,102,241,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#e5e7eb', marginBottom: 4 }}>
+                  <Zap size={16} style={{ display: 'inline', marginRight: 6, color: '#fbbf24' }} />
+                  Ready for Next Step
+                </div>
+                <div style={{ fontSize: 12, color: '#9ca3af' }}>Generate personalized emails, call scripts, and LinkedIn messages</div>
+              </div>
+              <button
+                onClick={handleGenerateContent}
+                disabled={generating}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: generating ? 'rgba(71,85,105,0.5)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  color: 'white',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: generating ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                {generating ? (
+                  <>
+                    <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Rocket size={16} />
+                    Generate All Content
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* MODE TABS */}
+          <div style={{ display: 'flex', borderBottom: '1px solid rgba(148,163,184,0.2)' }}>
+            {[
+              { id: 'intelligence', label: 'Intelligence', icon: Target, badge: isEnriched ? '✓' : null },
+              { id: 'dossier', label: 'Dossier', icon: FileText },
+              { id: 'outreach', label: 'Outreach', icon: Mail, badge: hasContent ? '✓' : null }
+            ].map((mode) => {
+              const Icon = mode.icon;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setViewMode(mode.id as ViewMode)}
+                  style={{
+                    flex: 1,
+                    padding: 16,
+                    border: 'none',
+                    borderBottom: viewMode === mode.id ? '3px solid #6366f1' : '3px solid transparent',
+                    background: viewMode === mode.id ? 'rgba(99,102,241,0.1)' : 'transparent',
+                    color: viewMode === mode.id ? '#e5e7eb' : '#9ca3af',
+                    fontSize: 15,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    position: 'relative'
+                  }}
+                >
+                  <Icon size={18} />
+                  {mode.label}
+                  {mode.badge && (
+                    <span style={{ position: 'absolute', top: 8, right: 8, background: '#10b981', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 999 }}>
+                      {mode.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* CONTENT AREA */}
+          <div style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+            {viewMode === 'intelligence' && (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                  {[
+                    { id: 'pain-points', label: 'Pain Points', icon: Target },
+                    { id: 'product-fit', label: 'Product Fit', icon: Sparkles },
+                    { id: 'insights', label: 'Insights', icon: Lightbulb },
+                    { id: 'call-prep', label: 'Call Prep', icon: PhoneCall },
+                    { id: 'notes', label: 'Notes', icon: StickyNote }
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveIntelTab(tab.id as IntelTab)}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: 6,
+                          border: 'none',
+                          background: activeIntelTab === tab.id ? 'rgba(99,102,241,0.15)' : 'transparent',
+                          color: activeIntelTab === tab.id ? '#e5e7eb' : '#9ca3af',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Icon size={16} />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {!isEnriched ? (
+                  <EmptyState
+                    icon={<Sparkles size={48} color="#6366f1" />}
+                    title="Ready to Unlock Intelligence"
+                    subtitle="Click the Enrich button above to discover pain points, personality insights, and more."
+                  />
+                ) : (
+                  <>
+                    {activeIntelTab === 'pain-points' && (
+                      <ContentSection
+                        title="Pain Points"
+                        content={dossierData.painPoints}
+                        icon={<Target size={20} color="#ef4444" />}
+                      />
+                    )}
+                    {activeIntelTab === 'product-fit' && (
+                      <ContentSection
+                        title="Product Fit Analysis"
+                        content={dossierData.productFit}
+                        icon={<Sparkles size={20} color="#8b5cf6" />}
+                      />
+                    )}
+                    {activeIntelTab === 'insights' && (
+                      <ContentSection
+                        title="Key Insights"
+                        content={dossierData.keyInsights}
+                        icon={<Lightbulb size={20} color="#fbbf24" />}
+                      />
+                    )}
+                    {activeIntelTab === 'call-prep' && (
+                      <>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
+                          <ScoreCard label="Priority" value={localContact.priority_score} color="#22c55e" />
+                          <ScoreCard label="MDCP" value={localContact.mdcp_score} color="#eab308" />
+                          <ScoreCard label="RSS" value={localContact.rss_score} color="#06b6d4" />
+                        </div>
+                        <ContentSection
+                          title="Call Preparation"
+                          content={dossierData.finalNote}
+                          icon={<PhoneCall size={20} color="#10b981" />}
+                        />
+                      </>
+                    )}
+                    {activeIntelTab === 'notes' && (
+                      <div>
+                        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb', marginBottom: 12 }}>Internal Notes</h3>
+                        <textarea
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          onBlur={handleSaveNotes}
+                          placeholder="Add notes about this contact..."
+                          style={{
+                            width: '100%',
+                            minHeight: 250,
+                            padding: 16,
+                            borderRadius: 10,
+                            border: '1px solid rgba(148,163,184,0.3)',
+                            background: 'rgba(15,23,42,0.6)',
+                            color: '#e5e7eb',
+                            fontSize: 14,
+                            lineHeight: 1.6,
+                            resize: 'vertical'
+                          }}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {viewMode === 'dossier' && (
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+                  {[
+                    { id: 'professional', label: 'Professional', icon: User },
+                    { id: 'company', label: 'Company', icon: Building2 },
+                    { id: 'personality', label: 'Personality', icon: Award }
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveDossierTab(tab.id as DossierTab)}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: 6,
+                          border: 'none',
+                          background: activeDossierTab === tab.id ? 'rgba(99,102,241,0.15)' : 'transparent',
+                          color: activeDossierTab === tab.id ? '#e5e7eb' : '#9ca3af',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6
+                        }}
+                      >
+                        <Icon size={16} />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {!isEnriched ? (
+                  <EmptyState
+                    icon={<FileText size={48} color="#6366f1" />}
+                    title="No Dossier Available"
+                    subtitle="Enrich this contact first to view their full profile."
+                  />
+                ) : (
+                  <>
+                    {activeDossierTab === 'professional' && (
+                      <>
+                        <DossierCard title="Overview" content={dossierData.overview} icon={<User size={18} color="#6366f1" />} />
+                        <DossierCard title="Background" content={dossierData.background} icon={<TrendingUp size={18} color="#8b5cf6" />} />
+                        <DossierCard title="Education" content={dossierData.education} icon={<Award size={18} color="#10b981" />} />
+                        <DossierCard title="Recent Mentions" content={dossierData.recentMentions} icon={<Sparkles size={18} color="#fbbf24" />} />
+                      </>
+                    )}
+                    {activeDossierTab === 'company' && (
+                      <DossierCard title="Company Overview" content={dossierData.companyOverview} icon={<Building2 size={18} color="#0ea5e9" />} />
+                    )}
+                    {activeDossierTab === 'personality' && (
+                      <>
+                        <DossierCard title="Personality Traits" content={dossierData.personality} icon={<Award size={18} color="#f59e0b" />} />
+                        <DossierCard title="Myers-Briggs Type" content={dossierData.myersBriggs} icon={<Lightbulb size={18} color="#8b5cf6" />} />
+                        <DossierCard title="Social Profiles" content={dossierData.socialProfiles} icon={<Linkedin size={18} color="#0ea5e9" />} />
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {viewMode === 'outreach' && (
+              <>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
+                  {[
+                    { id: 'email', label: 'Email', icon: Mail, color: '#6366f1' },
+                    { id: 'call', label: 'Call Scripts', icon: PhoneCall, color: '#10b981' },
+                    { id: 'linkedin', label: 'LinkedIn', icon: Linkedin, color: '#0ea5e9' }
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveContentTab(tab.id as ContentTab)}
+                        style={{
+                          padding: '10px 20px',
+                          borderRadius: 8,
+                          border: activeContentTab === tab.id ? `1px solid ${tab.color}` : '1px solid transparent',
+                          background: activeContentTab === tab.id ? `${tab.color}15` : 'transparent',
+                          color: activeContentTab === tab.id ? tab.color : '#9ca3af',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8
+                        }}
+                      >
+                        <Icon size={16} />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={handleGenerateContent}
+                    disabled={generating}
+                    style={{
+                      marginLeft: 'auto',
+                      padding: '10px 16px',
+                      borderRadius: 8,
+                      border: 'none',
+                      background: generating ? 'rgba(71,85,105,0.5)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                      color: 'white',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: generating ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    {generating ? (
+                      <>
+                        <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                        Generating...
+                      </>
+                    ) : showGenerateSuccess ? (
+                      <>
+                        <Check size={14} />
+                        Generated!
+                      </>
+                    ) : (
+                      <>
+                        <Zap size={14} />
+                        Generate All Content
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {!isEnriched ? (
+                  <EmptyState
+                    icon={<Sparkles size={48} color="#6366f1" />}
+                    title="Enrich First"
+                    subtitle="Generate intelligence before creating outreach content."
+                  />
+                ) : !hasContent ? (
+                  <EmptyState
+                    icon={<Rocket size={48} color="#8b5cf6" />}
+                    title="Ready to Generate"
+                    subtitle='Click "Generate All Content" to create personalized emails, call scripts, and LinkedIn messages.'
+                  />
+                ) : (
+                  <>
+                    {activeContentTab === 'email' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {[1, 2, 3].map((num) => {
                           const subject = localContact[`email_${num}_subject` as keyof Contact] as string;
                           const body = localContact[`email_${num}_body` as keyof Contact] as string;
                           if (!subject && !body) return null;
-                          return <EmailCard key={num} number={num} subject={subject || ''} body={body || ''} onCopy={copyToClipboard} copiedField={copiedField} />;
-                        })
-                      ) : (
-                        <EmptyState icon={<Mail size={40} />} title="" subtitle='No emails generated yet. Click "Generate All Content" above.' small />
-                      )}
-                    </div>
-                  )}
+                          return (
+                            <EmailCard
+                              key={num}
+                              number={num}
+                              subject={subject}
+                              body={body}
+                              onCopy={copyToClipboard}
+                              copiedField={copiedField}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
 
-                  {/* CALL SCRIPTS TAB */}
-                  {activeContentTab === 'call' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                      {(localContact.call_script_1 || localContact.call_script_2 || localContact.call_script_3) ? (
-                        [1, 2, 3].map((num) => {
+                    {activeContentTab === 'call' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        {[1, 2, 3].map((num) => {
                           const script = localContact[`call_script_${num}` as keyof Contact] as string;
                           if (!script) return null;
                           const labels = ['Direct & Value-Focused', 'Consultative & Rapport-Building', 'Executive / Insight-Led'];
-                          return <CallScriptCard key={num} number={num} label={labels[num - 1]} content={script} onCopy={copyToClipboard} copiedField={copiedField} />;
+                          return (
+                            <CallScriptCard
+                              key={num}
+                              number={num}
+                              label={labels[num - 1]}
+                              content={script}
+                              onCopy={copyToClipboard}
+                              copiedField={copiedField}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {activeContentTab === 'linkedin' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                        <LinkedInCard
+                          title="Connection Request Message"
+                          content={localContact.linkedin_connect}
+                          onCopy={copyToClipboard}
+                          copiedField={copiedField}
+                          fieldKey="linkedin_connect"
+                          maxChars={300}
+                        />
+                        <LinkedInCard
+                          title="Follow-up Message"
+                          content={localContact.linkedin_followup}
+                          onCopy={copyToClipboard}
+                          copiedField={copiedField}
+                          fieldKey="linkedin_followup"
+                        />
+                        <LinkedInCard
+                          title="InMail Template"
+                          content={localContact.linkedin_inmail}
+                          onCopy={copyToClipboard}
+                          copiedField={copiedField}
+                          fieldKey="linkedin_inmail"
+                          maxChars={1900}
+                        />
+                        <LinkedInCard
+                          title="Warm-up Sequence"
+                          content={localContact.linkedin_warmup}
+                          onCopy={copyToClipboard}
+                          copiedField={copiedField}
+                          fieldKey="linkedin_warmup"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {/* ==================== ACTIVITY LOGGER & TIMELINE (PHASE 2) ==================== */}
+            {isEnriched && (
+              <>
+                <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid rgba(148,163,184,0.2)' }}>
+                  <ActivityLogger
+                    contactId={localContact.id}
+                    contactName={localContact.name}
+                    onActivityLogged={() => {
+                      fetch(`http://localhost:8000/api/contacts/${localContact.id}`)
+                        .then(res => res.json())
+                        .then(data => {
+                          setLocalContact(data);
+                          onEnrichmentComplete?.(data);
                         })
-                      ) : (
-                        <EmptyState icon={<PhoneCall size={40} />} title="" subtitle='No call scripts generated yet. Click "Generate All Content" above.' small />
-                      )}
-                    </div>
-                  )}
+                        .catch(err => console.error('Refresh failed:', err));
+                    }}
+                  />
+                </div>
 
-                  {/* LINKEDIN TAB */}
-                  {activeContentTab === 'linkedin' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                      {(localContact.linkedin_connect || localContact.linkedin_followup || localContact.linkedin_inmail) ? (
-                        <>
-                          <LinkedInCard title="Connection Request" content={localContact.linkedin_connect} onCopy={copyToClipboard} copiedField={copiedField} fieldKey="linkedin_connect" maxChars={300} />
-                          <LinkedInCard title="Follow-up Message" content={localContact.linkedin_followup} onCopy={copyToClipboard} copiedField={copiedField} fieldKey="linkedin_followup" />
-                          <LinkedInCard title="InMail" content={localContact.linkedin_inmail} onCopy={copyToClipboard} copiedField={copiedField} fieldKey="linkedin_inmail" />
-                          {localContact.linkedin_warmup && <WarmupSequenceCard warmupJson={localContact.linkedin_warmup} />}
-                          {localContact.linkedin_url && (
-                            <a href={localContact.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0ea5e9', fontSize: 13, textDecoration: 'none' }}>
-                              <Linkedin size={16} />View LinkedIn Profile →
-                            </a>
-                          )}
-                        </>
-                      ) : (
-                        <EmptyState icon={<Linkedin size={40} />} title="" subtitle='No LinkedIn messages generated yet. Click "Generate All Content" above.' small />
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
-
-        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } .animate-spin { animation: spin 1s linear infinite; }`}</style>
+                <div style={{ marginTop: 16 }}>
+                  <ActivityTimeline contactId={localContact.id} />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
-// ============ HELPER COMPONENTS ============
+// ==================== HELPER COMPONENTS ====================
 
-function EmptyState({ icon, title, subtitle, small }: { icon: React.ReactNode; title: string; subtitle: string; small?: boolean }) {
+function StatusBadge({ contact }: { contact: Contact }) {
+  if (contact.call_script_1 || contact.email_1_body || contact.linkedin_connect) {
+    return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)', color: '#10b981', fontSize: 11, fontWeight: 700 }}>✍️ Content Ready</span>;
+  }
+  if (contact.priority_score) {
+    return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.5)', color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>🎯 Scored</span>;
+  }
+  if (contact.enrichment_status === 'completed') {
+    return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.5)', color: '#8b5cf6', fontSize: 11, fontWeight: 700 }}>✨ Enriched</span>;
+  }
+  return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(71,85,105,0.15)', border: '1px solid rgba(71,85,105,0.5)', color: '#64748b', fontSize: 11, fontWeight: 700 }}>○ Pending</span>;
+}
+
+function EmptyState({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: small ? 'auto' : '100%', padding: small ? 40 : 0, color: '#64748b' }}>
-      <div style={{ opacity: 0.5, marginBottom: 16 }}>{icon}</div>
-      {title && <h3 style={{ margin: 0, color: '#94a3b8', fontSize: small ? 14 : 18 }}>{title}</h3>}
-      <p style={{ marginTop: 8, fontSize: small ? 13 : 14, textAlign: 'center' }}>{subtitle}</p>
+    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <div style={{ marginBottom: 16 }}>{icon}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: '#e5e7eb', marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 14, color: '#9ca3af' }}>{subtitle}</div>
     </div>
   );
 }
 
 function ContentSection({ title, content, icon }: { title: string; content?: string | null; icon?: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)', marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         {icon}
-        <h3 style={{ margin: 0, color: '#e5e7eb', fontSize: 16, fontWeight: 600 }}>{title}</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb' }}>{title}</h3>
       </div>
-      <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 10, padding: 20, border: '1px solid rgba(148,163,184,0.2)' }}>
-        <p style={{ margin: 0, color: '#cbd5e1', fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{content || 'No data available'}</p>
+      <div style={{ fontSize: 14, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
+        {content || 'No data available'}
       </div>
     </div>
   );
@@ -401,21 +817,21 @@ function ContentSection({ title, content, icon }: { title: string; content?: str
 function DossierCard({ title, content, icon }: { title: string; content?: string | null; icon?: React.ReactNode }) {
   if (!content) return null;
   return (
-    <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 10, padding: 16, border: '1px solid rgba(148,163,184,0.2)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         {icon}
-        <h4 style={{ margin: 0, color: '#e5e7eb', fontSize: 14, fontWeight: 600 }}>{title}</h4>
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb' }}>{title}</h3>
       </div>
-      <p style={{ margin: 0, color: '#94a3b8', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{content}</p>
+      <div style={{ fontSize: 14, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div>
     </div>
   );
 }
 
 function ScoreCard({ label, value, color }: { label: string; value?: number; color: string }) {
   return (
-    <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 10, padding: 16, border: `1px solid ${color}30`, minWidth: 100, textAlign: 'center' }}>
-      <div style={{ fontSize: 11, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color }}>{value != null ? Math.round(value) : '—'}</div>
+    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)', textAlign: 'center' }}>
+      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 32, fontWeight: 700, color }}>{value != null ? Math.round(value) : '—'}</div>
     </div>
   );
 }
@@ -425,23 +841,36 @@ function EmailCard({ number, subject, body, onCopy, copiedField }: { number: num
   const colors = ['#6366f1', '#8b5cf6', '#a855f7'];
   const color = colors[number - 1];
   return (
-    <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 12, border: `1px solid ${color}30`, overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', background: `${color}15`, borderBottom: `1px solid ${color}30`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ background: color, color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>Email {number}</span>
-          <span style={{ color: '#94a3b8', fontSize: 13 }}>{labels[number - 1]}</span>
+    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: `1px solid ${color}30` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color }}><Mail size={16} style={{ display: 'inline', marginRight: 6 }} />Email {number}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{labels[number - 1]}</div>
         </div>
-        <button onClick={() => onCopy(`Subject: ${subject}\n\n${body}`, `email_${number}`)} style={{ background: 'transparent', border: 'none', color: copiedField === `email_${number}` ? '#10b981' : '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-          {copiedField === `email_${number}` ? <Check size={14} /> : <Copy size={14} />}{copiedField === `email_${number}` ? 'Copied!' : 'Copy'}
+        <button
+          onClick={() => onCopy(`Subject: ${subject}\n\n${body}`, `email_${number}`)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: copiedField === `email_${number}` ? '#10b981' : '#64748b',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12
+          }}
+        >
+          {copiedField === `email_${number}` ? <Check size={16} /> : <Copy size={16} />}
+          {copiedField === `email_${number}` ? 'Copied!' : 'Copy'}
         </button>
       </div>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>SUBJECT</div>
-        <div style={{ color: '#e5e7eb', fontSize: 14, fontWeight: 500 }}>{subject}</div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', marginBottom: 4 }}>SUBJECT</div>
+        <div style={{ fontSize: 13, color: '#e5e7eb', fontWeight: 500 }}>{subject}</div>
       </div>
-      <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>BODY</div>
-        <div style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{body}</div>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', marginBottom: 4 }}>BODY</div>
+        <div style={{ fontSize: 13, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{body}</div>
       </div>
     </div>
   );
@@ -451,19 +880,30 @@ function CallScriptCard({ number, label, content, onCopy, copiedField }: { numbe
   const colors = ['#10b981', '#22c55e', '#16a34a'];
   const color = colors[number - 1];
   return (
-    <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 12, border: `1px solid ${color}30`, overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', background: `${color}15`, borderBottom: `1px solid ${color}30`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ background: color, color: '#fff', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20 }}>Script {number}</span>
-          <span style={{ color: '#94a3b8', fontSize: 13 }}>{label}</span>
+    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: `1px solid ${color}30` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color }}><PhoneCall size={16} style={{ display: 'inline', marginRight: 6 }} />Script {number}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{label}</div>
         </div>
-        <button onClick={() => onCopy(content, `call_script_${number}`)} style={{ background: 'transparent', border: 'none', color: copiedField === `call_script_${number}` ? '#10b981' : '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-          {copiedField === `call_script_${number}` ? <Check size={14} /> : <Copy size={14} />}Copy
+        <button
+          onClick={() => onCopy(content, `call_script_${number}`)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: copiedField === `call_script_${number}` ? '#10b981' : '#64748b',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12
+          }}
+        >
+          {copiedField === `call_script_${number}` ? <Check size={16} /> : <Copy size={16} />}
+          Copy
         </button>
       </div>
-      <div style={{ padding: 16, maxHeight: 400, overflowY: 'auto' }}>
-        <div style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{content}</div>
-      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div>
     </div>
   );
 }
@@ -471,62 +911,34 @@ function CallScriptCard({ number, label, content, onCopy, copiedField }: { numbe
 function LinkedInCard({ title, content, onCopy, copiedField, fieldKey, maxChars }: { title: string; content?: string; onCopy: (t: string, f: string) => void; copiedField: string | null; fieldKey: string; maxChars?: number }) {
   if (!content) return null;
   return (
-    <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 12, border: '1px solid rgba(14,165,233,0.3)', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', background: 'rgba(14,165,233,0.1)', borderBottom: '1px solid rgba(14,165,233,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0ea5e9' }}>
-          <Linkedin size={16} /><span style={{ fontWeight: 600, fontSize: 14 }}>{title}</span>
+    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(14,165,233,0.3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Linkedin size={18} color="#0ea5e9" />
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#e5e7eb' }}>{title}</div>
+          {maxChars && (
+            <span style={{ fontSize: 11, color: content.length > maxChars ? '#ef4444' : '#64748b' }}>
+              {content.length}/{maxChars}
+            </span>
+          )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {maxChars && <span style={{ fontSize: 11, color: content.length > maxChars ? '#ef4444' : '#64748b' }}>{content.length}/{maxChars}</span>}
-          <button onClick={() => onCopy(content, fieldKey)} style={{ background: 'transparent', border: 'none', color: copiedField === fieldKey ? '#10b981' : '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            {copiedField === fieldKey ? <Check size={14} /> : <Copy size={14} />}
-          </button>
-        </div>
+        <button
+          onClick={() => onCopy(content, fieldKey)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: copiedField === fieldKey ? '#10b981' : '#64748b',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12
+          }}
+        >
+          {copiedField === fieldKey ? <Check size={16} /> : <Copy size={16} />}
+        </button>
       </div>
-      <div style={{ padding: 16 }}>
-        <p style={{ color: '#cbd5e1', fontSize: 13, lineHeight: 1.7, margin: 0, whiteSpace: 'pre-wrap' }}>{content}</p>
-      </div>
-    </div>
-  );
-}
-
-function WarmupSequenceCard({ warmupJson }: { warmupJson: string }) {
-  let warmup: Record<string, string[]> = {};
-  try { warmup = JSON.parse(warmupJson); } catch { return null; }
-
-  const phases: Record<string, { label: string; color: string }> = {
-    'day_1_3': { label: '📅 Days 1-3: Initial Engagement', color: '#f59e0b' },
-    'day_4_7': { label: '📅 Days 4-7: Build Familiarity', color: '#8b5cf6' },
-    'day_8': { label: '📅 Day 8: Connect', color: '#10b981' },
-    'post_connect': { label: '📅 After Connection', color: '#0ea5e9' }
-  };
-
-  return (
-    <div style={{ background: 'rgba(15,23,42,0.6)', borderRadius: 12, border: '1px solid rgba(249,115,22,0.3)', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', background: 'rgba(249,115,22,0.1)', borderBottom: '1px solid rgba(249,115,22,0.2)', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 18 }}>🔥</span>
-        <span style={{ fontWeight: 600, fontSize: 14, color: '#f59e0b' }}>LinkMatch Pro Warmup Sequence</span>
-      </div>
-      <div style={{ padding: 16 }}>
-        {Object.entries(warmup).map(([phase, actions]) => (
-          <div key={phase} style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: phases[phase]?.color || '#94a3b8', marginBottom: 8 }}>
-              {phases[phase]?.label || phase}
-            </div>
-            <div style={{ paddingLeft: 12 }}>
-              {(actions || []).map((action, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6, fontSize: 13, color: '#cbd5e1' }}>
-                  <span style={{ color: '#64748b' }}>•</span><span>{action}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-        <div style={{ marginTop: 16, padding: 12, background: 'rgba(16,185,129,0.1)', borderRadius: 8, border: '1px solid rgba(16,185,129,0.2)' }}>
-          <div style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>💡 Pro Tip</div>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>This warmup sequence increases acceptance rates by 40-60%.</div>
-        </div>
-      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div>
     </div>
   );
 }

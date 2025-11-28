@@ -1,77 +1,69 @@
-#!/usr/bin/env python3
 """
-Why Me? Helper - Shared utility for loading user preferences
-Used by: email_generator, call_script_generator, generate_content, linkedin_automation
+Why Me? Helper - Provides user preferences for content generation
 """
-
-import json
 import sqlite3
+import json
+import os
 
-DB_PATH = '/Users/chrisrabenold/projects/apex/apex.db'
+DB_PATH = os.getenv('DB_PATH', '/Users/chrisrabenold/projects/apex/apex.db')
 
-def get_user_preferences():
-    """Load Why Me? preferences - shared across all generators"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    
+def get_user_preferences(user_id: str = 'default_user') -> dict:
+    """Get user preferences from database"""
     try:
-        row = conn.execute("""
-            SELECT products, services, value_propositions, 
-                   target_customers, personal_differentiators, 
-                   company_differentiators
-            FROM user_preferences 
-            WHERE user_id = 'default_user'
-        """).fetchone()
-    except Exception as e:
-        print(f"⚠️  Could not load preferences: {e}")
-        return None
-    finally:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM user_preferences WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
         conn.close()
+        
+        if row:
+            def safe_json(val, default='[]'):
+                if not val:
+                    return json.loads(default)
+                try:
+                    return json.loads(val)
+                except:
+                    return json.loads(default)
+            
+            return {
+                'products': safe_json(row['products']),
+                'services': safe_json(row['services']),
+                'value_propositions': safe_json(row['value_propositions']),
+                'target_customers': safe_json(row['target_customers']),
+                'personal_differentiators': safe_json(row['personal_differentiators']),
+                'company_differentiators': safe_json(row['company_differentiators']),
+            }
+    except Exception as e:
+        print(f"Error loading preferences: {e}")
     
-    if not row:
-        return {
-            'products': [],
-            'services': [],
-            'value_propositions': [],
-            'target_customers': [],
-            'personal_differentiators': [],
-            'company_differentiators': []
-        }
-    
+    # Return defaults if no preferences found
     return {
-        'products': json.loads(row['products'] or '[]'),
-        'services': json.loads(row['services'] or '[]'),
-        'value_propositions': json.loads(row['value_propositions'] or '[]'),
-        'target_customers': json.loads(row['target_customers'] or '[]'),
-        'personal_differentiators': json.loads(row['personal_differentiators'] or '[]'),
-        'company_differentiators': json.loads(row['company_differentiators'] or '[]')
+        'products': ['SBA 504 Loans', 'SBA 7a Loans', 'Commercial Real Estate Financing'],
+        'services': ['Fast closing', 'Flexible underwriting', 'Competitive rates'],
+        'value_propositions': ['Certainty of close', '25+ years experience', 'Personalized service'],
+        'target_customers': ['Commercial real estate investors', 'Business owners', 'Entrepreneurs'],
+        'personal_differentiators': ['Deep industry expertise', 'Relationship-focused approach'],
+        'company_differentiators': ['Direct lender', 'In-house underwriting', 'Quick decisions'],
     }
 
-def format_business_context():
-    """Format user preferences for AI prompts"""
-    prefs = get_user_preferences()
+def format_business_context(preferences: dict) -> str:
+    """Format preferences into a context string for AI prompts"""
+    parts = []
     
-    if not prefs:
-        return "\nYOUR BUSINESS: Not configured (use Why Me? tab)\n"
+    if preferences.get('products'):
+        parts.append(f"Products/Services: {', '.join(preferences['products'][:3])}")
     
-    return f"""
-YOUR BUSINESS (from Why Me? preferences):
-- Products: {', '.join(prefs['products'][:3]) if prefs['products'] else 'Not specified'}
-- Services: {', '.join(prefs['services'][:3]) if prefs['services'] else 'Not specified'}
-- Value Props: {'. '.join(prefs['value_propositions'][:3]) if prefs['value_propositions'] else 'Not specified'}
-- Target Customers: {', '.join(prefs['target_customers'][:2]) if prefs['target_customers'] else 'Not specified'}
-- Your Differentiators: {'. '.join(prefs['personal_differentiators'][:2]) if prefs['personal_differentiators'] else 'Not specified'}
-"""
+    if preferences.get('value_propositions'):
+        parts.append(f"Value Props: {', '.join(preferences['value_propositions'][:3])}")
+    
+    if preferences.get('personal_differentiators'):
+        parts.append(f"Differentiators: {', '.join(preferences['personal_differentiators'][:2])}")
+    
+    return '. '.join(parts) if parts else "Commercial real estate financing specialist"
 
-if __name__ == '__main__':
-    # Test
-    print("Testing whyme_helper...")
-    prefs = get_user_preferences()
-    
-    if prefs:
-        print(f"✅ Loaded {len(prefs['products'])} products")
-        print(f"✅ Loaded {len(prefs['services'])} services")
-        print(f"✅ Loaded {len(prefs['value_propositions'])} value propositions")
-        print("\n" + format_business_context())
-    else:
-        print("❌ No preferences found")
+def get_whyme_context(user_id: str = 'default_user') -> str:
+    """Get formatted Why Me context for content generation"""
+    prefs = get_user_preferences(user_id)
+    return format_business_context(prefs)

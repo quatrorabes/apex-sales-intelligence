@@ -1,82 +1,50 @@
-# Python
-*.py[cod]
-__pycache__/
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.manifest
-*.spec
-venv/
-ENV/
-env/
+# Environment & Secrets
+.env
+.env.local
+.env.production
+*.env
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
-apex.db
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
 
-# API Keys and Secrets
-*_token.txt
-*_key.txt
-secrets/
+# Node/Frontend
+node_modules/
+dist/
+build/
+.cache/
+*.log
+npm-debug.log*
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
 .DS_Store
-
-# Node/React
-node_modules/
-/dashboard_v1/node_modules/
-/dashboard_v1/dist/
-/dashboard_v1/build/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Logs
-*.log
-logs/
-api.log
 
 # Backups
-*.backup
 *.backup*
 *.bak
+*.old
 
-# Temporary files
-tmp/
-temp/
-*.tmp
+# Logs
+logs/
+*.log
 
-# Testing
-.coverage
+# Coverage
 htmlcov/
+.coverage
 .pytest_cache/
-.tox/
-
-# Documentation builds
-docs/_build/
-.DS_Store
-**/.DS_Store
-profile_*.txt
-*.sql

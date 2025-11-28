@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Apex API Server - PRODUCTION VERSION
-Fixed Why Me? tab integration + All endpoints
+Apex API Server - FIXED Enrichment Endpoint
 """
-
 import os
 import sys
 import json
@@ -15,91 +13,129 @@ from dotenv import load_dotenv
 import requests
 import logging
 import traceback
+from openai import AsyncOpenAI
 from openai import OpenAI
 
-# ============= SETUP =============
+GENERATORS_PATH = os.path.join(os.path.dirname(__file__), 'intelligence/engines/outreach/generators')
+sys.path.insert(0, GENERATORS_PATH)
+
+
+# Load environment
 load_dotenv('/Users/chrisrabenold/projects/apex/.env')
 
+# Fix Python path
 BACKEND_PATH = '/Users/chrisrabenold/projects/apex/apps/backend'
 if BACKEND_PATH not in sys.path:
     sys.path.insert(0, BACKEND_PATH)
-
-GENERATORS_PATH = os.path.join(BACKEND_PATH, 'intelligence/engines/outreach/generators')
-if GENERATORS_PATH not in sys.path:
-    sys.path.insert(0, GENERATORS_PATH)
-
+    
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# API Keys
+# Get API keys
 HUBSPOT_TOKEN = os.getenv('HUBSPOT_ACCESS_TOKEN') or os.getenv('HUBSPOT_API_KEY')
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-logger.info(f"HubSpot Token: {HUBSPOT_TOKEN[:20] if HUBSPOT_TOKEN else 'NONE'}...")
+# [... keep all your existing imports and setup code ...]
+
+# Initialize Flask
+app = Flask(__name__)
+CORS(app)
+
+DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
+PORT = 8000
+
+def get_db():
+    """Get database connection"""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+logger.info(f"Loaded HubSpot Token: {HUBSPOT_TOKEN[:20] if HUBSPOT_TOKEN else 'NONE'}...")
 logger.info(f"Perplexity Key: {'✅ Found' if PERPLEXITY_API_KEY else '❌ Missing'}")
 logger.info(f"OpenAI Key: {'✅ Found' if OPENAI_API_KEY else '❌ Missing'}")
 
 # ============= TRY TO IMPORT ENRICHMENT =============
 ENRICHMENT_AVAILABLE = False
+PerplexityEnrichment = None
+
 try:
-    from intelligence.engines.enrichment.enhanced_enrichment import EnhancedEnrichment
+    from intelligence.engines.enrichment.perplexity_enrichment import PerplexityEnrichment
     ENRICHMENT_AVAILABLE = True
     logger.info("✅ Enrichment engine loaded")
 except ImportError as e:
     logger.warning(f"⚠️ Could not load enrichment engine: {e}")
-
+    
 # ============= TRY TO IMPORT SCORING =============
 SCORING_AVAILABLE = False
+score_contact_from_db = None
+bulk_score_contacts = None
+get_apex_scores = None
+
 try:
-    from intelligence.engines.scoring.apex_intelligence_engine import ApexScoringEngine
+    scoring_path = os.path.join(BACKEND_PATH, 'intelligence', 'engines', 'scoring')
+    logger.info(f"Looking for scoring modules in: {scoring_path}")
+    logger.info(f"Path exists: {os.path.exists(scoring_path)}")
+    
+    if os.path.exists(scoring_path):
+        contents = os.listdir(scoring_path)
+        logger.info(f"Scoring directory contents: {contents}")
+        
     from intelligence.engines.scoring.scoring_wrapper import (
         score_contact_from_db,
         bulk_score_contacts,
         get_apex_scores
     )
+    from intelligence.engines.scoring import ApexScoringEngine, ScoringOrchestrator
+    
     SCORING_AVAILABLE = True
-    logger.info("✅ Scoring engines loaded")
+    logger.info("✅ Scoring engines loaded successfully")
+    
 except ImportError as e:
     logger.error(f"❌ Scoring engines not available: {e}")
-    logger.warning("⚠️ Using fallback scoring")
-
-    # Fallback scoring functions
+    logger.error(traceback.format_exc())
+    logger.warning("⚠️ Using fallback scoring functions")
+    
     def score_contact_from_db(conn, contact_id, trigger='manual'):
+        """Simple fallback scoring"""
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
         row = cursor.fetchone()
+        
         if not row:
             return {'error': 'Contact not found'}
-
+        
         columns = [desc[0] for desc in cursor.description]
         contact = dict(zip(columns, row))
-
+        
         score = 50
         if contact.get('email'): score += 10
         if contact.get('phone'): score += 10
         if contact.get('company'): score += 10
         if contact.get('title'): score += 10
         if contact.get('linkedin_url'): score += 10
-
+        
         tier = 'HOT' if score >= 80 else 'WARM' if score >= 70 else 'QUALIFIED'
         urgency = 'IMMEDIATE' if score >= 80 else 'HIGH' if score >= 70 else 'MEDIUM'
-
+        
         cursor.execute('''
-            UPDATE contacts 
-            SET mdcp_score = ?, mdcp_tier = ?,
+            UPDATE contacts
+            SET mdcp_score = ?, mdcp_tier = ?, 
                 rss_score = ?, rss_tier = ?,
                 priority_score = ?, urgency_level = ?,
                 recommended_action = ?,
                 calculation_version = 'fallback_v1',
                 last_scored = ?
             WHERE id = ?
-        ''', (score, tier, score, tier, score, urgency,
+        ''', (score, tier, score, tier, score, urgency, 
               f'{urgency} priority contact',
               datetime.now().isoformat(), contact_id))
         conn.commit()
-
+        
         return {
             'success': True,
             'contact_id': contact_id,
@@ -110,10 +146,13 @@ except ImportError as e:
                 'rss_tier': tier,
                 'priority_score': score,
                 'urgency_level': urgency
-            }
+            },
+            'recommended_action': f'{urgency} priority contact',
+            'timestamp': datetime.now().isoformat()
         }
-
+    
     def bulk_score_contacts(conn, contact_ids, trigger='batch'):
+        """Bulk scoring fallback"""
         results = []
         for cid in contact_ids:
             try:
@@ -122,8 +161,9 @@ except ImportError as e:
             except Exception as e:
                 results.append({'contact_id': cid, 'error': str(e)})
         return results
-
+    
     def get_apex_scores(conn):
+        """Get scored contacts"""
         cursor = conn.cursor()
         cursor.execute('''
             SELECT id, name, company, email, lead_type, lifecycle_stage,
@@ -135,24 +175,16 @@ except ImportError as e:
             WHERE mdcp_score IS NOT NULL
             ORDER BY priority_score DESC
         ''')
+        
         columns = [desc[0] for desc in cursor.description]
         contacts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
         return {
             'status': 'success',
             'count': len(contacts),
             'contacts': contacts
         }
-
-# ============= TRY TO IMPORT CADENCE ENGINES =============
-try:
-    from intelligence.engines.outreach.auto_sequence_engine import AutoSequenceEngine
-    from intelligence.engines.scoring.cadence_router import CadenceRouter
-    logger.info("✅ Cadence engines loaded")
-except ImportError as e:
-    logger.warning(f"⚠️ Cadence engines not available: {e}")
-    AutoSequenceEngine = None
-    CadenceRouter = None
-
+    
 # Initialize Flask
 app = Flask(__name__)
 CORS(app)
@@ -161,6 +193,7 @@ CORS(app)
 DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
 PORT = 8000
 
+
 # ============= DATABASE HELPERS =============
 def get_db():
     """Get database connection"""
@@ -168,11 +201,12 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def ensure_scoring_columns():
-    """Ensure all scoring columns exist"""
+    """Ensure all scoring columns exist in contacts table"""
     conn = get_db()
     cursor = conn.cursor()
-
+    
     columns_to_add = [
         ('mdcp_score', 'REAL'),
         ('mdcp_tier', 'TEXT'),
@@ -185,58 +219,18 @@ def ensure_scoring_columns():
         ('last_scored', 'TEXT'),
         ('lead_type', 'TEXT')
     ]
-
+    
     for col_name, col_type in columns_to_add:
         try:
             cursor.execute(f'ALTER TABLE contacts ADD COLUMN {col_name} {col_type}')
             logger.info(f"✅ Added column: {col_name}")
         except sqlite3.OperationalError:
             pass
-
+            
     conn.commit()
     conn.close()
-    logger.info("✅ Database schema checked")
-
-def ensure_user_preferences_table():
-    """Ensure user_preferences table exists for Why Me? functionality"""
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_preferences (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE NOT NULL DEFAULT 'default_user',
-            products TEXT DEFAULT '[]',
-            services TEXT DEFAULT '[]',
-            value_propositions TEXT DEFAULT '[]',
-            target_customers TEXT DEFAULT '[]',
-            personal_differentiators TEXT DEFAULT '[]',
-            company_differentiators TEXT DEFAULT '[]',
-            scoring_profile TEXT DEFAULT 'DEFAULT',
-            custom_ideal_titles TEXT DEFAULT '[]',
-            custom_avoid_titles TEXT DEFAULT '[]',
-            ideal_company_size_min INTEGER,
-            ideal_company_size_max INTEGER,
-            ideal_industries TEXT DEFAULT '[]',
-            target_seniority_levels TEXT DEFAULT '[]',
-            exclude_c_suite BOOLEAN DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-
-    cursor.execute('''
-        INSERT OR IGNORE INTO user_preferences (user_id) 
-        VALUES ('default_user')
-    ''')
-
-    conn.commit()
-    conn.close()
-    logger.info("✅ User preferences table checked")
-
-# Run DB setup
-ensure_scoring_columns()
-ensure_user_preferences_table()
+    logger.info("✅ Database schema checked for scoring")
+    
 
 # ============= API ROUTES =============
 
@@ -250,7 +244,6 @@ def health_check():
         'scoring_available': SCORING_AVAILABLE
     })
 
-# ============= CONTACTS ENDPOINTS =============
 
 @app.route('/api/contacts', methods=['GET'])
 def get_contacts():
@@ -258,29 +251,30 @@ def get_contacts():
     try:
         conn = get_db()
         cursor = conn.cursor()
-
+        
         status = request.args.get('status')
         limit = request.args.get('limit', 100, type=int)
-
+        
         query = 'SELECT * FROM contacts'
         params = []
-
+        
         if status:
             query += ' WHERE enrichment_status = ?'
             params.append(status)
-
+        
         query += ' ORDER BY created_at DESC LIMIT ?'
         params.append(limit)
-
+        
         cursor.execute(query, params)
         contacts = [dict(row) for row in cursor.fetchall()]
         conn.close()
-
+        
         return jsonify(contacts)
-
+        
     except Exception as e:
         logger.error(f"❌ Error fetching contacts: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/contacts/<int:contact_id>', methods=['GET'])
 def get_contact(contact_id):
@@ -291,53 +285,23 @@ def get_contact(contact_id):
         cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
         contact = cursor.fetchone()
         conn.close()
-
+        
         if contact:
             return jsonify(dict(contact))
         else:
             return jsonify({'error': 'Contact not found'}), 404
-
+            
     except Exception as e:
         logger.error(f"❌ Error fetching contact: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/contacts/<int:contact_id>', methods=['PATCH'])
-def update_contact(contact_id):
-    """Update contact fields (e.g., notes)"""
-    try:
-        data = request.get_json()
-        conn = get_db()
-        cursor = conn.cursor()
-
-        fields = []
-        values = []
-        for key, value in data.items():
-            if key != 'id':
-                fields.append(f"{key} = ?")
-                values.append(value)
-
-        if not fields:
-            return jsonify({'error': 'No fields to update'}), 400
-
-        values.append(contact_id)
-        query = f"UPDATE contacts SET {', '.join(fields)} WHERE id = ?"
-
-        cursor.execute(query, values)
-        conn.commit()
-        conn.close()
-
-        return jsonify({'success': True})
-
-    except Exception as e:
-        logger.error(f"❌ Error updating contact: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ============= HUBSPOT IMPORT =============
 
 @app.route('/api/hubspot/import', methods=['POST'])
 def hubspot_import():
-    """Import contacts from HubSpot"""
+    """Import contacts from HubSpot with filtering and pagination"""
+    
     if not HUBSPOT_TOKEN:
+        logger.error("❌ HubSpot token not found in environment")
         return jsonify({
             'error': 'HubSpot API key not configured',
             'message': 'Please add HUBSPOT_ACCESS_TOKEN to your .env file',
@@ -346,48 +310,75 @@ def hubspot_import():
             'filtered': 0,
             'total_in_hubspot': 0
         }), 400
-
+    
     url = 'https://api.hubapi.com/crm/v3/objects/contacts'
+    
     headers = {
         "Authorization": f"Bearer {HUBSPOT_TOKEN}",
         "Content-Type": "application/json"
     }
-
+    
+    logger.info(f"Request URL: {url}")
+    logger.info(f"Auth header: Bearer {HUBSPOT_TOKEN[:20]}...{HUBSPOT_TOKEN[-4:]}")
+    
     base_params = {
         'limit': 100,
         'properties': [
             'firstname', 'lastname', 'email', 'phone', 'company',
             'jobtitle', 'industry', 'hs_linkedin_url', 'hs_object_id',
             'hs_lead_status', 'lifecyclestage', 'numemployees',
-            'annualrevenue', 'city', 'state', 'website', 'personal_contact'
+            'annualrevenue', 'city', 'state', 'website', 'personal_contact',
+            # Additional enrichment fields:
+            'birthday',                      # Birthday (date only)
+            'education',                     # Education
+            'facebook_profile',              # Facebook profile
+            'instagram_profile',             # Instagram profile
+            'notes_last_updated',            # Last activity date
+            'hs_sa_first_engagement_date',   # First engagement date (datetime)
+            'createdate',                    # Create date (datetime)
+            'num_contacted_notes'            # Number of times contacted
         ]
     }
-
+    
+    
     EXCLUDED_LEAD_STATUSES = ['unqualified', 'do not contact', 'unsubscribe']
     EXCLUDED_LIFECYCLE_STAGES = ['unqualified']
     MAX_IMPORTS_PER_RUN = 100
-
+    
     try:
         conn = get_db()
         cursor = conn.cursor()
-
+        
         imported = 0
         skipped = 0
         filtered = 0
         total_processed = 0
+        
         after = None
         has_more = True
         page = 1
         limit_reached = False
-
+        
         while has_more and not limit_reached:
             params = base_params.copy()
             if after:
                 params['after'] = after
-
-            logger.info(f"📡 Requesting page {page} from HubSpot...")
+            
+            logger.info(f"📡 Requesting page {page} from HubSpot (imported so far: {imported}/{MAX_IMPORTS_PER_RUN})...")
             response = requests.get(url, headers=headers, params=params)
-
+            
+            if response.status_code == 401:
+                logger.error("❌ HubSpot authentication failed - 401 Unauthorized")
+                conn.close()
+                return jsonify({
+                    'error': 'HubSpot authentication failed',
+                    'message': 'Your HubSpot token is invalid or expired',
+                    'imported': imported,
+                    'existing': skipped,
+                    'filtered': filtered,
+                    'total_in_hubspot': total_processed
+                }), 401
+            
             if response.status_code != 200:
                 logger.error(f"❌ HubSpot API error: {response.status_code}")
                 conn.close()
@@ -399,27 +390,39 @@ def hubspot_import():
                     'filtered': filtered,
                     'total_in_hubspot': total_processed
                 }), response.status_code
-
             hubspot_data = response.json()
             contacts = hubspot_data.get('results', [])
             paging = hubspot_data.get('paging', {})
-
-            logger.info(f"✅ Retrieved {len(contacts)} contacts (page {page})")
+            
+            logger.info(f"✅ Retrieved {len(contacts)} contacts from HubSpot (page {page})")
             total_processed += len(contacts)
-
+            
             for contact in contacts:
                 if imported >= MAX_IMPORTS_PER_RUN:
-                    logger.info(f"🛑 Hit import limit of {MAX_IMPORTS_PER_RUN}")
+                    logger.info(f"🛑 Hit import limit of {MAX_IMPORTS_PER_RUN} contacts")
                     limit_reached = True
                     break
-
+                
                 props = contact.get('properties', {})
                 hubspot_id = contact.get('id')
-
+                
+                # DEBUG: Log all properties for first contact
+                if imported == 0 and skipped == 0:
+                    logger.info(f"🔍 DEBUG - First contact properties: {list(props.keys())}")
+                    logger.info(f"🔍 LinkedIn field: {props.get('hs_linkedin_url', 'NOT FOUND')}")
+                    logger.info(f"🔍 Birthday field: {props.get('birthday', 'NOT FOUND')}")
+                    logger.info(f"🔍 Education field: {props.get('education', 'NOT FOUND')}")
+                    logger.info(f"🔍 Contacted field: {props.get('num_contacted_notes', 'NOT FOUND')}")
+                    
+                
+                
                 def safe_get(key, default=''):
                     value = props.get(key)
-                    return str(value).strip() if value is not None else default
-
+                    if value is None:
+                        return default
+                    return str(value).strip()
+                
+                # Basic fields
                 first = safe_get('firstname')
                 last = safe_get('lastname')
                 email = safe_get('email')
@@ -428,69 +431,97 @@ def hubspot_import():
                 lead_status = safe_get('hs_lead_status').lower()
                 lifecycle_stage = safe_get('lifecyclestage').lower()
                 personal_contact = safe_get('personal_contact').lower()
-
+                
+                # Enrichment fields
+                linkedin = safe_get('hs_linkedin_url')
+                birthday = safe_get('birthday')
+                education = safe_get('education')
+                facebook = safe_get('facebook_profile')
+                instagram = safe_get('instagram_profile')
+                last_activity = safe_get('notes_last_updated')
+                first_engagement = safe_get('hs_sa_first_engagement_date')
+                create_date = safe_get('createdate')
+                num_contacted = int(safe_get('num_contacted_notes') or 0)
+                
                 name = f"{first} {last}".strip()
                 if not name and email:
                     name = email.split('@')[0]
                 if not name:
                     name = f"HubSpot-{hubspot_id}"
-
+                    
+                # Filtering logic
                 if personal_contact == 'true':
                     filtered += 1
+                    logger.warning(f"⚠️ Filtered (personal contact): {name}")
                     continue
-
+                
                 if not email or not company or not name or not phone:
                     filtered += 1
+                    logger.warning(f"⚠️ Filtered (missing required fields): {name}")
                     continue
-
+                
                 if lead_status in EXCLUDED_LEAD_STATUSES:
                     filtered += 1
+                    logger.warning(f"⚠️ Filtered (lead status: {lead_status}): {name}")
                     continue
-
+                
                 if lifecycle_stage in EXCLUDED_LIFECYCLE_STAGES:
                     filtered += 1
+                    logger.warning(f"⚠️ Filtered (lifecycle: {lifecycle_stage}): {name}")
                     continue
-
-                cursor.execute('SELECT id FROM contacts WHERE email = ? OR hubspot_id = ?', 
-                             (email, hubspot_id))
+                
+                # Check if exists
+                cursor.execute('SELECT id FROM contacts WHERE email = ? OR hubspot_id = ?', (email, hubspot_id))
                 if cursor.fetchone():
                     skipped += 1
+                    logger.info(f"⏭️  Skipped (exists): {name}")
                     continue
-
+                
+                # Insert with all fields
                 cursor.execute('''
-                    INSERT INTO contacts
-                    (name, firstname, lastname, email, phone, company, title,
+                    INSERT INTO contacts 
+                    (name, firstname, lastname, email, phone, company, title, 
                      hubspot_id, linkedin_url, lead_status, lifecycle_stage,
-                     enrichment_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+                     birthday, education, facebook_profile, instagram_profile,
+                     last_activity_date, first_engagement_date, create_date,
+                     num_contacted, enrichment_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
                 ''', (
                     name, first, last, email, phone, company,
-                    safe_get('jobtitle'), hubspot_id, safe_get('hs_linkedin_url'),
-                    safe_get('hs_lead_status'), safe_get('lifecyclestage')
+                    safe_get('jobtitle'), hubspot_id, linkedin,
+                    safe_get('hs_lead_status'), safe_get('lifecyclestage'),
+                    birthday, education, facebook, instagram,
+                    last_activity, first_engagement, create_date,
+                    num_contacted
                 ))
-
+                
                 imported += 1
-                logger.info(f"✅ Imported ({imported}/{MAX_IMPORTS_PER_RUN}): {name}")
-
+                logger.info(f"✅ Imported ({imported}/{MAX_IMPORTS_PER_RUN}): {name} - {company}")
+                
             if not limit_reached:
                 after = paging.get('next', {}).get('after')
                 has_more = after is not None
-                page += 1
-
+                
+                if has_more:
+                    logger.info(f"🔄 More contacts available, fetching next page...")
+                    page += 1
+                else:
+                    logger.info(f"🏁 Reached end of contacts")
+                    
         conn.commit()
         conn.close()
-
-        logger.info(f"✅ Import complete: {imported} new, {skipped} existing, {filtered} filtered")
-
+        
+        logger.info(f"✅ Import complete: {imported} new, {skipped} existing, {filtered} filtered from {total_processed} total")
+        
         return jsonify({
             'success': True,
             'imported': imported,
             'existing': skipped,
             'filtered': filtered,
             'total_in_hubspot': total_processed,
-            'message': f'Successfully imported {imported} new contacts'
+            'message': f'Successfully imported {imported} new contacts from {total_processed} total in HubSpot ({filtered} filtered out)'
         })
-
+    
     except Exception as e:
         logger.error(f"❌ Error importing from HubSpot: {e}")
         logger.error(traceback.format_exc())
@@ -498,91 +529,286 @@ def hubspot_import():
             conn.close()
         return jsonify({
             'error': 'Import failed',
-            'message': str(e)
+            'message': str(e),
+            'imported': 0,
+            'existing': 0,
+            'filtered': 0,
+            'total_in_hubspot': 0
         }), 500
 
-# ============= ENRICHMENT ENDPOINTS =============
 
-@app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
-def enrich_contact(contact_id):
-    """Enrich a contact using enhanced enrichment"""
+@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
+def score_single_contact(contact_id):
+    """Score a single contact"""
     try:
+        logger.info(f"🎯 Scoring contact {contact_id}...")
+        
+        conn = get_db()
+        
+        # Use the scoring wrapper
+        if score_contact_from_db:
+            result = score_contact_from_db(conn, contact_id, trigger='manual')
+            
+            # The wrapper should have updated the database
+            conn.commit()
+            
+            # Fetch the updated scores to return
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT mdcp_score, rss_score, priority_score, urgency_level, 
+                       mdcp_tier, rss_tier, recommended_action
+                FROM contacts WHERE id = ?
+            ''', (contact_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                logger.info(f"✅ Scored contact {contact_id}")
+                return jsonify({
+                    'success': True,
+                    'contact_id': contact_id,
+                    'scores': {
+                        'mdcp_score': row['mdcp_score'],
+                        'rss_score': row['rss_score'],
+                        'priority_score': row['priority_score'],
+                        'urgency_level': row['urgency_level'],
+                        'mdcp_tier': row['mdcp_tier'],
+                        'rss_tier': row['rss_tier'],
+                        'recommended_action': row['recommended_action']
+                    }
+                })
+            else:
+                # Return the result from wrapper even if fetch failed
+                logger.info(f"✅ Scored contact {contact_id} (fetch failed)")
+                return jsonify(result)
+        else:
+            # Fallback scoring
+            logger.warning("Using fallback scoring")
+            # ... existing fallback code ...
+            
+    except Exception as e:
+        logger.error(f"❌ Error scoring contact {contact_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+        
+    
+@app.route('/api/contacts/score-batch', methods=['POST'])
+def score_batch_contacts():
+    """Score multiple contacts in batch"""
+    try:
+        data = request.get_json() or {}
+        limit = data.get('limit', 50)
+        
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
-        row = cursor.fetchone()
-
-        if not row:
+        
+        cursor.execute('''
+            SELECT id FROM contacts 
+            WHERE mdcp_score IS NULL OR last_scored IS NULL
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (limit,))
+        
+        contact_ids = [row[0] for row in cursor.fetchall()]
+        
+        if not contact_ids:
             conn.close()
-            return jsonify({"success": False, "error": "Contact not found"}), 404
-
-        contact = dict(row)
-        conn.close()
-
-        if not ENRICHMENT_AVAILABLE:
-            return jsonify({
-                "success": False,
-                "error": "Enrichment engine not available"
-            }), 500
-
-        logger.info(f"🔍 Starting enrichment for {contact['firstname']} {contact['lastname']}")
-
-        enricher = EnhancedEnrichment()
-        result = enricher.enrich_contact(contact)
-
-        if result and result.get('success'):
-            conn = get_db()
-            conn.execute("""
-                UPDATE contacts SET
-                profile_content = ?,
-                enriched = 1,
-                enriched_at = ?,
-                enrichment_status = 'completed'
-                WHERE id = ?
-            """, (
-                result['profile_text'],
-                datetime.now().isoformat(),
-                contact_id
-            ))
-            conn.commit()
-            conn.close()
-
-            logger.info(f"✅ Enrichment complete for contact {contact_id}")
             return jsonify({
                 'success': True,
-                'contact_id': contact_id,
-                'profile_length': result['character_count']
-            }), 200
-        else:
-            return jsonify({
-                'success': False,
-                'error': 'Enrichment failed'
-            }), 500
-
-    except Exception as e:
-        logger.error(f"❌ Enrichment error: {e}")
-        traceback.print_exc()
+                'scored': 0,
+                'failed': 0,
+                'total': 0,
+                'message': 'No contacts need scoring'
+            })
+        
+        logger.info(f"🎯 Starting batch scoring for {len(contact_ids)} contacts...")
+        
+        results = bulk_score_contacts(conn, contact_ids, trigger='batch')
+        
+        scored = sum(1 for r in results if r.get('success'))
+        failed = len(results) - scored
+        
+        conn.close()
+        
+        logger.info(f"✅ Batch scoring complete: {scored} scored, {failed} failed")
+        
         return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+            'success': True,
+            'scored': scored,
+            'failed': failed,
+            'total': len(contact_ids),
+            'results': results
+        })
+    
+    except Exception as e:
+        logger.error(f"❌ Error in batch scoring: {e}")
+        logger.error(traceback.format_exc())
+        if 'conn' in locals():
+            conn.close()
+        return jsonify({'error': str(e)}), 500
+
+
+#@app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
+#def enrich_contact(contact_id):
+#   """Enhanced AI enrichment with strategic intelligence"""
+#   
+#   conn = get_db()
+#   cursor = conn.cursor()
+#   
+#   try:
+#       cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+#       contact = cursor.fetchone()
+#       
+#       if not contact:
+#           conn.close()
+#           return jsonify({'error': 'Contact not found'}), 404
+#       
+#       # Get current enrichment tracking data
+#       cursor.execute("""
+#           SELECT enrichment_count, enrichment_history 
+#           FROM contacts 
+#           WHERE id = ?
+#       """, (contact_id,))
+#       tracking_row = cursor.fetchone()
+#       
+#       current_count = tracking_row[0] if tracking_row and tracking_row[0] else 0
+#       history_json = tracking_row[1] if tracking_row and tracking_row[1] else '[]'
+#       
+#       try:
+#           history = json.loads(history_json) if history_json else []
+#       except:
+#           history = []
+#           
+#       # Check if already enriched
+#       if contact['enrichment_status'] == 'complete':
+#           # Force re-enrichment if requested
+#           force = request.json and request.json.get('force', False)
+#           if not force:
+#               conn.close()
+#               return jsonify({
+#                   'message': 'Already enriched', 
+#                   'contact_id': contact_id,
+#                   'enrichment_count': current_count,
+#                   'last_enriched': contact['last_enriched_at'] or contact['enrichment_date']
+#               }), 200
+#           
+#       # Use ENHANCED enrichment
+#       try:
+#           from intelligence.engines.enrichment.enhanced_perplexity import EnhancedPerplexityEnrichment
+#       except ImportError:
+#           try:
+#               from apps.backend.intelligence.engines.enrichment.enhanced_perplexity import EnhancedPerplexityEnrichment
+#           except ImportError:
+#               conn.close()
+#               return jsonify({'error': 'Enrichment engine not available'}), 500
+#           
+#       enricher = EnhancedPerplexityEnrichment()
+#       
+#       # Convert row to dict for enricher
+#       contact_dict = dict(contact)
+#       
+#       # Run enrichment
+#       logger.info(f"Starting enrichment for contact {contact_id}: {contact_dict.get('name')}")
+#       result = enricher.enrich_contact(contact_dict)
+#       
+#       if result and result['success']:
+#           enrichment_data = result['enrichment_data']
+#           
+#           # Add new enrichment to history
+#           history.append({
+#               'timestamp': datetime.now().isoformat(),
+#               'count': current_count + 1,
+#               'profile_length': enrichment_data.get('profile_length', 0),
+#               'profile_file': enrichment_data.get('profile_file', '')
+#           })
+#           
+#           # Save to database with tracking
+#           cursor.execute("""
+#               UPDATE contacts
+#               SET enrichment_data = ?,
+#                   profile_content = ?,
+#                   perplexity_data = ?,
+#                   ...
+#           """, (
+#               json.dumps(enrichment_data),
+#               enrichment_data.get('perplexity_insights', ''),
+#               enrichment_data.get('perplexity_insights', ''),  # Save to both columns
+#               ...
+#           ))
+#           
+#           conn.commit()
+#           
+#           # AUTO-RESCORE after enrichment
+#           try:
+#               if SCORING_AVAILABLE and score_contact_from_db:
+#                   logger.info(f"Auto-rescoring contact {contact_id} after enrichment")
+#                   scores = score_contact_from_db(conn, contact_id, trigger='enrichment')
+#               else:
+#                   scores = {'message': 'Scoring not available'}
+#           except Exception as score_error:
+#               logger.error(f"Auto-scoring failed: {score_error}")
+#               scores = {'error': str(score_error)}
+#               
+#           conn.close()
+#           
+#           return jsonify({
+#               'success': True,
+#               'message': 'Enhanced enrichment complete with strategic intelligence',
+#               'contact_id': contact_id,
+#               'data_size': enrichment_data.get('profile_length', 0),
+#               'enrichment_count': current_count + 1,
+#               'last_enriched': datetime.now().isoformat(),
+#               'scores': scores,
+#               'profile_file': enrichment_data.get('profile_file')
+#           })
+#       else:
+#           conn.close()
+#           error_msg = result.get('error', 'Unknown enrichment error') if result else 'Enrichment returned no result'
+#           logger.error(f"Enrichment failed for contact {contact_id}: {error_msg}")
+#           return jsonify({
+#               'error': 'Enrichment failed', 
+#               'contact_id': contact_id,
+#               'details': error_msg
+#           }), 500
+#       
+#   except Exception as e:
+#       if conn:
+#           conn.close()
+#       logger.error(f"Enrichment exception for contact {contact_id}: {str(e)}")
+#       logger.error(traceback.format_exc())
+#       return jsonify({
+#           'error': 'Enrichment failed with exception',
+#           'contact_id': contact_id,
+#           'details': str(e)
+#       }), 500
+    
 
 @app.route('/api/contacts/<int:contact_id>/intelligence', methods=['GET'])
 def get_contact_intelligence(contact_id):
-    """Get full intelligence data for a contact"""
+    """Get full intelligence data for a contact - FIXED"""
     try:
         conn = get_db()
         cursor = conn.cursor()
+        
         cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
         row = cursor.fetchone()
         conn.close()
-
+        
         if not row:
             return jsonify({
                 'success': False,
                 'error': 'Contact not found'
             }), 404
-
+        
+        # Safely parse enrichment_data
+        enrichment_data = {}
+        if row['enrichment_data']:
+            try:
+                enrichment_data = json.loads(row['enrichment_data'])
+            except:
+                pass
+        
+        # Build contact dict from row
         contact_data = {
             'id': row['id'],
             'name': row['name'],
@@ -594,29 +820,27 @@ def get_contact_intelligence(contact_id):
             'phone': row['phone'],
             'linkedin_url': row['linkedin_url'],
             'enrichment_status': row['enrichment_status'],
+            'enrichment_date': row['enrichment_date'] or row['last_scored'],
             'mdcp_score': row['mdcp_score'],
             'rss_score': row['rss_score'],
             'priority_score': row['priority_score'],
             'urgency_level': row['urgency_level'],
+            'persona_type': row['persona_type'],
+            'persona_tier': row['persona_tier'],
             'mdcp_tier': row['mdcp_tier'],
             'rss_tier': row['rss_tier']
         }
-
-        enrichment_data = {}
-        if row.get('enrichment_data'):
-            try:
-                enrichment_data = json.loads(row['enrichment_data'])
-            except:
-                pass
-
+        
         return jsonify({
             'success': True,
             'contact': contact_data,
-            'enrichment_data': enrichment_data
+            'enrichment_data': enrichment_data,
+            'dashboard': enrichment_data  # Same as enrichment_data since no separate dashboard column
         }), 200
-
+        
     except Exception as e:
-        logger.error(f"Error fetching intelligence: {str(e)}")
+        logger.error(f"Error fetching intelligence for contact {contact_id}: {str(e)}")
+        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)
@@ -624,7 +848,7 @@ def get_contact_intelligence(contact_id):
 
 @app.route('/api/contacts/<int:contact_id>/reset-enrichment', methods=['POST'])
 def reset_enrichment(contact_id):
-    """Reset enrichment status"""
+    """Reset enrichment status to allow re-enrichment"""
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -635,89 +859,22 @@ def reset_enrichment(contact_id):
         """, (contact_id,))
         conn.commit()
         conn.close()
-
         return jsonify({'success': True})
-
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
-
-# ============= SCORING ENDPOINTS =============
-
-@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
-def score_single_contact(contact_id):
-    """Score a single contact"""
+    
+@app.route('/api/contacts/<int:contact_id>/report-issue', methods=['POST'])
+def report_issue(contact_id):
+    """Log reported profile issues"""
     try:
-        logger.info(f"🎯 Scoring contact {contact_id}...")
-        conn = get_db()
-
-        result = score_contact_from_db(conn, contact_id, trigger='manual')
-        conn.commit()
-        conn.close()
-
-        if result.get('success'):
-            logger.info(f"✅ Scored contact {contact_id}")
-            return jsonify(result)
-        else:
-            return jsonify(result), 500
-
+        data = request.get_json()
+        reason = data.get('reason', 'No reason provided')
+        logger.warning(f"⚠️ Profile issue reported for contact {contact_id}: {reason}")
+        # TODO: Save to issues table or send notification
+        return jsonify({'success': True})
     except Exception as e:
-        logger.error(f"❌ Error scoring contact {contact_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/contacts/score-batch', methods=['POST'])
-def score_batch_contacts():
-    """Score multiple contacts in batch"""
-    try:
-        data = request.get_json() or {}
-        limit = data.get('limit', 50)
-
-        conn = get_db()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT id FROM contacts
-            WHERE mdcp_score IS NULL OR last_scored IS NULL
-            ORDER BY created_at DESC
-            LIMIT ?
-        ''', (limit,))
-
-        contact_ids = [row[0] for row in cursor.fetchall()]
-
-        if not contact_ids:
-            conn.close()
-            return jsonify({
-                'success': True,
-                'scored': 0,
-                'failed': 0,
-                'total': 0,
-                'message': 'No contacts need scoring'
-            })
-
-        logger.info(f"🎯 Starting batch scoring for {len(contact_ids)} contacts...")
-
-        results = bulk_score_contacts(conn, contact_ids, trigger='batch')
-
-        scored = sum(1 for r in results if r.get('success'))
-        failed = len(results) - scored
-
-        conn.close()
-
-        logger.info(f"✅ Batch scoring complete: {scored} scored, {failed} failed")
-
-        return jsonify({
-            'success': True,
-            'scored': scored,
-            'failed': failed,
-            'total': len(contact_ids),
-            'results': results
-        })
-
-    except Exception as e:
-        logger.error(f"❌ Error in batch scoring: {e}")
-        if 'conn' in locals():
-            conn.close()
-        return jsonify({'error': str(e)}), 500
-
+    
 @app.route('/api/apex/scores', methods=['GET'])
 def get_apex_intelligence_scores():
     """Get all Apex Intelligence scores for dashboard"""
@@ -725,178 +882,431 @@ def get_apex_intelligence_scores():
         conn = get_db()
         result = get_apex_scores(conn)
         conn.close()
+        
         return jsonify(result)
-
+    
     except Exception as e:
         logger.error(f"❌ Error getting Apex scores: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/contacts/scored', methods=['GET'])
-def get_scored_contacts():
-    """Get all scored contacts"""
+@app.route('/api/user/preferences', methods=['GET'])
+def get_user_preferences():
+    """Get current user's scoring preferences"""
+    user_id = request.headers.get('X-User-Id', 'default')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM user_preferences WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return jsonify({
+            'user_id': row['user_id'],
+            'scoring_profile': row['scoring_profile'],
+            'custom_ideal_titles': json.loads(row['custom_ideal_titles'] or '[]'),
+            'custom_avoid_titles': json.loads(row['custom_avoid_titles'] or '[]'),
+            'ideal_company_size_min': row['ideal_company_size_min'],
+            'ideal_company_size_max': row['ideal_company_size_max'],
+            'target_seniority_levels': json.loads(row['target_seniority_levels'] or '[]'),
+            'exclude_c_suite': row['exclude_c_suite']
+        })
+    else:
+        return jsonify({
+            'user_id': user_id,
+            'scoring_profile': 'DEFAULT',
+            'message': 'No preferences set yet'
+        })
+    
+@app.route('/api/user/preferences', methods=['POST'])
+def update_user_preferences():
+    """Update user's scoring preferences"""
+    user_id = request.headers.get('X-User-Id', 'default')
+    data = request.get_json()
+    
+    from intelligence.engines.scoring.user_scoring_engine import UserSpecificScoringEngine
+    
+    engine = UserSpecificScoringEngine(user_id)
+    engine.update_preferences(data)
+    
+    return jsonify({
+        'success': True,
+        'message': 'Preferences updated successfully',
+        'user_id': user_id
+    })
+    
+@app.route('/api/user/onboarding', methods=['POST'])
+def user_onboarding():
+    """Save user preferences from onboarding"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id', 'default_user')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Create table if not exists
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT UNIQUE NOT NULL,
+                scoring_profile TEXT DEFAULT 'DEFAULT',
+                custom_ideal_titles TEXT,
+                custom_avoid_titles TEXT,
+                ideal_company_size_min INTEGER,
+                ideal_company_size_max INTEGER,
+                ideal_industries TEXT,
+                target_seniority_levels TEXT,
+                exclude_c_suite BOOLEAN DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Convert lists to JSON strings
+        cursor.execute('''
+            INSERT OR REPLACE INTO user_preferences 
+            (user_id, scoring_profile, custom_ideal_titles, custom_avoid_titles, 
+             ideal_company_size_min, ideal_company_size_max, ideal_industries,
+             target_seniority_levels, exclude_c_suite, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ''', (
+            user_id,
+            data.get('industry', 'DEFAULT'),
+            json.dumps(data.get('ideal_titles', [])),
+            json.dumps(data.get('avoid_titles', [])),
+            data.get('min_company_size', 50),
+            data.get('max_company_size', 5000),
+            json.dumps(data.get('target_industries', [])),
+            json.dumps(data.get('seniority_levels', [])),
+            data.get('exclude_c_suite', False)
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Preferences saved successfully',
+            'user_id': user_id
+        })
+    except Exception as e:
+        logger.error(f"Onboarding error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+@app.route('/api/user/preferences/<user_id>', methods=['GET'])
+def get_user_preferences_by_id(user_id):  # <-- RENAMED FUNCTION
+    """Get user's scoring preferences"""
     try:
         conn = get_db()
         cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, name, email, phone, company, title,
-                   enrichment_status, lifecycle_stage, lead_type,
-                   mdcp_score, mdcp_tier, rss_score, rss_tier,
-                   priority_score, urgency_level, recommended_action,
-                   last_scored
-            FROM contacts
-            WHERE priority_score IS NOT NULL
-            ORDER BY priority_score DESC
-        """)
-
-        columns = [desc[0] for desc in cursor.description]
-        contacts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        cursor.execute('SELECT * FROM user_preferences WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
         conn.close()
-
+        
+        if row:
+            # Convert row to dict
+            columns = [desc[0] for desc in cursor.description]
+            pref_dict = dict(zip(columns, row))
+            
+            return jsonify({
+                'success': True,
+                'user_id': pref_dict.get('user_id'),
+                'scoring_profile': pref_dict.get('scoring_profile'),
+                'custom_ideal_titles': json.loads(pref_dict.get('custom_ideal_titles') or '[]'),
+                'custom_avoid_titles': json.loads(pref_dict.get('custom_avoid_titles') or '[]'),
+                'ideal_company_size_min': pref_dict.get('ideal_company_size_min'),
+                'ideal_company_size_max': pref_dict.get('ideal_company_size_max'),
+                'target_seniority_levels': json.loads(pref_dict.get('target_seniority_levels') or '[]'),
+                'exclude_c_suite': bool(pref_dict.get('exclude_c_suite'))
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No preferences found for user'
+            })
+    except Exception as e:
+        logger.error(f"Error getting preferences: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+    
+@app.route('/api/apex/score-all', methods=['POST'])
+def score_all_contacts():
+    """Score all unscored contacts"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id FROM contacts 
+            WHERE mdcp_score IS NULL OR last_scored IS NULL
+        ''')
+        
+        contact_ids = [row[0] for row in cursor.fetchall()]
+        
+        if not contact_ids:
+            conn.close()
+            return jsonify({
+                'success': True,
+                'message': 'All contacts already scored',
+                'scored': 0
+            })
+        
+        logger.info(f"🎯 Scoring all {len(contact_ids)} contacts...")
+        
+        results = bulk_score_contacts(conn, contact_ids, trigger='batch_all')
+        scored = sum(1 for r in results if r.get('success'))
+        
+        conn.close()
+        
         return jsonify({
             'success': True,
-            'contacts': contacts,
-            'count': len(contacts)
+            'message': f'Scored {scored} contacts',
+            'scored': scored,
+            'total': len(contact_ids)
         })
-
+    
     except Exception as e:
-        logger.error(f"Error fetching scored contacts: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        logger.error(f"❌ Error scoring all contacts: {e}")
+        return jsonify({'error': str(e)}), 500
 
-# ============= CONTENT GENERATION ENDPOINT =============
+@app.route('/api/contacts/<int:contact_id>/verify-vertical', methods=['POST'])
+def verify_contact_vertical(contact_id):
+    """Verify if contact is in CRE vertical"""
+    try:
+        from intelligence.engines.scoring.vertical_verifier import VerticalVerifier
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get contact and enrichment data
+        cursor.execute('''
+            SELECT id, name, title, company, enrichment_data 
+            FROM contacts 
+            WHERE id = ?
+        ''', (contact_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({'success': False, 'error': 'Contact not found'}), 404
+        
+        contact = dict(row)
+        enrichment_data = {}
+        if contact['enrichment_data']:
+            try:
+                enrichment_data = json.loads(contact['enrichment_data'])
+            except:
+                pass
+                
+        # Verify vertical
+        verifier = VerticalVerifier()
+        verification = verifier.verify_from_enrichment(contact, enrichment_data)
+        
+        # Save verification result
+        cursor.execute('''
+            UPDATE contacts 
+            SET vertical_verification = ? 
+            WHERE id = ?
+        ''', (json.dumps(verification), contact_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'verification': verification
+        })
+    
+    except Exception as e:
+        logger.error(f"Error verifying vertical: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
+@app.route('/api/apex/scores', methods=['GET'])
+def get_apex_scores_endpoint():
+    """Get all scored contacts for Apex Intelligence dashboard"""
+    try:
+        conn = get_db()
+        
+        if get_apex_scores:
+            # Use the scoring wrapper function
+            result = get_apex_scores(conn)
+            conn.close()
+            return jsonify(result)
+        else:
+            # Fallback - get scored contacts directly
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, name, company, email, title,
+                       mdcp_score, mdcp_tier,
+                       rss_score, rss_tier,
+                       priority_score, urgency_level,
+                       lifecycle_stage, recommended_action
+                FROM contacts
+                WHERE priority_score IS NOT NULL
+                ORDER BY priority_score DESC
+            ''')
+            
+            columns = [desc[0] for desc in cursor.description]
+            contacts = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            conn.close()
+            
+            return jsonify({
+                'status': 'success',
+                'count': len(contacts),
+                'contacts': contacts
+            })
+        
+    except Exception as e:
+        logger.error(f"Error getting apex scores: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    
+#!/usr/bin/env python3
+"""
+Updated API route with enhanced enrichment
+Add this to your api.py or replace existing enrich route
+"""
+    
+    # Add this to your api.py (Flask backend)
+    
+# In your api.py, update the generate-content endpoint to use these column names:
+    
+import sys
+import os
+import traceback
+
+# Add generators to Python path
+GENERATORS_PATH = os.path.join(os.path.dirname(__file__), 'apps/backend/intelligence/engines/outreach/generators')
+sys.path.insert(0, GENERATORS_PATH)
 
 @app.route('/api/contacts/<int:contact_id>/generate-content', methods=['POST'])
 def generate_content(contact_id):
-    """Generate personalized email, call scripts, and LinkedIn content"""
+    """Generate personalized content for a contact"""
     try:
         data = request.json or {}
         content_type = data.get('content_type') or data.get('type', 'all')
-
+        
         logger.info(f"🎯 Generating {content_type} for contact {contact_id}")
-
+        
         # Get contact from database
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
         row = cursor.fetchone()
-
+        
         if not row:
             conn.close()
             return jsonify({"success": False, "error": "Contact not found"}), 404
-
+        
         contact = dict(row)
-        conn.close()
-
+        
         if not contact.get('profile_content'):
-            return jsonify({
-                "success": False, 
-                "error": "Contact needs to be enriched first"
-            }), 400
-
+            conn.close()
+            return jsonify({"success": False, "error": "Contact needs to be enriched first"}), 400
+        
+        conn.close()
+        
+        # Add generators to path
+        import sys
+        generators_path = os.path.join(os.path.dirname(__file__), 'apps/backend/intelligence/engines/outreach/generators')
+        if generators_path not in sys.path:
+            sys.path.insert(0, generators_path)
+            
         results = {}
-
-        # ============ EMAIL GENERATION ============
+        
+        # EMAIL GENERATION
         if content_type in ['all', 'email']:
             logger.info("📧 Generating email sequence...")
             try:
                 from email_generator import generate_email_variants
-
+                
                 enrichment_data = {
                     'profile': contact.get('profile_content', '')[:1500]
                 }
-
+                
                 emails = generate_email_variants(contact, enrichment_data)
-
-                if emails and len(emails) >= 1:
+                
+                if len(emails) >= 3:
                     conn = get_db()
-                    for i, email in enumerate(emails[:3], 1):
-                        subject = email.get('subject', '')
-                        body = email.get('body', '')
-
-                        # Clean if body contains Subject:
-                        if 'Subject:' in body:
-                            parts = body.split('Subject:', 1)[1]
-                            if '\n\n' in parts:
-                                subj_part, body_part = parts.split('\n\n', 1)
-                                subject = subj_part.strip()
-                                body = body_part.replace('Body:', '').strip()
-
-                        conn.execute(f"""
-                            UPDATE contacts 
-                            SET email_{i}_subject = ?, email_{i}_body = ?
-                            WHERE id = ?
-                        """, (subject, body, contact_id))
-
                     conn.execute("""
-                        UPDATE contacts SET content_generated_at = ? WHERE id = ?
-                    """, (datetime.now().isoformat(), contact_id))
-
+                        UPDATE contacts SET
+                        email_1_subject = ?, email_1_body = ?,
+                        email_2_subject = ?, email_2_body = ?,
+                        email_3_subject = ?, email_3_body = ?,
+                        content_generated_at = ?
+                        WHERE id = ?
+                    """, (
+                        emails[0].get('subject', ''), emails[0].get('body', ''),
+                        emails[1].get('subject', ''), emails[1].get('body', ''),
+                        emails[2].get('subject', ''), emails[2].get('body', ''),
+                        datetime.now().isoformat(),
+                        contact_id
+                    ))
                     conn.commit()
                     conn.close()
-
-                    logger.info(f"    ✅ Generated {len(emails)} emails")
-                    results['email'] = {'success': True, 'count': len(emails)}
-                else:
-                    results['email'] = {'success': False, 'error': 'No emails generated'}
-
+                    logger.info(f"✅ Generated {len(emails)} emails")
+                    
+                results['email'] = {'success': True, 'count': len(emails)}
             except Exception as e:
-                logger.error(f"    ❌ Email generation error: {e}")
-                traceback.print_exc()
+                logger.error(f"❌ Email generation error: {e}")
                 results['email'] = {'success': False, 'error': str(e)}
-
-        # ============ CALL SCRIPT GENERATION ============
+                
+        # CALL SCRIPT GENERATION
         if content_type in ['all', 'call']:
             logger.info("📞 Generating call scripts...")
             try:
                 from call_script_generator import UnifiedCallScriptGenerator
-
                 generator = UnifiedCallScriptGenerator()
                 scripts = generator.generate_all_scripts(contact_id)
-
+                
                 if scripts:
-                    logger.info(f"    ✅ Generated {len(scripts)} call scripts")
+                    logger.info(f"✅ Generated {len(scripts)} call scripts")
                     results['call'] = {'success': True, 'count': len(scripts)}
                 else:
                     results['call'] = {'success': False, 'error': 'No scripts generated'}
-
             except Exception as e:
-                logger.error(f"    ❌ Call script error: {e}")
-                traceback.print_exc()
+                logger.error(f"❌ Call script generation error: {e}")
                 results['call'] = {'success': False, 'error': str(e)}
-
-        # ============ LINKEDIN GENERATION ============
+                
+        # LINKEDIN GENERATION
         if content_type in ['all', 'linkedin']:
             logger.info("💼 Generating LinkedIn messages...")
             try:
-                from linkedin_generator import generate_linkedin_content
-
-                linkedin_result = generate_linkedin_content(contact_id)
-
-                if linkedin_result:
-                    logger.info("    ✅ Generated LinkedIn content")
+                from linkedin_automation import LinkedInAutomation
+                linkedin = LinkedInAutomation()
+                
+                # Generate connection message
+                message = linkedin.generate_connection_message(contact_id)
+                
+                if message:
+                    # Save to database
+                    conn = get_db()
+                    conn.execute("""
+                        UPDATE contacts SET
+                        linkedin_note = ?,
+                        content_generated_at = ?
+                        WHERE id = ?
+                    """, (message, datetime.now().isoformat(), contact_id))
+                    conn.commit()
+                    conn.close()
+                    logger.info("✅ Generated LinkedIn message")
                     results['linkedin'] = {'success': True}
                 else:
-                    results['linkedin'] = {'success': False, 'error': 'LinkedIn generation failed'}
-
-            except ImportError as e:
-                logger.error(f"    ❌ LinkedIn import error: {e}")
-                logger.error("    💡 Make sure linkedin_generator.py is in the generators folder")
-                results['linkedin'] = {'success': False, 'error': f'Import error: {e}'}
-
+                    results['linkedin'] = {'success': False, 'error': 'Could not generate message'}
             except Exception as e:
-                logger.error(f"    ❌ LinkedIn generation error: {e}")
-                traceback.print_exc()
+                logger.error(f"❌ LinkedIn generation error: {e}")
                 results['linkedin'] = {'success': False, 'error': str(e)}
-
-        # Return results
-        any_success = any(r.get('success', False) for r in results.values())
-
+                
+        # Check overall success
+        all_success = all(r.get('success', False) for r in results.values())
+        
         return jsonify({
-            'success': any_success,
+            'success': all_success,
             'contact_id': contact_id,
             'results': results
-        }), 200
-
+        }), 200 if all_success else 500
+    
     except Exception as e:
         logger.error(f"❌ Content generation error: {e}")
         traceback.print_exc()
@@ -904,321 +1314,7 @@ def generate_content(contact_id):
             'success': False,
             'error': str(e)
         }), 500
-
-# ============= CADENCE ENDPOINTS =============
-
-@app.route('/api/cadences/start', methods=['POST'])
-def start_cadence():
-    """Start a cadence for a contact"""
-    if not AutoSequenceEngine:
-        return jsonify({
-            'success': False,
-            'error': 'Cadence engine not available'
-        }), 500
-
-    try:
-        data = request.json
-        contact_id = data.get('contact_id')
-        cadence_type = data.get('type', 'standard')
-
-        if not contact_id:
-            return jsonify({'success': False, 'error': 'contact_id required'}), 400
-
-        engine = AutoSequenceEngine(DATABASE)
-        result = engine.start_sequence(contact_id, cadence_type)
-
-        if 'error' in result:
-            return jsonify({'success': False, 'error': result['error']}), 400
-
-        return jsonify({
-            'success': True,
-            'sequence_id': result['sequence_id'],
-            'type': result['type'],
-            'touches_scheduled': result['touches_scheduled']
-        })
-
-    except Exception as e:
-        logger.error(f"Cadence start error: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/cadences/active', methods=['GET'])
-def get_active_cadences():
-    """Get all active cadences"""
-    if not AutoSequenceEngine:
-        return jsonify({
-            'success': False,
-            'error': 'Cadence engine not available'
-        }), 500
-
-    try:
-        engine = AutoSequenceEngine(DATABASE)
-        sequences = engine.get_active_sequences()
-
-        return jsonify({
-            'success': True,
-            'cadences': sequences,
-            'count': len(sequences)
-        })
-
-    except Exception as e:
-        logger.error(f"Error fetching cadences: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/cadences/pending-touches', methods=['GET'])
-def get_pending_touches():
-    """Get pending touches due now"""
-    if not AutoSequenceEngine:
-        return jsonify({
-            'success': False,
-            'error': 'Cadence engine not available'
-        }), 500
-
-    try:
-        engine = AutoSequenceEngine(DATABASE)
-        touches = engine.get_pending_touches()
-
-        return jsonify({
-            'success': True,
-            'touches': touches,
-            'count': len(touches)
-        })
-
-    except Exception as e:
-        logger.error(f"Error fetching touches: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/cadences/<int:sequence_id>/pause', methods=['POST'])
-def pause_cadence(sequence_id):
-    """Pause a cadence"""
-    if not CadenceRouter:
-        return jsonify({
-            'success': False,
-            'error': 'Cadence router not available'
-        }), 500
-
-    try:
-        data = request.json or {}
-        reason = data.get('reason', 'manual')
-
-        router = CadenceRouter(DATABASE)
-        router.pause_sequence(sequence_id, reason)
-
-        return jsonify({'success': True})
-
-    except Exception as e:
-        logger.error(f"Error pausing cadence: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/cadences/<int:sequence_id>/stop', methods=['POST'])
-def stop_cadence(sequence_id):
-    """Stop a cadence"""
-    if not CadenceRouter:
-        return jsonify({
-            'success': False,
-            'error': 'Cadence router not available'
-        }), 500
-
-    try:
-        data = request.json or {}
-        reason = data.get('reason', 'manual')
-
-        router = CadenceRouter(DATABASE)
-        router.stop_sequence(sequence_id, reason)
-
-        return jsonify({'success': True})
-
-    except Exception as e:
-        logger.error(f"Error stopping cadence: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/cadences/auto-route/<int:contact_id>', methods=['POST'])
-def auto_route_contact(contact_id):
-    """Auto-route contact to appropriate cadence"""
-    if not CadenceRouter:
-        return jsonify({
-            'success': False,
-            'error': 'Cadence router not available'
-        }), 500
-
-    try:
-        router = CadenceRouter(DATABASE)
-        sequence_id = router.route_contact(contact_id)
-
-        if not sequence_id:
-            return jsonify({'success': False, 'error': 'Could not route contact'}), 400
-
-        return jsonify({
-            'success': True,
-            'sequence_id': sequence_id
-        })
-
-    except Exception as e:
-        logger.error(f"Error routing contact: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-# ============= WHY ME? / USER PREFERENCES ENDPOINTS =============
-
-@app.route('/api/user/preferences', methods=['GET'])
-def get_user_preferences():
-    """Get current user's preferences for Why Me? tab"""
-    try:
-        user_id = request.headers.get('X-User-Id', 'default_user')
-
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM user_preferences WHERE user_id = ?', (user_id,))
-        row = cursor.fetchone()
-
-        def safe_json_parse(value, default='[]'):
-            if value is None:
-                return json.loads(default)
-            try:
-                return json.loads(value)
-            except:
-                return json.loads(default)
-
-        if row:
-            columns = [desc[0] for desc in cursor.description]
-            pref_dict = dict(zip(columns, row))
-            conn.close()
-
-            return jsonify({
-                'success': True,
-                'preferences': {
-                    'user_id': pref_dict.get('user_id', 'default_user'),
-                    'products': safe_json_parse(pref_dict.get('products')),
-                    'services': safe_json_parse(pref_dict.get('services')),
-                    'value_propositions': safe_json_parse(pref_dict.get('value_propositions')),
-                    'target_customers': safe_json_parse(pref_dict.get('target_customers')),
-                    'personal_differentiators': safe_json_parse(pref_dict.get('personal_differentiators')),
-                    'company_differentiators': safe_json_parse(pref_dict.get('company_differentiators')),
-                    'scoring_profile': pref_dict.get('scoring_profile', 'DEFAULT'),
-                    'custom_ideal_titles': safe_json_parse(pref_dict.get('custom_ideal_titles')),
-                    'custom_avoid_titles': safe_json_parse(pref_dict.get('custom_avoid_titles')),
-                    'ideal_company_size_min': pref_dict.get('ideal_company_size_min'),
-                    'ideal_company_size_max': pref_dict.get('ideal_company_size_max'),
-                    'target_seniority_levels': safe_json_parse(pref_dict.get('target_seniority_levels')),
-                    'exclude_c_suite': bool(pref_dict.get('exclude_c_suite', 0))
-                }
-            })
-        else:
-            cursor.execute("""
-                INSERT INTO user_preferences (user_id) 
-                VALUES (?)
-                ON CONFLICT(user_id) DO NOTHING
-            """, (user_id,))
-            conn.commit()
-            conn.close()
-
-            return jsonify({
-                'success': True,
-                'preferences': {
-                    'user_id': user_id,
-                    'products': [],
-                    'services': [],
-                    'value_propositions': [],
-                    'target_customers': [],
-                    'personal_differentiators': [],
-                    'company_differentiators': [],
-                    'scoring_profile': 'DEFAULT',
-                    'custom_ideal_titles': [],
-                    'custom_avoid_titles': [],
-                    'ideal_company_size_min': None,
-                    'ideal_company_size_max': None,
-                    'target_seniority_levels': [],
-                    'exclude_c_suite': False
-                }
-            })
-
-    except Exception as e:
-        logger.error(f"Error getting preferences: {e}")
-        traceback.print_exc()
-        if 'conn' in locals():
-            conn.close()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/user/preferences', methods=['POST'])
-def update_user_preferences():
-    """Update user's preferences from Why Me? tab"""
-    try:
-        user_id = request.headers.get('X-User-Id', 'default_user')
-        data = request.get_json()
-
-        conn = get_db()
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            INSERT INTO user_preferences
-            (user_id, products, services, value_propositions, target_customers,
-             personal_differentiators, company_differentiators,
-             scoring_profile, custom_ideal_titles, custom_avoid_titles,
-             ideal_company_size_min, ideal_company_size_max,
-             ideal_industries, target_seniority_levels, exclude_c_suite,
-             updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id) DO UPDATE SET
-                products = excluded.products,
-                services = excluded.services,
-                value_propositions = excluded.value_propositions,
-                target_customers = excluded.target_customers,
-                personal_differentiators = excluded.personal_differentiators,
-                company_differentiators = excluded.company_differentiators,
-                scoring_profile = excluded.scoring_profile,
-                custom_ideal_titles = excluded.custom_ideal_titles,
-                custom_avoid_titles = excluded.custom_avoid_titles,
-                ideal_company_size_min = excluded.ideal_company_size_min,
-                ideal_company_size_max = excluded.ideal_company_size_max,
-                ideal_industries = excluded.ideal_industries,
-                target_seniority_levels = excluded.target_seniority_levels,
-                exclude_c_suite = excluded.exclude_c_suite,
-                updated_at = CURRENT_TIMESTAMP
-        ''', (
-            user_id,
-            json.dumps(data.get('products', [])),
-            json.dumps(data.get('services', [])),
-            json.dumps(data.get('value_propositions', [])),
-            json.dumps(data.get('target_customers', [])),
-            json.dumps(data.get('personal_differentiators', [])),
-            json.dumps(data.get('company_differentiators', [])),
-            data.get('scoring_profile', 'DEFAULT'),
-            json.dumps(data.get('custom_ideal_titles', [])),
-            json.dumps(data.get('custom_avoid_titles', [])),
-            data.get('ideal_company_size_min'),
-            data.get('ideal_company_size_max'),
-            json.dumps(data.get('ideal_industries', [])),
-            json.dumps(data.get('target_seniority_levels', [])),
-            data.get('exclude_c_suite', False)
-        ))
-
-        conn.commit()
-        conn.close()
-
-        logger.info(f"✅ Saved preferences for user {user_id}")
-
-        return jsonify({
-            'success': True,
-            'message': 'Preferences saved successfully',
-            'user_id': user_id
-        })
-
-    except Exception as e:
-        logger.error(f"Error saving preferences: {e}")
-        traceback.print_exc()
-        if 'conn' in locals():
-            conn.close()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-# ============= SERVER STARTUP =============
-
+    
 if __name__ == '__main__':
-    logger.info(f"🚀 Starting Apex API Server on port {PORT}...")
-    logger.info(f"📊 Database: {DATABASE}")
-    logger.info(f"🔧 Enrichment: {'✅ Available' if ENRICHMENT_AVAILABLE else '❌ Unavailable'}")
-    logger.info(f"🎯 Scoring: {'✅ Available' if SCORING_AVAILABLE else '❌ Unavailable'}")
-    logger.info(f"📅 Cadences: {'✅ Available' if AutoSequenceEngine else '❌ Unavailable'}")
-
-    app.run(
-        host='0.0.0.0',
-        port=PORT,
-        debug=True
-    )
+    ensure_scoring_columns()
+    app.run(host='0.0.0.0', port=PORT, debug=True)

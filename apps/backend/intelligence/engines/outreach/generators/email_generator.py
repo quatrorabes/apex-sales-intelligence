@@ -166,7 +166,7 @@ Body: [body]
                     {"role": "user", "content": approach['instructions']}
                 ],
                 temperature=0.7,
-                max_tokens=400
+                max_tokens=800
             )
 
             content = response.choices[0].message.content.strip()

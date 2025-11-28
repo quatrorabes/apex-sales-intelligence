@@ -1,24 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import {
-  ChevronUp,
-  ChevronDown,
-  Search,
-  Download,
-  Users,
-  Gauge,
-  Activity,
-  Sparkles,
-  Database,
-  Target
+import { 
+  ChevronUp, ChevronDown, Search, Download, Users, Gauge, 
+  Activity, Sparkles, Database, Target, ChevronLeft, ChevronRight, Zap 
 } from 'lucide-react';
 import ApexIntelligence from './components/ApexIntelligence';
 import CadenceDashboard from './components/CadenceDashboard';
 import ContactEnrichmentView from './components/ContactEnrichmentView';
 import RawDataViewer from './components/RawDataViewer';
 import ContactDetailModal from './components/ContactDetailModal';
-import WhyMeTab from './components/WhyMeTab';  // ✅ MOVED HERE
+import WhyMeTab from './components/WhyMeTab';
+import TodaysBoard from './components/TodaysBoard';
 
-type MainTabId = 'contacts' | 'apex' | 'cadence' | 'enrichment' | 'raw' | 'whyme';
+type MainTabId = 'board' | 'contacts' | 'cadence' | 'enrichment' | 'raw' | 'whyme';
 
 interface MainTab {
   id: MainTabId;
@@ -27,50 +20,45 @@ interface MainTab {
   icon: React.ComponentType<{ size?: number }>;
 }
 
+interface Contact {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  title: string;
+  lead_status?: string;
+  lifecycle_stage?: string;
+  lifecyclestage?: string;
+  mdcp_score?: number;
+  rss_score?: number;
+  priority_score?: number;
+  urgency_level?: string;
+  mdcp_tier?: string;
+  rss_tier?: string;
+  enrichment_status?: string;
+  profile_content?: string;
+  call_script_1?: string;
+  email_1_body?: string;
+  linkedin_connect?: string;
+}
+
+type SortField = 'name' | 'title' | 'company' | 'lifecycle_stage' | 'lead_status' | 'priority_score' | 'mdcp_score' | 'rss_score';
+
 const MAIN_TABS: MainTab[] = [
-  {
-    id: 'contacts',
-    label: 'All Contacts',
-    description: 'Scored contact list with MDCP/RSS/priority',
-    icon: Users,
-  },
-  {
-    id: 'apex',  // ✅ FIXED - No import here
-    label: 'Apex Intelligence',
-    description: 'CRE-focused scoring and urgency board',
-    icon: Gauge,
-  },
-  {
-    id: 'cadence',
-    label: 'Cadence',
-    description: 'Outreach sequencing and prioritization',
-    icon: Activity,
-  },
-  {
-    id: 'enrichment',
-    label: 'Enrichment',
-    description: 'Enhanced Perplexity + OpenAI research view',
-    icon: Sparkles,
-  },
-  {
-    id: 'raw',
-    label: 'Raw Data',
-    description: 'Full JSON + HubSpot raw contact data',
-    icon: Database,
-  },
-  {
-    id: 'whyme',  // ✅ ADD WHY ME TAB
-    label: 'Why Me?',
-    description: 'Value proposition builder for personalization',
-    icon: Target,
-  },
+  { id: 'board', label: "Today's Board", description: 'Your prioritized action list - who to call, when, and why', icon: Zap },
+  { id: 'contacts', label: 'All Contacts', description: 'Full contact database with search and filters', icon: Users },
+  { id: 'cadence', label: 'Cadence', description: 'Automated outreach sequences', icon: Activity },
+  { id: 'enrichment', label: 'Intelligence Lab', description: 'Deep enrichment and research tools', icon: Sparkles },
+  { id: 'raw', label: 'Raw Data', description: 'Full JSON HubSpot data', icon: Database },
+  { id: 'whyme', label: 'Why Me?', description: 'Value proposition builder', icon: Target },
 ];
 
 // ---------- HUBSPOT IMPORT BUTTON ----------
-function HubSpotImportButton() {
+function HubSpotImportButton({ onImportComplete }: { onImportComplete?: () => void }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<any>(null);
-
+  
   const handleImport = async () => {
     setImporting(true);
     setResult(null);
@@ -81,9 +69,8 @@ function HubSpotImportButton() {
       });
       const data = await res.json();
       setResult(data);
-
-      // Auto-hide success message after 5 seconds
       if (data.success) {
+        onImportComplete?.();
         setTimeout(() => setResult(null), 5000);
       }
     } catch (err) {
@@ -92,7 +79,7 @@ function HubSpotImportButton() {
       setImporting(false);
     }
   };
-
+  
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
       <button
@@ -105,21 +92,17 @@ function HubSpotImportButton() {
           padding: '10px 18px',
           borderRadius: 8,
           border: '1px solid rgba(99,102,241,0.7)',
-          background: importing
-            ? 'rgba(71,85,105,0.5)'
-            : 'linear-gradient(135deg, rgba(79,70,229,0.5), rgba(99,102,241,0.4))',
+          background: importing ? 'rgba(71,85,105,0.5)' : 'linear-gradient(135deg, rgba(79,70,229,0.5), rgba(99,102,241,0.4))',
           color: '#e5e7eb',
           fontSize: 14,
           fontWeight: 600,
           cursor: importing ? 'not-allowed' : 'pointer',
-          transition: 'all 0.2s',
           boxShadow: importing ? 'none' : '0 4px 12px rgba(99,102,241,0.3)',
         }}
       >
         <Database size={18} />
         {importing ? 'Importing from HubSpot...' : 'Import from HubSpot'}
       </button>
-
       {result && (
         <div
           style={{
@@ -128,105 +111,485 @@ function HubSpotImportButton() {
             fontSize: 12,
             fontWeight: 500,
             background: result.success ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.15)',
-            border: result.success
-              ? '1px solid rgba(22,163,74,0.5)'
-              : '1px solid rgba(220,38,38,0.5)',
+            border: result.success ? '1px solid rgba(22,163,74,0.5)' : '1px solid rgba(220,38,38,0.5)',
             color: result.success ? '#22c55e' : '#f87171',
-            maxWidth: 320,
           }}
         >
-          {result.success
-            ? `✅ Imported ${result.imported} new contacts${
-                result.filtered > 0 ? ` (${result.filtered} filtered)` : ''
-              }`
-            : `❌ ${result.message || 'Import failed'}`}
+          {result.success ? `Imported ${result.imported} new contacts` : result.message || 'Import failed'}
         </div>
       )}
     </div>
   );
 }
 
-// ---------- ROOT APP SHELL WITH O3PRO TABS ----------
-export default function App() {
-  const [activeTab, setActiveTab] = useState<MainTabId>('contacts');
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+// ---------- CONTACTS BOARD WITH PAGINATION AND ENRICHMENT HIGHLIGHTING ----------
+interface ContactsBoardProps {
+  selectedContact: Contact | null;
+  onSelectContact: (contact: Contact) => void;
+  refreshTrigger?: number;
+}
 
-  const current = MAIN_TABS.find((t) => t.id === activeTab)!;
-
-  // Callback for when enrichment completes
-  const handleEnrichmentComplete = async (updatedContact: Contact) => {
-    console.log('Enrichment completed for', updatedContact);
-    // Close modal and refresh contact list
-    setSelectedContact(null);
-    // Trigger refresh in ContactsBoard (passed down as prop)
+function ContactsBoard({ selectedContact, onSelectContact, refreshTrigger }: ContactsBoardProps) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sortField, setSortField] = useState<SortField>('priority_score');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterTier, setFilterTier] = useState<string>('all');
+  const [filterEnriched, setFilterEnriched] = useState<string>('all');
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  
+  const fetchContacts = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch('http://localhost:8000/api/contacts?limit=500');
+      const data = await res.json();
+      setContacts(data.contacts || data);
+    } catch (err) {
+      console.error('Failed to fetch contacts', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    fetchContacts();
+  }, [refreshTrigger]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterTier, filterEnriched, sortField, sortDir]);
+
+  const filteredContacts = contacts
+    .filter((c) => {
+      const term = searchTerm.toLowerCase();
+      const matchesSearch = !term || 
+        c.name?.toLowerCase().includes(term) ||
+        c.email?.toLowerCase().includes(term) ||
+        c.company?.toLowerCase().includes(term) ||
+        c.title?.toLowerCase().includes(term);
+      
+      const matchesTier = filterTier === 'all' || 
+        c.mdcp_tier === filterTier ||
+        c.rss_tier === filterTier;
+      
+      const isEnriched = c.enrichment_status === 'completed' || (c.profile_content && c.profile_content.length > 100);
+      const matchesEnrichment = filterEnriched === 'all' || 
+        (filterEnriched === 'enriched' && isEnriched) ||
+        (filterEnriched === 'unenriched' && !isEnriched);
+      
+      return matchesSearch && matchesTier && matchesEnrichment;
+    })
+    .sort((a, b) => {
+      const aVal = a[sortField] ?? '';
+      const bVal = b[sortField] ?? '';
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+  const totalContacts = filteredContacts.length;
+  const totalPages = Math.ceil(totalContacts / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedContacts = filteredContacts.slice(startIndex, endIndex);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
+
+  const goToPage = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
+
+  if (loading) {
+    return (
+      <div style={{ marginTop: 24, padding: 48, textAlign: 'center', color: '#9ca3af' }}>
+        <div style={{ fontSize: 18, fontWeight: 600 }}>Loading contacts...</div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0a0f1f 0%, #1e293b 100%)',
-        color: '#e5e7eb',
-        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Inter", sans-serif',
-      }}
-    >
-      {/* GLOBAL HEADER */}
-      <header
-        style={{
-          padding: '24px 32px 16px 32px',
-          borderBottom: '1px solid rgba(148,163,184,0.25)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
+    <div style={{ marginTop: 16 }}>
+      {/* FILTERS */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 250 }}>
+          <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+          <input
+            type="text"
+            placeholder="Search contacts..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 999,
-              background:
-                'conic-gradient(from 180deg at 50% 50%, #6366f1 0deg, #22c55e 120deg, #eab308 240deg, #6366f1 360deg)',
+              width: '100%',
+              padding: '10px 12px 10px 40px',
+              borderRadius: 8,
+              border: '1px solid rgba(148,163,184,0.3)',
+              background: 'rgba(15,23,42,0.6)',
+              color: '#e5e7eb',
+              fontSize: 14,
+            }}
+          />
+        </div>
+        <select
+          value={filterTier}
+          onChange={(e) => setFilterTier(e.target.value)}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 8,
+            border: '1px solid rgba(148,163,184,0.3)',
+            background: 'rgba(15,23,42,0.6)',
+            color: '#e5e7eb',
+            fontSize: 14,
+          }}
+        >
+          <option value="all">All Tiers</option>
+          <option value="Platinum">Platinum</option>
+          <option value="Gold">Gold</option>
+          <option value="Silver">Silver</option>
+          <option value="Bronze">Bronze</option>
+        </select>
+        <select
+          value={filterEnriched}
+          onChange={(e) => setFilterEnriched(e.target.value)}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 8,
+            border: '1px solid rgba(148,163,184,0.3)',
+            background: 'rgba(15,23,42,0.6)',
+            color: '#e5e7eb',
+            fontSize: 14,
+          }}
+        >
+          <option value="all">All Contacts</option>
+          <option value="enriched">✅ Enriched Only</option>
+          <option value="unenriched">⏳ Unenriched Only</option>
+        </select>
+        <select
+          value={pageSize}
+          onChange={(e) => {
+            setPageSize(Number(e.target.value));
+            setCurrentPage(1);
+          }}
+          style={{
+            padding: '10px 14px',
+            borderRadius: 8,
+            border: '1px solid rgba(148,163,184,0.3)',
+            background: 'rgba(15,23,42,0.6)',
+            color: '#e5e7eb',
+            fontSize: 14,
+          }}
+        >
+          <option value="25">25 per page</option>
+          <option value="50">50 per page</option>
+          <option value="100">100 per page</option>
+          <option value="200">200 per page</option>
+        </select>
+      </div>
+
+      <div style={{ marginBottom: 12, fontSize: 13, color: '#9ca3af' }}>
+        Showing {startIndex + 1}-{Math.min(endIndex, totalContacts)} of {totalContacts} contacts
+        {totalPages > 1 && ` (Page ${currentPage} of ${totalPages})`}
+      </div>
+
+      {/* TABLE */}
+      <div style={{ background: '#020617', borderRadius: 16, overflow: 'hidden', border: '1px solid rgba(148,163,184,0.2)' }}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.25)', background: 'rgba(30,41,59,0.5)' }}>
+                {[
+                  { field: 'name' as SortField, label: 'Contact' },
+                  { field: 'title' as SortField, label: 'Title' },
+                  { field: 'company' as SortField, label: 'Company' },
+                  { field: 'lifecycle_stage' as SortField, label: 'Stage' },
+                  { field: 'priority_score' as SortField, label: 'Priority' },
+                  { field: 'mdcp_score' as SortField, label: 'MDCP' },
+                  { field: 'rss_score' as SortField, label: 'RSS' },
+                ].map(({ field, label }) => (
+                  <th
+                    key={field}
+                    onClick={() => handleSort(field)}
+                    style={{
+                      padding: '14px 16px',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#9ca3af',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {label}
+                      {sortField === field && (sortDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedContacts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
+                    No contacts match your filters.
+                  </td>
+                </tr>
+              ) : (
+                paginatedContacts.map((c) => {
+                  const isEnriched = c.enrichment_status === 'completed' || (c.profile_content && c.profile_content.length > 100);
+                  
+                  return (
+                    <tr
+                      key={c.id}
+                      onClick={() => onSelectContact(c)}
+                      style={{
+                        borderBottom: '1px solid rgba(148,163,184,0.15)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                        background: selectedContact?.id === c.id 
+                          ? 'rgba(99,102,241,0.15)' 
+                          : isEnriched 
+                            ? 'rgba(34,197,94,0.08)' 
+                            : 'transparent',
+                        borderLeft: isEnriched ? '3px solid rgba(34,197,94,0.6)' : '3px solid transparent',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedContact?.id !== c.id) {
+                          e.currentTarget.style.background = isEnriched ? 'rgba(34,197,94,0.15)' : 'rgba(30,41,59,0.6)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedContact?.id !== c.id) {
+                          e.currentTarget.style.background = isEnriched ? 'rgba(34,197,94,0.08)' : 'transparent';
+                        }
+                      }}
+                    >
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 999,
+                              background: isEnriched 
+                                ? 'linear-gradient(135deg, rgba(34,197,94,0.6), rgba(22,163,74,0.6))'
+                                : 'linear-gradient(135deg, rgba(99,102,241,0.6), rgba(147,51,234,0.6))',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: '#e5e7eb',
+                              position: 'relative',
+                            }}
+                          >
+                            {c.name
+                              .split(' ')
+                              .map((n) => n[0])
+                              .join('')
+                              .substring(0, 3)
+                              .toUpperCase()}
+                            {isEnriched && (
+                              <div style={{
+                                position: 'absolute',
+                                top: -4,
+                                right: -4,
+                                width: 14,
+                                height: 14,
+                                borderRadius: 999,
+                                background: '#22c55e',
+                                border: '2px solid #020617',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}>
+                                <Zap size={8} color="#020617" fill="#020617" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {c.name}
+                              {isEnriched && (
+                                <span style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: '#22c55e',
+                                  background: 'rgba(34,197,94,0.15)',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  border: '1px solid rgba(34,197,94,0.3)',
+                                }}>
+                                  ENRICHED
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 12, color: '#9ca3af' }}>{c.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: '#cbd5e1' }}>{c.title}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13, color: '#cbd5e1' }}>{c.company}</td>
+                      <td style={{ padding: '14px 16px', fontSize: 13 }}>
+                        <span
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 999,
+                            background: 'rgba(99,102,241,0.2)',
+                            border: '1px solid rgba(99,102,241,0.5)',
+                            color: '#a5b4fc',
+                            fontSize: 11,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {c.lifecycle_stage || c.lifecyclestage || 'N/A'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, color: '#22c55e' }}>
+                        {c.priority_score?.toFixed(1) || 'N/A'}
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, color: '#eab308' }}>
+                        {c.mdcp_score?.toFixed(1) || 'N/A'}
+                      </td>
+                      <td style={{ padding: '14px 16px', fontSize: 14, fontWeight: 600, color: '#06b6d4' }}>
+                        {c.rss_score?.toFixed(1) || 'N/A'}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <button
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage === 1}
+            style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0f172a',
-              fontWeight: 800,
-              fontSize: 16,
+              gap: 6,
+              padding: '10px 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(148,163,184,0.3)',
+              background: currentPage === 1 ? 'rgba(71,85,105,0.3)' : 'rgba(30,41,59,0.6)',
+              color: currentPage === 1 ? '#64748b' : '#e5e7eb',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
             }}
           >
-            AI
+            <ChevronLeft size={16} />
+            Previous
+          </button>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+              let pageNum: number;
+              if (totalPages <= 7) {
+                pageNum = i + 1;
+              } else if (currentPage <= 4) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 3) {
+                pageNum = totalPages - 6 + i;
+              } else {
+                pageNum = currentPage - 3 + i;
+              }
+
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => goToPage(pageNum)}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    border: currentPage === pageNum ? '1px solid rgba(99,102,241,0.9)' : '1px solid rgba(148,163,184,0.3)',
+                    background: currentPage === pageNum ? 'linear-gradient(135deg, rgba(79,70,229,0.4), rgba(99,102,241,0.4))' : 'rgba(30,41,59,0.6)',
+                    color: currentPage === pageNum ? '#e5e7eb' : '#9ca3af',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
           </div>
+
+          <button
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '10px 16px',
+              borderRadius: 8,
+              border: '1px solid rgba(148,163,184,0.3)',
+              background: currentPage === totalPages ? 'rgba(71,85,105,0.3)' : 'rgba(30,41,59,0.6)',
+              color: currentPage === totalPages ? '#64748b' : '#e5e7eb',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Next
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- ROOT APP SHELL ----------
+export default function App() {
+  const [activeTab, setActiveTab] = useState<MainTabId>('board');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const current = MAIN_TABS.find((t) => t.id === activeTab)!;
+  
+  const handleEnrichmentComplete = (updatedContact: Contact) => {
+    console.log('Enrichment completed for', updatedContact);
+    setSelectedContact(updatedContact);
+    setRefreshTrigger(p => p + 1);
+  };
+  
+  const handleCloseModal = () => {
+    setSelectedContact(null);
+    setRefreshTrigger(p => p + 1);
+  };
+  
+  const handleRefresh = () => setRefreshTrigger(p => p + 1);
+  
+  return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0a0f1f 0%, #1e293b 100%)', color: '#e5e7eb', fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Inter', sans-serif" }}>
+      <header style={{ padding: '24px 32px 16px 32px', borderBottom: '1px solid rgba(148,163,184,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 999, background: 'conic-gradient(from 180deg at 50% 50%, #6366f1 0deg, #22c55e 120deg, #eab308 240deg, #6366f1 360deg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a', fontWeight: 800, fontSize: 16 }}>AI</div>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 0.4 }}>
-              Apex Intelligence
-            </div>
-            <div style={{ fontSize: 13, color: '#9ca3af' }}>
-              End-to-end AI sales intelligence · Enrichment · Scoring · Content
-            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: 0.4 }}>Apex Intelligence</div>
+            <div style={{ fontSize: 13, color: '#9ca3af' }}>End-to-end AI sales intelligence · Enrichment · Scoring · Content</div>
           </div>
         </div>
-
-        {/* HubSpot Import Button */}
-        <HubSpotImportButton />
+        <HubSpotImportButton onImportComplete={handleRefresh} />
       </header>
-
-      {/* MAIN NAV TABS */}
-      <nav
-        style={{
-          display: 'flex',
-          gap: 8,
-          padding: '12px 32px 4px 32px',
-          borderBottom: '1px solid rgba(148,163,184,0.25)',
-          background: 'rgba(15,23,42,0.85)',
-          backdropFilter: 'blur(12px)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 50,
-        }}
-      >
+    
+      <nav style={{ display: 'flex', gap: 8, padding: '12px 32px 4px 32px', borderBottom: '1px solid rgba(148,163,184,0.25)', background: 'rgba(15,23,42,0.85)', backdropFilter: 'blur(12px)', position: 'sticky', top: 0, zIndex: 50 }}>
         {MAIN_TABS.map((tab) => {
           const Icon = tab.icon;
           const active = tab.id === activeTab;
@@ -239,13 +602,9 @@ export default function App() {
                 alignItems: 'center',
                 gap: 6,
                 padding: '8px 14px',
-                borderRadius: '999px',
-                border: active
-                  ? '1px solid rgba(129,140,248,0.9)'
-                  : '1px solid rgba(148,163,184,0.35)',
-                background: active
-                  ? 'linear-gradient(135deg, rgba(79,70,229,0.35), rgba(147,51,234,0.35))'
-                  : 'transparent',
+                borderRadius: 999,
+                border: active ? '1px solid rgba(129,140,248,0.9)' : '1px solid rgba(148,163,184,0.35)',
+                background: active ? 'linear-gradient(135deg, rgba(79,70,229,0.35), rgba(147,51,234,0.35))' : 'transparent',
                 color: active ? '#e5e7eb' : '#9ca3af',
                 fontSize: 13,
                 fontWeight: 600,
@@ -259,24 +618,21 @@ export default function App() {
           );
         })}
       </nav>
-
-      {/* CURRENT TAB DESCRIPTION */}
+    
       <div style={{ padding: '12px 32px 8px 32px', fontSize: 12, color: '#9ca3af' }}>
         {current.description}
       </div>
-
-      {/* TAB CONTENT AREA */}
+    
       <main style={{ padding: '0 24px 32px 24px' }}>
+        {activeTab === 'board' && (
+          <TodaysBoard onContactSelect={setSelectedContact} />
+        )}
         {activeTab === 'contacts' && (
           <ContactsBoard
             selectedContact={selectedContact}
             onSelectContact={setSelectedContact}
+            refreshTrigger={refreshTrigger}
           />
-        )}
-        {activeTab === 'apex' && (
-          <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
-            <ApexIntelligence />
-          </div>
         )}
         {activeTab === 'cadence' && (
           <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
@@ -293,429 +649,20 @@ export default function App() {
             <RawDataViewer />
           </div>
         )}
-        {activeTab === 'whyme' && (  // ✅ ADD WHY ME TAB CONTENT
+        {activeTab === 'whyme' && (
           <div style={{ marginTop: 16, borderRadius: 16, overflow: 'hidden', background: '#020617' }}>
             <WhyMeTab />
           </div>
         )}
       </main>
-
-      {/* CONTACT DETAIL MODAL */}
+    
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
-          onClose={() => setSelectedContact(null)}
+          onClose={handleCloseModal}
           onEnrichmentComplete={handleEnrichmentComplete}
         />
       )}
     </div>
   );
 }
-
-// ---------- CONTACTS BOARD (YOUR DARK MAIN DASH) ----------
-interface Contact {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  company: string;
-  title: string;
-  lead_status?: string;
-  lifecycle_stage?: string;
-  mdcp_score?: number;
-  rss_score?: number;
-  priority_score?: number;
-  urgency_level?: string;
-  mdcp_tier?: string;
-  rss_tier?: string;
-  enrichment_status?: string;
-  profile_content?: string;
-}
-
-type SortField = 'name' | 'title' | 'company' | 'lifecycle_stage' | 'lead_status' | 'priority_score' | 'mdcp_score' | 'rss_score';
-
-interface ContactsBoardProps {
-  selectedContact: Contact | null;
-  onSelectContact: (contact: Contact) => void;
-}
-
-function ContactsBoard({ selectedContact, onSelectContact }: ContactsBoardProps) {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sortField, setSortField] = useState<SortField>('priority_score');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterTier, setFilterTier] = useState<string>('all');
-
-  useEffect(() => {
-    fetchContacts();
-  }, []);
-
-  const fetchContacts = async () => {
-    try {
-      const res = await fetch('http://localhost:8000/api/contacts');
-      const data = await res.json();
-      setContacts((data.contacts as Contact[]) || (data as Contact[]));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDir('desc');
-    }
-  };
-
-  const filtered = contacts.filter((c) => {
-    const q = searchTerm.toLowerCase();
-    const matchesSearch =
-      c.name.toLowerCase().includes(q) ||
-      c.company?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q) ||
-      c.title?.toLowerCase().includes(q);
-    const matchesTier = filterTier === 'all' || c.mdcp_tier === filterTier;
-    return matchesSearch && matchesTier;
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    let aVal: any = a[sortField];
-    let bVal: any = b[sortField];
-
-    if (aVal === null) aVal = sortDir === 'asc' ? Infinity : -Infinity;
-    if (bVal === null) bVal = sortDir === 'asc' ? Infinity : -Infinity;
-
-    if (typeof aVal === 'string') {
-      aVal = aVal.toLowerCase();
-      bVal = (bVal as string | undefined)?.toLowerCase();
-    }
-
-    if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
-    if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  const stats = [
-    { label: 'Total Contacts', value: contacts.length, color: '#6366f1' },
-    { label: 'HOT Leads', value: contacts.filter((c) => c.mdcp_tier === 'HOT').length, color: '#22c55e' },
-    { label: 'Warm', value: contacts.filter((c) => c.mdcp_tier === 'WARM').length, color: '#f97316' },
-    { label: 'Scored', value: contacts.filter((c) => c.priority_score != null).length, color: '#0ea5e9' },
-  ];
-
-  if (loading) {
-    return (
-      <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 18 }}>
-        Loading contacts...
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ padding: '16px 8px 0 8px' }}>
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            style={{
-              background: 'rgba(15,23,42,0.9)',
-              borderRadius: 12,
-              padding: 16,
-              border: '1px solid rgba(148,163,184,0.35)',
-              boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-            }}
-          >
-            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, color: '#9ca3af', marginBottom: 6 }}>
-              {s.label}
-            </div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: s.color }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Search & Filter */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
-          <Search size={18} style={{ position: 'absolute', left: 12, top: 10, color: '#64748b' }} />
-          <input
-            type="text"
-            placeholder="Search name, company, email, or title"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              paddingLeft: 38,
-              paddingRight: 14,
-              paddingTop: 8,
-              paddingBottom: 8,
-              borderRadius: 8,
-              border: '1px solid rgba(148,163,184,0.4)',
-              background: 'rgba(15,23,42,0.85)',
-              color: '#e5e7eb',
-              fontSize: 14,
-              outline: 'none',
-            }}
-          />
-        </div>
-
-        <select
-          value={filterTier}
-          onChange={(e) => setFilterTier(e.target.value)}
-          style={{
-            padding: '8px 12px',
-            borderRadius: 8,
-            border: '1px solid rgba(148,163,184,0.5)',
-            background: 'rgba(15,23,42,0.9)',
-            color: '#e5e7eb',
-            fontSize: 13,
-            cursor: 'pointer',
-          }}
-        >
-          <option value="all">All tiers</option>
-          <option value="HOT">🔥 HOT</option>
-          <option value="WARM">WARM</option>
-          <option value="COLD">COLD</option>
-        </select>
-
-        <button
-          type="button"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 12px',
-            borderRadius: 8,
-            border: '1px solid rgba(99,102,241,0.6)',
-            background: 'rgba(79,70,229,0.25)',
-            color: '#e5e7eb',
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: 'pointer',
-          }}
-        >
-          <Download size={16} />
-          Export
-        </button>
-      </div>
-
-      {/* Table */}
-      <div
-        style={{
-          background: 'rgba(15,23,42,0.95)',
-          borderRadius: 14,
-          border: '1px solid rgba(30,64,175,0.7)',
-          boxShadow: '0 20px 45px rgba(15,23,42,0.95)',
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'rgba(15,23,42,1)', borderBottom: '1px solid rgba(51,65,85,0.8)' }}>
-                <SortableTh label="Name" field="name" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Title" field="title" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Company" field="company" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Lifecycle" field="lifecycle_stage" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Status" field="lead_status" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="Priority" field="priority_score" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="MDCP" field="mdcp_score" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-                <SortableTh label="RSS" field="rss_score" sortField={sortField} sortDir={sortDir} onSort={handleSort} />
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((c) => {
-                const priorityColor = getScoreColor(c.priority_score);
-                const mdcpColor = getScoreColor(c.mdcp_score);
-                const rssColor = getScoreColor(c.rss_score);
-                const isSelected = selectedContact?.id === c.id;
-
-                return (
-                  <tr
-                    key={c.id}
-                    onClick={() => onSelectContact(c)}
-                    style={{
-                      borderBottom: '1px solid rgba(31,41,55,0.9)',
-                      transition: 'background 0.18s',
-                      cursor: 'pointer',
-                      background: isSelected ? 'rgba(33, 128, 141, 0.15)' : 'transparent',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'rgba(30,64,175,0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) e.currentTarget.style.background = 'transparent';
-                      else e.currentTarget.style.background = 'rgba(33, 128, 141, 0.15)';
-                    }}
-                  >
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 999,
-                            background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 40%, #0ea5e9 100%)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'white',
-                            fontSize: 12,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {c.name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')
-                            .substring(0, 3)
-                            .toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 500, color: '#e5e7eb' }}>{c.name}</div>
-                          <div style={{ fontSize: 11, color: '#9ca3af' }}>{c.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={tdStyle}>{c.title}</td>
-                    <td style={tdStyle}>{c.company}</td>
-                    <td style={tdStyle}>
-                      <span style={{ color: '#9ca3af' }}>{c.lifecycle_stage}</span>
-                    </td>
-                    <td style={tdStyle}>
-                      <span style={{ color: '#9ca3af' }}>{c.lead_status}</span>
-                    </td>
-                    <td style={tdStyle}>
-                      <ScorePill value={c.priority_score} colors={priorityColor} />
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <ScorePill value={c.mdcp_score} colors={mdcpColor} />
-                        <TierBadge tier={c.mdcp_tier} />
-                      </div>
-                    </td>
-                    <td style={tdStyle}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <ScorePill value={c.rss_score} colors={rssColor} />
-                        <TierBadge tier={c.rss_tier} />
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {sorted.length === 0 && (
-                <tr>
-                  <td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
-                    No contacts match your filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 16, fontSize: 12, color: '#9ca3af', textAlign: 'right' }}>
-        Showing {sorted.length} of {contacts.length} contacts
-      </div>
-    </div>
-  );
-}
-
-// ---------- SMALL PRESENTATIONAL HELPERS ----------
-function getScoreColor(score?: number) {
-  if (score == null) return { color: '#9ca3af', bg: 'rgba(31,41,55,0.9)' };
-  if (score >= 80) return { color: '#22c55e', bg: 'rgba(22,163,74,0.16)' };
-  if (score >= 60) return { color: '#f97316', bg: 'rgba(245,158,11,0.14)' };
-  return { color: '#f97373', bg: 'rgba(220,38,38,0.18)' };
-}
-
-function TierBadge({ tier }: { tier?: string }) {
-  const map: Record<string, { bg: string; border: string; color: string }> = {
-    HOT: { bg: 'rgba(22,163,74,0.12)', border: 'rgba(22,163,74,0.6)', color: '#22c55e' },
-    WARM: { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.6)', color: '#fbbf24' },
-    COLD: { bg: 'rgba(148,163,184,0.15)', border: 'rgba(148,163,184,0.6)', color: '#e5e7eb' },
-  };
-  const style = map[tier || 'COLD'] || map['COLD'];
-
-  return (
-    <span
-      style={{
-        padding: '3px 8px',
-        borderRadius: 999,
-        fontSize: 11,
-        border: `1px solid ${style.border}`,
-        background: style.bg,
-        color: style.color,
-        textTransform: 'uppercase',
-        fontWeight: 600,
-      }}
-    >
-      {tier || 'COLD'}
-    </span>
-  );
-}
-
-function ScorePill({ value, colors }: { value?: number; colors: { color: string; bg: string } }) {
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        minWidth: 32,
-        padding: '4px 10px',
-        borderRadius: 999,
-        fontSize: 13,
-        textAlign: 'center',
-        background: colors.bg,
-        color: colors.color,
-        fontWeight: 600,
-      }}
-    >
-      {value != null ? Math.round(value) : '—'}
-    </span>
-  );
-}
-
-function SortableTh(props: {
-  label: string;
-  field: SortField;
-  sortField: SortField;
-  sortDir: 'asc' | 'desc';
-  onSort: (field: SortField) => void;
-}) {
-  const { label, field, sortField, sortDir, onSort } = props;
-  const active = sortField === field;
-
-  return (
-    <th
-      onClick={() => onSort(field)}
-      style={{
-        padding: 12,
-        textAlign: 'left',
-        fontSize: 11,
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: 0.6,
-        cursor: 'pointer',
-        color: active ? '#e5e7eb' : '#9ca3af',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        {label}
-        {active && (sortDir === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
-      </span>
-    </th>
-  );
-}
-
-const tdStyle: React.CSSProperties = {
-  padding: 12,
-  fontSize: 13,
-  color: '#e5e7eb',
-  background: 'transparent',
-};
