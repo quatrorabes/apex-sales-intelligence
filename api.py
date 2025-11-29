@@ -625,7 +625,7 @@ def get_todays_board():
                     COALESCE(priority_score, 0) as priority_score,
                     COALESCE(mdcp_score, 0) as mdcp_score,
                     enrichment_status,
-                    COALESCE(CAST(julianday('now')-julianday(last_contact_date) AS INTEGER), 0) AS days_since_contact
+                    COALESCE(CAST(EXTRACT(EPOCH FROM (NOW() - last_contact_date::timestamp)) / 86400 AS INTEGER), 0) AS days_since_contact
                     FROM contacts WHERE enrichment_status='completed' 
                     AND last_contact_date IS NOT NULL LIMIT 10''')
         relationships = []
