@@ -78,14 +78,14 @@ def get_db():
     if database_url:
         # Production: PostgreSQL on Railway
         try:
-            import psycopg2
-            from psycopg2.extras import RealDictCursor
+            import psycopg
+            from psycopg.rows import dict_row
             
             # Fix Railway's postgres:// to postgresql://
             if database_url.startswith('postgres://'):
                 database_url = database_url.replace('postgres://', 'postgresql://', 1)
                 
-            conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            conn = psycopg.connect(database_url, row_factory=dict_row)
             logger.info("✅ Connected to PostgreSQL")
             return conn
         except Exception as e:
