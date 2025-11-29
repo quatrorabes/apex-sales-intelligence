@@ -363,7 +363,7 @@ def score_batch_contacts():
 
 @app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
 def enrich_contact(contact_id):
-    """Enrich a contact using enhanced two-stage enrichment"""
+    """Enrich a contact using Perplexity AI"""
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -377,94 +377,110 @@ def enrich_contact(contact_id):
         contact = dict(row)
         conn.close()
         
-        # Import enrichment engine
-        import sys
-        enrichment_path = 'apps/backend/intelligence/engines/enrichment'
-        if enrichment_path not in sys.path:
-            sys.path.insert(0, enrichment_path)
+        # Build search query
+        name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
+        company = contact.get('company', '')
+        title = contact.get('title', '') or contact.get('job_title', '')
+        linkedin = contact.get('linkedin_url', '') or contact.get('linkedin', '')
         
-        try:
-            from enhanced_enrichment import EnhancedEnrichment
-            logger.info(f"✅ EnhancedEnrichment imported successfully")
-        except ImportError as e:
-            logger.error(f"❌ Failed to import EnhancedEnrichment: {e}")
-            logger.error(f"Python path: {sys.path}")
-            return jsonify({
-                "success": False,
-                "error": f"Could not import enrichment module: {str(e)}"
-            }), 500
+        logger.info(f"🔍 Enriching: {name} at {company}")
         
-        # Run enrichment
-        logger.info(f"🔍 Starting enrichment for {contact.get('firstname', '')} {contact.get('lastname', '')} (ID: {contact_id})")
-        logger.info(f"📧 Email: {contact.get('email', 'N/A')}")
-        logger.info(f"🏢 Company: {contact.get('company', 'N/A')}")
+        # Check for Perplexity API
+        perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+        if not perplexity_key:
+            return jsonify({"success": False, "error": "No Perplexity API key"}), 500
         
-        enricher = EnhancedEnrichment()
-        result = enricher.enrich_contact(contact)
+        # Build comprehensive prompt
+        search_context = f"{name}"
+        if company:
+            search_context += f" {company}"
+        if title:
+            search_context += f" {title}"
+        if linkedin:
+            search_context += f" LinkedIn: {linkedin}"
         
-        logger.info(f"📊 Enrichment result: {result.get('success', False) if result else 'None'}")
+        prompt = f"""Research this business professional and provide a comprehensive profile:
+
+**{name}**
+- Company: {company or 'Unknown'}
+- Title: {title or 'Unknown'}
+- LinkedIn: {linkedin or 'Not provided'}
+
+Please provide:
+1. **Professional Background** - Career history, current role, responsibilities
+2. **Company Overview** - What their company does, size, industry position
+3. **Industry Context** - Market trends, challenges in their sector
+4. **Communication Style** - Based on any public content, how they communicate
+5. **Potential Pain Points** - Business challenges someone in this role typically faces
+6. **Talking Points** - Topics that would resonate based on their background
+7. **Recent Activity** - Any recent news, posts, or company updates
+
+Be specific and factual. If information isn't available, note that."""
+
+        # Call Perplexity
+        headers = {
+            "Authorization": f"Bearer {perplexity_key}",
+            "Content-Type": "application/json"
+        }
         
-        if result and result.get('success'):
-            profile_text = result.get('profile_text', '')
-            char_count = result.get('character_count', len(profile_text))
-            
-            # Save to database
-            conn = get_db()
-            conn.execute("""
-                UPDATE contacts SET
-                profile_content = ?,
-                enrichment_status = 'completed',
-                enriched_at = ?
-                WHERE id = %s
-            """, (
-                profile_text,
-                datetime.now().isoformat(),
-                contact_id
-            ))
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"✅ Enrichment complete for contact {contact_id} ({char_count} chars)")
-            
-            return jsonify({
-                'success': True,
-                'contact_id': contact_id,
-                'profile_length': char_count
-            }), 200
-        else:
-            error_msg = result.get('error', 'Unknown enrichment error') if result else 'Enrichment returned None'
-            logger.error(f"❌ Enrichment failed for contact {contact_id}: {error_msg}")
-            
-            # Mark as failed in database
-            conn = get_db()
-            conn.execute("""
-                UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s
-            """, (contact_id,))
-            conn.commit()
-            conn.close()
-            
-            return jsonify({
-                'success': False,
-                'error': error_msg
-            }), 500
-            
+        payload = {
+            "model": "llama-3.1-sonar-large-128k-online",
+            "messages": [
+                {"role": "system", "content": "You are a professional research analyst. Provide detailed, factual profiles of business professionals."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4000
+        }
+        
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Perplexity error: {response.status_code} - {response.text}")
+            return jsonify({"success": False, "error": f"Perplexity API error: {response.status_code}"}), 500
+        
+        result = response.json()
+        profile_text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+        
+        if not profile_text:
+            return jsonify({"success": False, "error": "Empty response from Perplexity"}), 500
+        
+        # Save to database
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts SET
+            profile_content = %s,
+            enrichment_status = %s,
+            enriched_at = %s
+            WHERE id = %s
+        """, (profile_text, 'completed', datetime.now().isoformat(), contact_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Enrichment complete for {name} ({len(profile_text)} chars)")
+        
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'profile_length': len(profile_text)
+        }), 200
+        
     except Exception as e:
-        logger.error(f"❌ Enrichment error for contact {contact_id}: {e}")
-        logger.error(traceback.format_exc())
-        
-        # Mark as failed
+        logger.error(f"❌ Enrichment error: {e}")
         try:
             conn = get_db()
-            conn.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
+            conn.cursor().execute("UPDATE contacts SET enrichment_status = %s WHERE id = %s", ('failed', contact_id))
             conn.commit()
             conn.close()
         except:
             pass
-        
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route('/api/contacts/<int:contact_id>/intelligence', methods=['GET'])
