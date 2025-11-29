@@ -186,7 +186,7 @@ def get_contacts():
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute('SELECT * FROM contacts ORDER BY created_at DESC LIMIT ?', (request.args.get('limit', 100, type=int),))
+        c.execute('SELECT * FROM contacts ORDER BY created_at DESC LIMIT %s', (request.args.get('limit', 100, type=int),))
         contacts = [dict(r) for r in c.fetchall()]
         conn.close()
         return jsonify(contacts)
@@ -198,7 +198,7 @@ def get_contact(contact_id):
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
+        c.execute('SELECT * FROM contacts WHERE id = %s', (contact_id,))
         contact = c.fetchone()
         conn.close()
         return jsonify(dict(contact)) if contact else (jsonify({'error': 'Not found'}), 404)
@@ -220,9 +220,9 @@ def hubspot_import():
             props = contact.get('properties', {})
             email = props.get('email')
             if email:
-                c.execute('SELECT id FROM contacts WHERE email = ?', (email,))
+                c.execute('SELECT id FROM contacts WHERE email = %s', (email,))
                 if not c.fetchone():
-                    c.execute('INSERT INTO contacts (name, email, phone, company, enrichment_status) VALUES (?,?,?,?,?)',
+                    c.execute('INSERT INTO contacts (name, email, phone, company, enrichment_status) VALUES (%s,%s,%s,%s,%s)',
                              (f"{props.get('firstname','')} {props.get('lastname','')}".strip(), email,
                               props.get('phone',''), props.get('company',''), 'pending'))
                     imported += 1
@@ -248,7 +248,7 @@ def score_batch_contacts():
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute('SELECT id FROM contacts LIMIT ?', (request.get_json().get('limit', 50),))
+        c.execute('SELECT id FROM contacts LIMIT %s', (request.get_json().get('limit', 50),))
         ids = [r[0] for r in c.fetchall()]
         results = bulk_score_contacts(conn, ids)
         conn.close()
@@ -262,7 +262,7 @@ def enrich_contact(contact_id):
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
         row = cursor.fetchone()
         
         if not row:
@@ -310,7 +310,7 @@ def enrich_contact(contact_id):
                 profile_content = ?,
                 enrichment_status = 'completed',
                 enriched_at = ?
-                WHERE id = ?
+                WHERE id = %s
             """, (
                 profile_text,
                 datetime.now().isoformat(),
@@ -333,7 +333,7 @@ def enrich_contact(contact_id):
             # Mark as failed in database
             conn = get_db()
             conn.execute("""
-                UPDATE contacts SET enrichment_status = 'failed' WHERE id = ?
+                UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s
             """, (contact_id,))
             conn.commit()
             conn.close()
@@ -350,7 +350,7 @@ def enrich_contact(contact_id):
         # Mark as failed
         try:
             conn = get_db()
-            conn.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = ?", (contact_id,))
+            conn.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
             conn.commit()
             conn.close()
         except:
@@ -367,7 +367,7 @@ def get_contact_intelligence(contact_id):
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+        c.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
         row = c.fetchone()
         conn.close()
         return jsonify({'success': True, 'contact': dict(row)}) if row else (jsonify({'error': 'Not found'}), 404)
@@ -377,7 +377,7 @@ def get_contact_intelligence(contact_id):
 @app.route('/api/contacts/<int:contact_id>/reset-enrichment', methods=['POST'])
 def reset_enrichment(contact_id):
     conn = get_db()
-    conn.execute("UPDATE contacts SET enrichment_status='pending' WHERE id=?", (contact_id,))
+    conn.execute("UPDATE contacts SET enrichment_status='pending' WHERE id=%s", (contact_id,))
     conn.commit()
     conn.close()
     return jsonify({'success': True})
@@ -438,7 +438,7 @@ def generate_content(contact_id):
         
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
         row = cursor.fetchone()
         
         if not row:
@@ -478,7 +478,7 @@ def generate_content(contact_id):
                         email_2_subject = ?, email_2_body = ?,
                         email_3_subject = ?, email_3_body = ?,
                         content_generated_at = ?
-                        WHERE id = ?
+                        WHERE id = %s
                     """, (
                         emails[0].get('subject', ''), emails[0].get('body', ''),
                         emails[1].get('subject', ''), emails[1].get('body', ''),
@@ -683,7 +683,7 @@ def log_activity():
     try:
         d = request.json
         conn = get_db()
-        conn.execute('INSERT INTO contact_activities (contact_id,activity_type,activity_date,direction,subject,notes,outcome) VALUES (?,?,?,?,?,?,?)',
+        conn.execute('INSERT INTO contact_activities (contact_id,activity_type,activity_date,direction,subject,notes,outcome) VALUES (%s,%s,%s,%s,%s,%s,%s)',
                     (d.get('contact_id'),d.get('activity_type'),d.get('activity_date',datetime.now().isoformat()),
                      d.get('direction','outbound'),d.get('subject',''),d.get('notes',''),d.get('outcome','')))
         conn.commit()
@@ -697,7 +697,7 @@ def get_contact_activities(contact_id):
     try:
         conn = get_db()
         c = conn.cursor()
-        c.execute('SELECT * FROM contact_activities WHERE contact_id=? ORDER BY activity_date DESC LIMIT 50', (contact_id,))
+        c.execute('SELECT * FROM contact_activities WHERE contact_id=%s ORDER BY activity_date DESC LIMIT 50', (contact_id,))
         activities = [dict(r) for r in c.fetchall()]
         conn.close()
         return jsonify({"success": True, "activities": activities})
@@ -715,7 +715,7 @@ def detect_signals():
         created = 0
         for cid in ids:
             if random.random() < 0.5:
-                c.execute('INSERT INTO opportunity_signals (contact_id,signal_type,signal_date,signal_data,urgency_boost) VALUES (?,?,?,?,?)',
+                c.execute('INSERT INTO opportunity_signals (contact_id,signal_type,signal_date,signal_data,urgency_boost) VALUES (%s,%s,%s,%s,%s)',
                          (cid, 'linkedin_post', datetime.now().isoformat(), 'Activity detected', 15))
                 created += 1
         conn.commit()
@@ -739,7 +739,7 @@ def get_unread_signals():
 @app.route('/api/signals/mark-read/<int:signal_id>', methods=['POST'])
 def mark_signal_read(signal_id):
     conn = get_db()
-    conn.execute("UPDATE opportunity_signals SET viewed=1 WHERE id=?", (signal_id,))
+    conn.execute("UPDATE opportunity_signals SET viewed=1 WHERE id=%s", (signal_id,))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
