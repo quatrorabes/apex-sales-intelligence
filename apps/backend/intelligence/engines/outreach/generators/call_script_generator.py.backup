@@ -69,7 +69,7 @@ class UnifiedCallScriptGenerator:
         
         cursor = conn.execute("""
             SELECT id, name, firstname, lastname, email, phone, 
-                   company, title, title,
+                   company, job_title, title,
                    profile_content, enrichment_data, pain_points,
                    mdcp_score, priority_score, mdcp_tier
             FROM contacts 
@@ -92,9 +92,9 @@ class UnifiedCallScriptGenerator:
             profile['firstname'] = parts[0] if parts else ''
             profile['lastname'] = parts[1] if len(parts) > 1 else ''
         
-        # Use title or title
-        if not profile.get('title'):
-            profile['title'] = profile.get('title', 'Professional')
+        # Use job_title or title
+        if not profile.get('job_title'):
+            profile['job_title'] = profile.get('title', 'Professional')
         
         # Add score and tier for backwards compatibility
         profile['score'] = profile.get('priority_score') or profile.get('mdcp_score') or 0
@@ -128,7 +128,7 @@ class UnifiedCallScriptGenerator:
         firstname = profile.get('firstname', '')
         lastname = profile.get('lastname', '')
         name = f"{firstname} {lastname}".strip() or profile.get('name', 'Contact')
-        title = profile.get('title') or profile.get('title', 'Professional')
+        title = profile.get('job_title') or profile.get('title', 'Professional')
         company = profile.get('company', 'their company')
         intel = (profile.get('profile_content') or profile.get('enrichment_data', ''))[:1200]
         

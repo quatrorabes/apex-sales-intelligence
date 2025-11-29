@@ -1,0 +1,25 @@
+def get_todays_board():
+    """Generate daily prioritized action list - relationships vs prospects"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+		
+        # RELATIONSHIPS QUERY (contacts with last_contact_date)
+        cursor.execute('''
+            SELECT 
+                id, name, email, phone, company, title, priority_score, mdcp_score,
+                enrichment_status, email_1_subject, email_1_body, call_script_1, 
+                linkedin_connect, linkedin_activity_detected, company_news_detected,
+                CASE 
+                    WHEN last_contact_date IS NULL THEN 0
+                    ELSE CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)
+                END AS days_since_contact
+            FROM contacts
+            WHERE enrichment_status = 'completed'
+              AND last_contact_date IS NOT NULL
+              AND last_contact_date != ''
+            LIMIT 30
+        ''')
+		
+        relationships = []
+        for row in cursor.fetchall():

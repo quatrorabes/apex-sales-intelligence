@@ -1,0 +1,1151 @@
+import React, { useState, useEffect } from 'react';
+
+interface Contact {
+  id: number;
+  name: string;
+  firstname?: string;
+  lastname?: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  title?: string;
+  linkedin_url?: string;
+  enrichment_status?: string;
+  enrichment_data?: string;
+  profile_content?: string; // Raw enrichment data
+  mdcp_score?: number;
+  rss_score?: number;
+  priority_score?: number;
+  urgency_level?: string;
+  mdcp_tier?: string;
+  rss_tier?: string;
+  persona_type?: string;
+  persona_tier?: string;
+  recommended_action?: string;
+  lead_status?: string;
+  lifecycle_stage?: string;
+  relationship_level?: string;
+  email_1_subject?: string;
+  email_1_body?: string;
+  email_2_subject?: string;
+  email_2_body?: string;
+  email_3_subject?: string;
+  email_3_body?: string;
+  call_script_1?: string;
+  call_script_2?: string;
+  call_script_3?: string;
+  linkedin_request?: string;
+  linkedin_followup?: string;
+  content_generated_at?: string;
+}
+
+interface ContactDetailModalProps {
+  contact: Contact;
+  onClose: () => void;
+  onUpdate?: () => void;
+  onEnrich?: (contactId: number) => void;
+}
+
+const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
+  contact,
+  onClose,
+  onUpdate,
+  onEnrich
+}) => {
+  const [activeTab, setActiveTab] = useState<'overview' | 'intelligence' | 'content'>('overview');
+  const [rawIntelligence, setRawIntelligence] = useState<string>('');
+  const [parsedSections, setParsedSections] = useState<any>({});
+  const [generatedContent, setGeneratedContent] = useState<any>({
+    email: [
+      { subject: '', body: '' },
+      { subject: '', body: '' },
+      { subject: '', body: '' }
+    ],
+    call: ['', '', ''],
+    linkedin: ['', '']
+  });
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const [copiedField, setCopiedField] = useState('');
+
+  // Parse enrichment data on mount
+  useEffect(() => {
+    // Get raw profile content
+    if (contact.profile_content) {
+      setRawIntelligence(contact.profile_content);
+      const sections = parseProfileSections(contact.profile_content);
+      setParsedSections(sections);
+    } else if (contact.enrichment_data) {
+      try {
+        const parsed = JSON.parse(contact.enrichment_data);
+        if (parsed.full_profile_text || parsed.perplexity_insights) {
+          const text = parsed.full_profile_text || parsed.perplexity_insights;
+          setRawIntelligence(text);
+          const sections = parseProfileSections(text);
+          setParsedSections(sections);
+        }
+      } catch (e) {
+        console.error('Failed to parse enrichment data:', e);
+      }
+    }
+
+    // Load existing generated content
+    if (contact.email_1_subject || contact.email_1_body) {
+      setGeneratedContent({
+        email: [
+          { subject: contact.email_1_subject || '', body: contact.email_1_body || '' },
+          { subject: contact.email_2_subject || '', body: contact.email_2_body || '' },
+          { subject: contact.email_3_subject || '', body: contact.email_3_body || '' }
+        ],
+        call: [
+          contact.call_script_1 || '',
+          contact.call_script_2 || '',
+          contact.call_script_3 || ''
+        ],
+        linkedin: [
+          contact.linkedin_request || '',
+          contact.linkedin_followup || ''
+        ]
+      });
+    }
+  }, [contact]);
+
+  const parseProfileSections = (text: string) => {
+    const sections: any = {
+      overview: '',
+      background: [],
+      education: [],
+      recent_mentions: [],
+      personality: '',
+      sales_talking_points: [],
+      company_overview: '',
+      company_products: [],
+      company_leadership: [],
+      company_news: [],
+      pain_points: [],
+      sba_interests: [],
+      key_insights: []
+    };
+
+    // Split by major section headers
+    const overviewMatch = text.match(/##\s*1\.\s*\*\*Overview\*\*(.*?)(?=##|###|\n---)/s);
+    if (overviewMatch) sections.overview = overviewMatch[1].trim();
+
+    const backgroundMatch = text.match(/###\s*2\.\s*\*\*Background\*\*(.*?)(?=##|###|\n---)/s);
+    if (backgroundMatch) {
+      sections.background = backgroundMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const educationMatch = text.match(/###\s*3\.\s*\*\*Education\*\*(.*?)(?=##|###|\n---)/s);
+    if (educationMatch) {
+      sections.education = educationMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const recentMatch = text.match(/###\s*4\.\s*\*\*Recent Mentions.*?\*\*(.*?)(?=##|###|\n---)/s);
+    if (recentMatch) {
+      sections.recent_mentions = recentMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const personalityMatch = text.match(/###\s*6\.\s*\*\*Personality.*?\*\*(.*?)(?=##|###|\n---)/s);
+    if (personalityMatch) sections.personality = personalityMatch[1].trim();
+
+    const talkingPointsMatch = text.match(/###\s*8\.\s*\*\*Potential Sales.*?\*\*(.*?)(?=##|###|\n---)/s);
+    if (talkingPointsMatch) {
+      sections.sales_talking_points = talkingPointsMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    // Company sections
+    const companyOverviewMatch = text.match(/\*\*.*?Company Profile\*\*.*?###\s*1\.\s*\*\*Overview\*\*(.*?)(?=##|###|\n---)/s);
+    if (companyOverviewMatch) sections.company_overview = companyOverviewMatch[1].trim();
+
+    const companyProductsMatch = text.match(/###\s*2\.\s*\*\*Products.*?\*\*(.*?)(?=##|###|\n---)/s);
+    if (companyProductsMatch) {
+      sections.company_products = companyProductsMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const companyLeadershipMatch = text.match(/###\s*3\.\s*\*\*Leadership\*\*(.*?)(?=##|###|\n---)/s);
+    if (companyLeadershipMatch) {
+      sections.company_leadership = companyLeadershipMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const companyNewsMatch = text.match(/###\s*5\.\s*\*\*Recent News\*\*(.*?)(?=##|###|\n---)/s);
+    if (companyNewsMatch) {
+      sections.company_news = companyNewsMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    // Strategic intelligence
+    const painPointsMatch = text.match(/###\s*\*\*PAIN POINTS.*?\*\*(.*?)(?=##|###|\n---)/s);
+    if (painPointsMatch) {
+      sections.pain_points = painPointsMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const sbaMatch = text.match(/###\s*\*\*SBA FINANCING.*?\*\*(.*?)(?=##|###|\n---)/s);
+    if (sbaMatch) {
+      sections.sba_interests = sbaMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    const insightsMatch = text.match(/###\s*\*\*KEY INSIGHTS\*\*(.*?)(?=##|###|\n---|$)/s);
+    if (insightsMatch) {
+      sections.key_insights = insightsMatch[1]
+        .split(/\n[-•]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    }
+
+    return sections;
+  };
+
+  const handleEnrich = async () => {
+    if (onEnrich) {
+      await onEnrich(contact.id);
+      if (onUpdate) onUpdate();
+    }
+  };
+
+  const handleGenerateAllContent = async () => {
+    setIsGenerating(true);
+    setGenerationError('');
+
+    try {
+      // Call the Python script via backend API endpoint
+      const response = await fetch(`http://localhost:8000/api/contacts/${contact.id}/generate-content-unified`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Generation failed');
+      }
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Reload contact data to get generated content
+        if (onUpdate) await onUpdate();
+        
+        // Update local state
+        setGeneratedContent({
+          email: [
+            { subject: data.emails?.email_1?.subject || '', body: data.emails?.email_1?.body || '' },
+            { subject: data.emails?.email_2?.subject || '', body: data.emails?.email_2?.body || '' },
+            { subject: data.emails?.email_3?.subject || '', body: data.emails?.email_3?.body || '' }
+          ],
+          call: [
+            data.scripts?.script_1_cold_call || '',
+            data.scripts?.script_2_followup || '',
+            data.scripts?.script_3_executive || ''
+          ],
+          linkedin: [
+            data.linkedin?.connection_note || '',
+            data.linkedin?.followup_message || ''
+          ]
+        });
+
+        setActiveTab('content');
+      }
+    } catch (error: any) {
+      console.error('Content generation error:', error);
+      setGenerationError(error.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyText = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(''), 2000);
+  };
+
+  const isPeer = contact.relationship_level === 'peer' || contact.persona_type?.includes('Referral');
+
+  const getScoreColor = (score: number) => {
+    if (score >= 70) return '#10b981';
+    if (score >= 50) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  const getUrgencyColor = (urgency: string) => {
+    switch (urgency?.toUpperCase()) {
+      case 'IMMEDIATE': return '#ef4444';
+      case 'HIGH': return '#f59e0b';
+      case 'MEDIUM': return '#3b82f6';
+      default: return '#6b7280';
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: '#0a0f1f',
+        borderRadius: '12px',
+        maxWidth: '1200px',
+        width: '100%',
+        maxHeight: '90vh',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid #1e293b'
+      }}>
+        
+        {/* Header with Gradient */}
+        <div style={{
+          background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+          padding: '24px 32px',
+          color: 'white',
+          position: 'relative'
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '20px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              border: 'none',
+              borderRadius: '6px',
+              color: 'white',
+              fontSize: '20px',
+              width: '32px',
+              height: '32px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            ✕
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '50%',
+              background: 'rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              fontWeight: 'bold'
+            }}>
+              {contact.name?.charAt(0) || '?'}
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <h2 style={{ margin: 0, fontSize: '24px', fontWeight: '600' }}>
+                {contact.name}
+              </h2>
+              <p style={{ margin: '4px 0 0', opacity: 0.9, fontSize: '14px' }}>
+                {contact.title} at {contact.company}
+                {isPeer && <span style={{ marginLeft: '8px' }}>🤝 Referral Partner</span>}
+              </p>
+
+              {/* Score Badges */}
+              <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+                    {contact.priority_score !== null ? Math.round(contact.priority_score) : '—'}
+                  </div>
+                  <div style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase' }}>Priority</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+                    {contact.mdcp_score !== null ? Math.round(contact.mdcp_score) : '—'}
+                  </div>
+                  <div style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase' }}>Role</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '28px', fontWeight: 'bold' }}>
+                    {contact.rss_score !== null ? Math.round(contact.rss_score) : '—'}
+                  </div>
+                  <div style={{ fontSize: '11px', opacity: 0.8, textTransform: 'uppercase' }}>Data</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{
+          display: 'flex',
+          borderBottom: '1px solid #1e293b',
+          backgroundColor: '#0f1629',
+          padding: '0 32px'
+        }}>
+          {[
+            { id: 'overview', label: '📋 Overview' },
+            { id: 'intelligence', label: '🧠 Intelligence' },
+            { id: 'content', label: '✉️ Generated Content' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '16px 24px',
+                color: activeTab === tab.id ? '#6366f1' : '#94a3b8',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                borderBottom: activeTab === tab.id ? '2px solid #6366f1' : '2px solid transparent',
+                transition: 'all 0.2s'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content Area */}
+        <div style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: '32px',
+          backgroundColor: '#0a0f1f'
+        }}>
+          
+          {/* OVERVIEW TAB */}
+          {activeTab === 'overview' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              
+              {/* Contact Info Card */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 16px', 
+                  color: '#e2e8f0', 
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  📇 Contact Information
+                </h3>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <InfoField label="EMAIL" value={contact.email} copyable />
+                  <InfoField label="PHONE" value={contact.phone || 'N/A'} copyable />
+                  <InfoField label="COMPANY" value={contact.company || 'N/A'} />
+                  <InfoField label="TITLE" value={contact.title || 'N/A'} />
+                </div>
+              </div>
+
+              {/* Scoring Card */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 16px', 
+                  color: '#e2e8f0', 
+                  fontSize: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  🎯 Apex Scoring
+                </h3>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+                  <ScoreCard 
+                    label="MDCP Score"
+                    value={contact.mdcp_score}
+                    tier={contact.mdcp_tier}
+                    color={getScoreColor(contact.mdcp_score || 0)}
+                  />
+                  <ScoreCard 
+                    label="RSS Score"
+                    value={contact.rss_score}
+                    tier={contact.rss_tier}
+                    color={getScoreColor(contact.rss_score || 0)}
+                  />
+                  <ScoreCard 
+                    label="Priority"
+                    value={contact.priority_score}
+                    tier={contact.urgency_level}
+                    color={getUrgencyColor(contact.urgency_level || '')}
+                  />
+                </div>
+
+                {contact.recommended_action && (
+                  <div style={{
+                    marginTop: '16px',
+                    padding: '12px',
+                    backgroundColor: '#1e293b',
+                    borderRadius: '6px',
+                    color: '#94a3b8',
+                    fontSize: '14px'
+                  }}>
+                    <strong style={{ color: '#e2e8f0' }}>Recommended Action:</strong> {contact.recommended_action}
+                  </div>
+                )}
+              </div>
+
+              {/* Enrichment Status */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, color: '#e2e8f0', fontSize: '16px' }}>
+                    🤖 AI Intelligence Status
+                  </h3>
+                  <span style={{
+                    padding: '4px 12px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    backgroundColor: contact.enrichment_status === 'complete' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: contact.enrichment_status === 'complete' ? '#10b981' : '#f59e0b'
+                  }}>
+                    {contact.enrichment_status === 'complete' ? '✓ Complete' : '⏳ Pending'}
+                  </span>
+                </div>
+
+                {contact.enrichment_status === 'complete' ? (
+                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>
+                    Enhanced enrichment with strategic insights
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ margin: '0 0 16px', color: '#94a3b8', fontSize: '14px' }}>
+                      Enrich this contact to generate AI-powered insights about pain points, SBA interests, and conversation starters.
+                    </p>
+                    <button
+                      onClick={handleEnrich}
+                      style={{
+                        background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                        color: 'white',
+                        border: 'none',
+                        padding: '10px 20px',
+                        borderRadius: '6px',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✨ Enrich Contact
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* INTELLIGENCE TAB - IMPROVED LAYOUT */}
+          {activeTab === 'intelligence' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+              
+              {!rawIntelligence ? (
+                <div style={{
+                  backgroundColor: '#0f1629',
+                  border: '1px solid #1e293b',
+                  borderRadius: '8px',
+                  padding: '40px',
+                  textAlign: 'center',
+                  color: '#94a3b8'
+                }}>
+                  <div style={{ fontSize: '48px', marginBottom: '16px' }}>🧠</div>
+                  <h3 style={{ margin: '0 0 8px', color: '#e2e8f0' }}>No Intelligence Data Yet</h3>
+                  <p style={{ margin: 0 }}>Enrich this contact first to view AI-generated insights</p>
+                </div>
+              ) : (
+                <>
+                  {/* SECTION: PROFESSIONAL PROFILE */}
+                  <SectionHeader icon="👤" title="Professional Profile" />
+                  
+                  {parsedSections.overview && (
+                    <IntelligenceCard title="Overview" content={parsedSections.overview} />
+                  )}
+                  
+                  {parsedSections.background && parsedSections.background.length > 0 && (
+                    <IntelligenceCard title="Background" content={parsedSections.background} isList />
+                  )}
+                  
+                  {parsedSections.education && parsedSections.education.length > 0 && (
+                    <IntelligenceCard title="Education" content={parsedSections.education} isList />
+                  )}
+                  
+                  {parsedSections.recent_mentions && parsedSections.recent_mentions.length > 0 && (
+                    <IntelligenceCard title="Recent Mentions & Online Presence" content={parsedSections.recent_mentions} isList />
+                  )}
+                  
+                  {parsedSections.personality && (
+                    <IntelligenceCard title="Personality Assessment" content={parsedSections.personality} />
+                  )}
+
+                  {/* SECTION: COMPANY PROFILE */}
+                  <SectionHeader icon="🏢" title="Company Profile" />
+                  
+                  {parsedSections.company_overview && (
+                    <IntelligenceCard title="Company Overview" content={parsedSections.company_overview} />
+                  )}
+                  
+                  {parsedSections.company_products && parsedSections.company_products.length > 0 && (
+                    <IntelligenceCard title="Products & Services" content={parsedSections.company_products} isList />
+                  )}
+                  
+                  {parsedSections.company_leadership && parsedSections.company_leadership.length > 0 && (
+                    <IntelligenceCard title="Leadership" content={parsedSections.company_leadership} isList />
+                  )}
+                  
+                  {parsedSections.company_news && parsedSections.company_news.length > 0 && (
+                    <IntelligenceCard title="Recent News" content={parsedSections.company_news} isList />
+                  )}
+
+                  {/* SECTION: STRATEGIC INTELLIGENCE */}
+                  <SectionHeader icon="🎯" title="Strategic Intelligence & Talking Points" />
+                  
+                  {parsedSections.pain_points && parsedSections.pain_points.length > 0 && (
+                    <IntelligenceCard 
+                      title="💡 Pain Points" 
+                      content={parsedSections.pain_points} 
+                      isList 
+                      highlight 
+                    />
+                  )}
+                  
+                  {parsedSections.sba_interests && parsedSections.sba_interests.length > 0 && (
+                    <IntelligenceCard 
+                      title="🏦 SBA Financing Interests" 
+                      content={parsedSections.sba_interests} 
+                      isList 
+                      highlight 
+                    />
+                  )}
+                  
+                  {parsedSections.key_insights && parsedSections.key_insights.length > 0 && (
+                    <IntelligenceCard 
+                      title="🔑 Key Insights" 
+                      content={parsedSections.key_insights} 
+                      isList 
+                      highlight 
+                    />
+                  )}
+                  
+                  {parsedSections.sales_talking_points && parsedSections.sales_talking_points.length > 0 && (
+                    <IntelligenceCard 
+                      title="💼 Sales Talking Points" 
+                      content={parsedSections.sales_talking_points} 
+                      isList 
+                    />
+                  )}
+
+                  {/* Raw intelligence as fallback */}
+                  {!parsedSections.overview && !parsedSections.pain_points && (
+                    <IntelligenceCard 
+                      title="Full AI Intelligence" 
+                      content={rawIntelligence} 
+                      raw 
+                    />
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* GENERATED CONTENT TAB */}
+          {activeTab === 'content' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              
+              {/* Generation Controls */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <h3 style={{ margin: '0 0 16px', color: '#e2e8f0', fontSize: '16px' }}>
+                  ✨ Content Generation
+                </h3>
+                <p style={{ margin: '0 0 16px', color: '#94a3b8', fontSize: '14px' }}>
+                  {contact.profile_content 
+                    ? 'Generate personalized outreach content based on AI intelligence' 
+                    : '⚠️ Enrich this contact first for better content quality'}
+                </p>
+
+                <button
+                  onClick={handleGenerateAllContent}
+                  disabled={isGenerating || !contact.profile_content}
+                  style={{
+                    background: isGenerating 
+                      ? '#64748b' 
+                      : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                    color: 'white',
+                    border: 'none',
+                    padding: '12px 24px',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '500',
+                    cursor: (isGenerating || !contact.profile_content) ? 'not-allowed' : 'pointer',
+                    opacity: (isGenerating || !contact.profile_content) ? 0.6 : 1
+                  }}
+                >
+                  {isGenerating ? '⏳ Generating...' : '✨ Generate All Content (3 Emails + 3 Calls + LinkedIn)'}
+                </button>
+
+                {generationError && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '12px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '6px',
+                    color: '#ef4444',
+                    fontSize: '14px'
+                  }}>
+                    ❌ {generationError}
+                  </div>
+                )}
+              </div>
+
+              {/* Email Sequences */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 20px', 
+                  color: '#e2e8f0', 
+                  fontSize: '18px',
+                  fontWeight: '600'
+                }}>
+                  📧 Email Sequence (3 Emails)
+                </h3>
+
+                {generatedContent.email.map((email: any, index: number) => (
+                  <ContentCard
+                    key={`email-${index}`}
+                    title={`Email ${index + 1} - ${['Introduction (Day 1)', 'Value Add (Day 4)', 'Breakup (Day 7)'][index]}`}
+                    content={email}
+                    type="email"
+                    index={index}
+                    onCopy={copyText}
+                    copiedField={copiedField}
+                  />
+                ))}
+              </div>
+
+              {/* Call Scripts */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 20px', 
+                  color: '#e2e8f0', 
+                  fontSize: '18px',
+                  fontWeight: '600'
+                }}>
+                  📞 Call Scripts (3 Scripts)
+                </h3>
+
+                {generatedContent.call.map((script: string, index: number) => (
+                  <ContentCard
+                    key={`call-${index}`}
+                    title={`Script ${index + 1} - ${['Cold Call', 'Follow-up Call', 'Executive Briefing'][index]}`}
+                    content={script}
+                    type="call"
+                    index={index}
+                    onCopy={copyText}
+                    copiedField={copiedField}
+                  />
+                ))}
+              </div>
+
+              {/* LinkedIn Messages */}
+              <div style={{
+                backgroundColor: '#0f1629',
+                border: '1px solid #1e293b',
+                borderRadius: '8px',
+                padding: '20px'
+              }}>
+                <h3 style={{ 
+                  margin: '0 0 20px', 
+                  color: '#e2e8f0', 
+                  fontSize: '18px',
+                  fontWeight: '600'
+                }}>
+                  💼 LinkedIn Messages (2 Messages)
+                </h3>
+
+                {generatedContent.linkedin.map((message: string, index: number) => (
+                  <ContentCard
+                    key={`linkedin-${index}`}
+                    title={index === 0 ? 'Connection Request' : 'Follow-up Message'}
+                    content={message}
+                    type="linkedin"
+                    index={index}
+                    onCopy={copyText}
+                    copiedField={copiedField}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Helper Components
+
+const InfoField: React.FC<{ label: string; value: string; copyable?: boolean }> = ({ label, value, copyable }) => (
+  <div>
+    <div style={{ 
+      fontSize: '11px', 
+      color: '#64748b', 
+      marginBottom: '4px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px',
+      fontWeight: '500'
+    }}>
+      {label}
+    </div>
+    <div style={{ 
+      color: '#e2e8f0', 
+      fontSize: '14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px'
+    }}>
+      {value}
+      {copyable && value !== 'N/A' && (
+        <button
+          onClick={() => navigator.clipboard.writeText(value)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#64748b',
+            cursor: 'pointer',
+            padding: '2px',
+            fontSize: '14px'
+          }}
+          title="Copy to clipboard"
+        >
+          📋
+        </button>
+      )}
+    </div>
+  </div>
+);
+
+const ScoreCard: React.FC<{ label: string; value?: number; tier?: string; color: string }> = ({ 
+  label, 
+  value, 
+  tier, 
+  color 
+}) => (
+  <div style={{
+    padding: '16px',
+    backgroundColor: '#1e293b',
+    borderRadius: '6px',
+    textAlign: 'center'
+  }}>
+    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>
+      {label}
+    </div>
+    <div style={{ fontSize: '32px', fontWeight: 'bold', color, marginBottom: '4px' }}>
+      {value !== null && value !== undefined ? Math.round(value) : '—'}
+    </div>
+    {tier && (
+      <div style={{
+        fontSize: '12px',
+        padding: '4px 8px',
+        borderRadius: '12px',
+        backgroundColor: `${color}33`,
+        color: color,
+        display: 'inline-block',
+        fontWeight: '500'
+      }}>
+        {tier}
+      </div>
+    )}
+  </div>
+);
+
+const SectionHeader: React.FC<{ icon: string; title: string }> = ({ icon, title }) => (
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    marginTop: '16px',
+    paddingBottom: '16px',
+    borderBottom: '2px solid #1e293b'
+  }}>
+    <div style={{ fontSize: '24px' }}>{icon}</div>
+    <h2 style={{ 
+      margin: 0, 
+      color: '#e2e8f0', 
+      fontSize: '20px',
+      fontWeight: '600'
+    }}>
+      {title}
+    </h2>
+  </div>
+);
+
+const IntelligenceCard: React.FC<{
+  title: string;
+  content: string | string[];
+  isList?: boolean;
+  highlight?: boolean;
+  raw?: boolean;
+}> = ({ title, content, isList, highlight, raw }) => {
+  return (
+    <div style={{
+      backgroundColor: highlight ? '#1e293b' : '#0f1629',
+      border: `1px solid ${highlight ? '#334155' : '#1e293b'}`,
+      borderRadius: '8px',
+      padding: '24px',
+      marginBottom: '16px'
+    }}>
+      <h4 style={{ 
+        margin: '0 0 16px', 
+        color: highlight ? '#6366f1' : '#cbd5e1', 
+        fontSize: '15px',
+        fontWeight: '600',
+        letterSpacing: '0.3px'
+      }}>
+        {title}
+      </h4>
+
+      {isList && Array.isArray(content) ? (
+        <ul style={{ 
+          margin: 0, 
+          paddingLeft: '24px', 
+          color: '#94a3b8', 
+          fontSize: '14px',
+          lineHeight: '1.8'
+        }}>
+          {content.map((item, idx) => (
+            <li key={idx} style={{ marginBottom: '12px' }}>{item}</li>
+          ))}
+        </ul>
+      ) : raw ? (
+        <pre style={{
+          margin: 0,
+          color: '#94a3b8',
+          fontSize: '13px',
+          lineHeight: '1.8',
+          whiteSpace: 'pre-wrap',
+          fontFamily: 'ui-monospace, monospace',
+          backgroundColor: '#0a0f1f',
+          padding: '16px',
+          borderRadius: '6px',
+          border: '1px solid #1e293b'
+        }}>
+          {content}
+        </pre>
+      ) : (
+        <div style={{ 
+          color: '#94a3b8', 
+          fontSize: '14px',
+          lineHeight: '1.8',
+          whiteSpace: 'pre-wrap'
+        }}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ContentCard: React.FC<{
+  title: string;
+  content: any;
+  type: 'email' | 'call' | 'linkedin';
+  index: number;
+  onCopy: (text: string, field: string) => void;
+  copiedField: string;
+}> = ({ title, content, type, index, onCopy, copiedField }) => {
+  const hasContent = type === 'email' 
+    ? (content.subject || content.body)
+    : Boolean(content);
+
+  const fieldId = `${type}-${index}`;
+
+  return (
+    <div style={{
+      marginBottom: '24px',
+      padding: '20px',
+      backgroundColor: '#1e293b',
+      borderRadius: '8px',
+      border: '1px solid #334155'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <h4 style={{ margin: 0, color: '#e2e8f0', fontSize: '15px', fontWeight: '600' }}>
+          {title}
+        </h4>
+      </div>
+
+      {hasContent ? (
+        type === 'email' ? (
+          <>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <strong style={{ color: '#cbd5e1', fontSize: '13px' }}>Subject:</strong>
+                <button
+                  onClick={() => onCopy(content.subject, `${fieldId}-subject`)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copiedField === `${fieldId}-subject` ? '#10b981' : '#64748b',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    padding: '4px 8px'
+                  }}
+                  title="Copy to clipboard"
+                >
+                  {copiedField === `${fieldId}-subject` ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </div>
+              <div style={{ 
+                color: '#e2e8f0', 
+                fontSize: '14px',
+                padding: '12px',
+                backgroundColor: '#0f1629',
+                borderRadius: '6px',
+                fontWeight: '500'
+              }}>
+                {content.subject}
+              </div>
+            </div>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <strong style={{ color: '#cbd5e1', fontSize: '13px' }}>Body:</strong>
+                <button
+                  onClick={() => onCopy(content.body, `${fieldId}-body`)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: copiedField === `${fieldId}-body` ? '#10b981' : '#64748b',
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    padding: '4px 8px'
+                  }}
+                  title="Copy to clipboard"
+                >
+                  {copiedField === `${fieldId}-body` ? '✓ Copied' : '📋 Copy'}
+                </button>
+              </div>
+              <div style={{ 
+                color: '#94a3b8', 
+                fontSize: '14px',
+                padding: '16px',
+                backgroundColor: '#0f1629',
+                borderRadius: '6px',
+                lineHeight: '1.7',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {content.body}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <strong style={{ color: '#cbd5e1', fontSize: '13px' }}>
+                {type === 'call' ? 'Script:' : 'Message:'}
+              </strong>
+              <button
+                onClick={() => onCopy(content, fieldId)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: copiedField === fieldId ? '#10b981' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  padding: '4px 8px'
+                }}
+                title="Copy to clipboard"
+              >
+                {copiedField === fieldId ? '✓ Copied' : '📋 Copy'}
+              </button>
+            </div>
+            <div style={{ 
+              color: '#94a3b8', 
+              fontSize: '14px',
+              padding: '16px',
+              backgroundColor: '#0f1629',
+              borderRadius: '6px',
+              lineHeight: '1.7',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {content}
+            </div>
+          </div>
+        )
+      ) : (
+        <div style={{
+          color: '#64748b',
+          fontSize: '14px',
+          fontStyle: 'italic',
+          textAlign: 'center',
+          padding: '32px',
+          backgroundColor: '#0f1629',
+          borderRadius: '6px'
+        }}>
+          Content will appear here after generation
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ContactDetailModal;

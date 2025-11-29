@@ -1,50 +1,42 @@
-# Environment & Secrets
+# Environment
 .env
 .env.local
-.env.production
 *.env
 
-# Database
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Database (local SQLite)
 *.db
 *.sqlite
 *.sqlite3
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-env/
-.venv/
-ENV/
-
-# Node/Frontend
-node_modules/
-dist/
-build/
-.cache/
-*.log
-npm-debug.log*
 
 # IDE
 .idea/
 .vscode/
 *.swp
-*.swo
-.DS_Store
 
-# Backups
-*.backup*
-*.bak
-*.old
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
-logs/
 *.log
+logs/
 
-# Coverage
-htmlcov/
-.coverage
-.pytest_cache/
+# Node modules (if any frontend)
+node_modules/
+dist/
+build/
+
+# Secrets
+*.pem
+*.key
+secrets/
+
+# Enrichment profiles (generated files)
+enrichment_profiles/

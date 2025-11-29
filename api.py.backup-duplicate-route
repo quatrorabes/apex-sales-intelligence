@@ -1562,3 +1562,670 @@ def save_user_preferences():
 if __name__ == '__main__':
     ensure_scoring_columns()
     app.run(host='0.0.0.0', port=PORT, debug=True)
+# ========================================
+# PHASE 2: TODAY'S BOARD & ACTIVITY TRACKING
+# ========================================
+
+@app.route('/api/todays-board', methods=['GET'])
+def get_todays_board():
+    """Generate daily prioritized action list - relationships vs prospects"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # RELATIONSHIPS QUERY (contacts with last_contact_date)
+        cursor.execute('''
+            SELECT 
+                id, name, email, phone, company, title, priority_score, mdcp_score,
+                enrichment_status, email_1_subject, email_1_body, call_script_1, 
+                linkedin_connect, linkedin_activity_detected, company_news_detected,
+                CASE 
+                    WHEN last_contact_date IS NULL THEN 0
+                    ELSE CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)
+                END AS days_since_contact
+            FROM contacts
+            WHERE enrichment_status = 'completed'
+              AND last_contact_date IS NOT NULL
+              AND last_contact_date != ''
+            LIMIT 30
+        ''')
+        
+        relationships = []
+        for row in cursor.fetchall():
+            c = dict(row)
+            days = c.get('days_since_contact', 0)
+            
+            if days >= 365:
+                c['urgency_tier'] = 'urgent'
+                c['urgency_label'] = '🔥 ACT TODAY'
+                c['why_now'] = f"Last spoke {days} days ago - going cold"
+            elif days >= 180:
+                c['urgency_tier'] = 'warm'
+                c['urgency_label'] = '⏰ THIS WEEK'
+                c['why_now'] = f"Last spoke {days} days ago - reconnect"
+            elif days >= 90:
+                c['urgency_tier'] = 'nurture'
+                c['urgency_label'] = '🌱 NURTURE'
+                c['why_now'] = f"Last spoke {days} days ago"
+            else:
+                c['urgency_tier'] = 'stable'
+                c['urgency_label'] = '✅ STABLE'
+                c['why_now'] = "Recent contact"
+            
+            c['contact_type'] = 'relationship'
+            c['urgency_message'] = c['why_now']
+            relationships.append(c)
+        
+        # PROSPECTS QUERY (never contacted OR high priority)
+        cursor.execute('''
+            SELECT 
+                id, name, email, phone, company, title, priority_score, mdcp_score,
+                enrichment_status, email_1_subject, email_1_body, call_script_1, 
+                linkedin_connect, 0 as days_since_contact
+            FROM contacts
+            WHERE enrichment_status = 'completed'
+              AND (last_contact_date IS NULL OR last_contact_date = '')
+              AND priority_score >= 60
+            LIMIT 15
+        ''')
+        
+        prospects = []
+        for row in cursor.fetchall():
+            c = dict(row)
+            p = c.get('priority_score', 0)
+            
+            if p >= 85:
+                c['urgency_tier'] = 'hot_prospect'
+                c['urgency_label'] = '🔥 HOT'
+                c['why_now'] = f"High priority ({p:.1f})"
+            elif p >= 75:
+                c['urgency_tier'] = 'qualified_prospect'
+                c['urgency_label'] = '✅ QUALIFIED'
+                c['why_now'] = f"Good fit ({p:.1f})"
+            else:
+                c['urgency_tier'] = 'potential_prospect'
+                c['urgency_label'] = '🎯 POTENTIAL'
+                c['why_now'] = f"Priority {p:.1f}"
+            
+            c['contact_type'] = 'prospect'
+            c['urgency_message'] = c['why_now']
+            prospects.append(c)
+        
+        # ORGANIZE BY TIERS
+        urgent = [c for c in relationships if c['urgency_tier'] == 'urgent']
+        warm = [c for c in relationships if c['urgency_tier'] == 'warm']
+        nurture = [c for c in relationships if c['urgency_tier'] == 'nurture']
+        stable = [c for c in relationships if c['urgency_tier'] == 'stable']
+        
+        hot = [c for c in prospects if c['urgency_tier'] == 'hot_prospect']
+        qualified = [c for c in prospects if c['urgency_tier'] == 'qualified_prospect']
+        potential = [c for c in prospects if c['urgency_tier'] == 'potential_prospect']
+        
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%I:%M %p"),
+            "total_actions": len(urgent) + len(warm) + len(hot) + len(qualified),
+            "recommendation": f"Call {len(urgent)} urgent + {len(hot)} hot prospects",
+            "relationships": {
+                "total": len(relationships),
+                "urgent_count": len(urgent),
+                "warm_count": len(warm),
+                "nurture_count": len(nurture),
+                "stable_count": len(stable),
+                "tiers": {
+                    "urgent": urgent[:5],
+                    "warm": warm[:5],
+                    "nurture": nurture[:4],
+                    "stable": stable[:4]
+                }
+            },
+            "new_prospects": {
+                "total": len(prospects),
+                "hot_count": len(hot),
+                "qualified_count": len(qualified),
+                "potential_count": len(potential),
+                "tiers": {
+                    "hot": hot[:5],
+                    "qualified": qualified[:5],
+                    "potential": potential[:5]
+                }
+            }
+        })
+    except Exception as e:
+        logger.error(f"Today's Board error: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ACTIVITY LOGGING ENDPOINTS
+@app.route('/api/activities/log', methods=['POST'])
+def log_activity():
+    """Log a contact activity"""
+    try:
+        data = request.json
+        contact_id = data.get('contact_id')
+        activity_type = data.get('activity_type')
+        activity_date = data.get('activity_date', datetime.now().isoformat())
+        direction = data.get('direction', 'outbound')
+        subject = data.get('subject', '')
+        notes = data.get('notes', '')
+        outcome = data.get('outcome', '')
+        
+        if not contact_id or not activity_type:
+            return jsonify({"success": False, "error": "contact_id and activity_type required"}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO contact_activities 
+            (contact_id, activity_type, activity_date, direction, subject, notes, outcome)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (contact_id, activity_type, activity_date, direction, subject, notes, outcome))
+        
+        # Update last_contact_date on contact
+        cursor.execute('''
+            UPDATE contacts SET last_contact_date = ? WHERE id = ?
+        ''', (activity_date.split('T')[0], contact_id))
+        
+        conn.commit()
+        activity_id = cursor.lastrowid
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "activity_id": activity_id,
+            "message": f"{activity_type.title()} logged successfully"
+        })
+    except Exception as e:
+        logger.error(f"Activity logging error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/activities/<int:contact_id>', methods=['GET'])
+def get_contact_activities(contact_id):
+    """Get activity timeline for a contact"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, activity_type, activity_date, direction, subject, notes, outcome, created_at
+            FROM contact_activities
+            WHERE contact_id = ?
+            ORDER BY activity_date DESC
+            LIMIT 50
+        ''', (contact_id,))
+        
+        activities = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "contact_id": contact_id,
+            "activities": activities,
+            "total": len(activities)
+        })
+    except Exception as e:
+        logger.error(f"Get activities error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# OPPORTUNITY SIGNALS ENDPOINTS
+@app.route('/api/signals/detect', methods=['POST'])
+def detect_signals():
+    """Trigger signal detection for contacts"""
+    try:
+        data = request.json or {}
+        contact_ids = data.get('contact_ids', [])
+        
+        if not contact_ids:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id FROM contacts 
+                WHERE enrichment_status = 'completed'
+                ORDER BY priority_score DESC
+                LIMIT 50
+            ''')
+            contact_ids = [row['id'] for row in cursor.fetchall()]
+            conn.close()
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        signals_created = 0
+        
+        for contact_id in contact_ids:
+            cursor.execute("SELECT name, company, title, email FROM contacts WHERE id = ?", (contact_id,))
+            contact = cursor.fetchone()
+            if not contact:
+                continue
+            
+            # Simulated signal detection (70% chance per contact)
+            import random
+            if random.random() < 0.7:
+                signal_types = ['job_change', 'linkedin_post', 'company_news', 'funding']
+                signal_type = random.choice(signal_types)
+                
+                signal_messages = {
+                    'job_change': f"{contact['name']} updated their LinkedIn profile",
+                    'linkedin_post': f"{contact['name']} posted about industry trends",
+                    'company_news': f"{contact['company']} announced expansion plans",
+                    'funding': f"{contact['company']} raised new funding round"
+                }
+                
+                urgency_boost = {'job_change': 30, 'linkedin_post': 15, 'company_news': 25, 'funding': 35}.get(signal_type, 10)
+                
+                cursor.execute('''
+                    INSERT INTO opportunity_signals 
+                    (contact_id, signal_type, signal_date, signal_data, urgency_boost)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (contact_id, signal_type, datetime.now().isoformat(), signal_messages[signal_type], urgency_boost))
+                
+                # Update contact flags
+                if signal_type in ['job_change', 'linkedin_post']:
+                    cursor.execute('''
+                        UPDATE contacts 
+                        SET linkedin_activity_detected = 1, last_signal_date = ?, signal_count = signal_count + 1
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), contact_id))
+                elif signal_type in ['company_news', 'funding']:
+                    cursor.execute('''
+                        UPDATE contacts 
+                        SET company_news_detected = 1, last_signal_date = ?, signal_count = signal_count + 1
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), contact_id))
+                
+                signals_created += 1
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "signals_created": signals_created,
+            "contacts_scanned": len(contact_ids)
+        })
+    except Exception as e:
+        logger.error(f"Signal detection error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/signals/unread', methods=['GET'])
+def get_unread_signals():
+    """Get all unread opportunity signals"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                s.id, s.contact_id, s.signal_type, s.signal_date, s.signal_data, s.urgency_boost,
+                c.name, c.company, c.title, c.priority_score, c.email
+            FROM opportunity_signals s
+            JOIN contacts c ON s.contact_id = c.id
+            WHERE s.viewed = 0
+            ORDER BY s.signal_date DESC, s.urgency_boost DESC
+            LIMIT 20
+        ''')
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "signals": signals,
+            "total": len(signals)
+        })
+    except Exception as e:
+        logger.error(f"Get signals error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/signals/mark-read/<int:signal_id>', methods=['POST'])
+def mark_signal_read(signal_id):
+    """Mark a signal as viewed"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE opportunity_signals SET viewed = 1 WHERE id = ?", (signal_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"success": True, "message": "Signal marked as read"})
+    except Exception as e:
+        logger.error(f"Mark signal read error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ========================================
+# PHASE 2: TODAY'S BOARD & ACTIVITY TRACKING
+# ========================================
+
+@app.route('/api/todays-board', methods=['GET'])
+def get_todays_board():
+    """Generate daily prioritized action list - relationships vs prospects"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # RELATIONSHIPS QUERY (contacts with last_contact_date)
+        cursor.execute('''
+            SELECT 
+                id, name, email, phone, company, title, priority_score, mdcp_score,
+                enrichment_status, email_1_subject, email_1_body, call_script_1, 
+                linkedin_connect, linkedin_activity_detected, company_news_detected,
+                CASE 
+                    WHEN last_contact_date IS NULL THEN 0
+                    ELSE CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)
+                END AS days_since_contact
+            FROM contacts
+            WHERE enrichment_status = 'completed'
+              AND last_contact_date IS NOT NULL
+              AND last_contact_date != ''
+            LIMIT 30
+        ''')
+        
+        relationships = []
+        for row in cursor.fetchall():
+            c = dict(row)
+            days = c.get('days_since_contact', 0)
+            
+            if days >= 365:
+                c['urgency_tier'] = 'urgent'
+                c['urgency_label'] = '🔥 ACT TODAY'
+                c['why_now'] = f"Last spoke {days} days ago - going cold"
+            elif days >= 180:
+                c['urgency_tier'] = 'warm'
+                c['urgency_label'] = '⏰ THIS WEEK'
+                c['why_now'] = f"Last spoke {days} days ago - reconnect"
+            elif days >= 90:
+                c['urgency_tier'] = 'nurture'
+                c['urgency_label'] = '🌱 NURTURE'
+                c['why_now'] = f"Last spoke {days} days ago"
+            else:
+                c['urgency_tier'] = 'stable'
+                c['urgency_label'] = '✅ STABLE'
+                c['why_now'] = "Recent contact"
+            
+            c['contact_type'] = 'relationship'
+            c['urgency_message'] = c['why_now']
+            relationships.append(c)
+        
+        # PROSPECTS QUERY (never contacted OR high priority)
+        cursor.execute('''
+            SELECT 
+                id, name, email, phone, company, title, priority_score, mdcp_score,
+                enrichment_status, email_1_subject, email_1_body, call_script_1, 
+                linkedin_connect, 0 as days_since_contact
+            FROM contacts
+            WHERE enrichment_status = 'completed'
+              AND (last_contact_date IS NULL OR last_contact_date = '')
+              AND priority_score >= 60
+            LIMIT 15
+        ''')
+        
+        prospects = []
+        for row in cursor.fetchall():
+            c = dict(row)
+            p = c.get('priority_score', 0)
+            
+            if p >= 85:
+                c['urgency_tier'] = 'hot_prospect'
+                c['urgency_label'] = '🔥 HOT'
+                c['why_now'] = f"High priority ({p:.1f})"
+            elif p >= 75:
+                c['urgency_tier'] = 'qualified_prospect'
+                c['urgency_label'] = '✅ QUALIFIED'
+                c['why_now'] = f"Good fit ({p:.1f})"
+            else:
+                c['urgency_tier'] = 'potential_prospect'
+                c['urgency_label'] = '🎯 POTENTIAL'
+                c['why_now'] = f"Priority {p:.1f}"
+            
+            c['contact_type'] = 'prospect'
+            c['urgency_message'] = c['why_now']
+            prospects.append(c)
+        
+        # ORGANIZE BY TIERS
+        urgent = [c for c in relationships if c['urgency_tier'] == 'urgent']
+        warm = [c for c in relationships if c['urgency_tier'] == 'warm']
+        nurture = [c for c in relationships if c['urgency_tier'] == 'nurture']
+        stable = [c for c in relationships if c['urgency_tier'] == 'stable']
+        
+        hot = [c for c in prospects if c['urgency_tier'] == 'hot_prospect']
+        qualified = [c for c in prospects if c['urgency_tier'] == 'qualified_prospect']
+        potential = [c for c in prospects if c['urgency_tier'] == 'potential_prospect']
+        
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%I:%M %p"),
+            "total_actions": len(urgent) + len(warm) + len(hot) + len(qualified),
+            "recommendation": f"Call {len(urgent)} urgent + {len(hot)} hot prospects",
+            "relationships": {
+                "total": len(relationships),
+                "urgent_count": len(urgent),
+                "warm_count": len(warm),
+                "nurture_count": len(nurture),
+                "stable_count": len(stable),
+                "tiers": {
+                    "urgent": urgent[:5],
+                    "warm": warm[:5],
+                    "nurture": nurture[:4],
+                    "stable": stable[:4]
+                }
+            },
+            "new_prospects": {
+                "total": len(prospects),
+                "hot_count": len(hot),
+                "qualified_count": len(qualified),
+                "potential_count": len(potential),
+                "tiers": {
+                    "hot": hot[:5],
+                    "qualified": qualified[:5],
+                    "potential": potential[:5]
+                }
+            }
+        })
+    except Exception as e:
+        logger.error(f"Today's Board error: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# ACTIVITY LOGGING ENDPOINTS
+@app.route('/api/activities/log', methods=['POST'])
+def log_activity():
+    """Log a contact activity"""
+    try:
+        data = request.json
+        contact_id = data.get('contact_id')
+        activity_type = data.get('activity_type')
+        activity_date = data.get('activity_date', datetime.now().isoformat())
+        direction = data.get('direction', 'outbound')
+        subject = data.get('subject', '')
+        notes = data.get('notes', '')
+        outcome = data.get('outcome', '')
+        
+        if not contact_id or not activity_type:
+            return jsonify({"success": False, "error": "contact_id and activity_type required"}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO contact_activities 
+            (contact_id, activity_type, activity_date, direction, subject, notes, outcome)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (contact_id, activity_type, activity_date, direction, subject, notes, outcome))
+        
+        # Update last_contact_date on contact
+        cursor.execute('''
+            UPDATE contacts SET last_contact_date = ? WHERE id = ?
+        ''', (activity_date.split('T')[0], contact_id))
+        
+        conn.commit()
+        activity_id = cursor.lastrowid
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "activity_id": activity_id,
+            "message": f"{activity_type.title()} logged successfully"
+        })
+    except Exception as e:
+        logger.error(f"Activity logging error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/activities/<int:contact_id>', methods=['GET'])
+def get_contact_activities(contact_id):
+    """Get activity timeline for a contact"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, activity_type, activity_date, direction, subject, notes, outcome, created_at
+            FROM contact_activities
+            WHERE contact_id = ?
+            ORDER BY activity_date DESC
+            LIMIT 50
+        ''', (contact_id,))
+        
+        activities = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "contact_id": contact_id,
+            "activities": activities,
+            "total": len(activities)
+        })
+    except Exception as e:
+        logger.error(f"Get activities error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# OPPORTUNITY SIGNALS ENDPOINTS
+@app.route('/api/signals/detect', methods=['POST'])
+def detect_signals():
+    """Trigger signal detection for contacts"""
+    try:
+        data = request.json or {}
+        contact_ids = data.get('contact_ids', [])
+        
+        if not contact_ids:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id FROM contacts 
+                WHERE enrichment_status = 'completed'
+                ORDER BY priority_score DESC
+                LIMIT 50
+            ''')
+            contact_ids = [row['id'] for row in cursor.fetchall()]
+            conn.close()
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        signals_created = 0
+        
+        for contact_id in contact_ids:
+            cursor.execute("SELECT name, company, title, email FROM contacts WHERE id = ?", (contact_id,))
+            contact = cursor.fetchone()
+            if not contact:
+                continue
+            
+            # Simulated signal detection (70% chance per contact)
+            import random
+            if random.random() < 0.7:
+                signal_types = ['job_change', 'linkedin_post', 'company_news', 'funding']
+                signal_type = random.choice(signal_types)
+                
+                signal_messages = {
+                    'job_change': f"{contact['name']} updated their LinkedIn profile",
+                    'linkedin_post': f"{contact['name']} posted about industry trends",
+                    'company_news': f"{contact['company']} announced expansion plans",
+                    'funding': f"{contact['company']} raised new funding round"
+                }
+                
+                urgency_boost = {'job_change': 30, 'linkedin_post': 15, 'company_news': 25, 'funding': 35}.get(signal_type, 10)
+                
+                cursor.execute('''
+                    INSERT INTO opportunity_signals 
+                    (contact_id, signal_type, signal_date, signal_data, urgency_boost)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (contact_id, signal_type, datetime.now().isoformat(), signal_messages[signal_type], urgency_boost))
+                
+                # Update contact flags
+                if signal_type in ['job_change', 'linkedin_post']:
+                    cursor.execute('''
+                        UPDATE contacts 
+                        SET linkedin_activity_detected = 1, last_signal_date = ?, signal_count = signal_count + 1
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), contact_id))
+                elif signal_type in ['company_news', 'funding']:
+                    cursor.execute('''
+                        UPDATE contacts 
+                        SET company_news_detected = 1, last_signal_date = ?, signal_count = signal_count + 1
+                        WHERE id = ?
+                    ''', (datetime.now().isoformat(), contact_id))
+                
+                signals_created += 1
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "signals_created": signals_created,
+            "contacts_scanned": len(contact_ids)
+        })
+    except Exception as e:
+        logger.error(f"Signal detection error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/signals/unread', methods=['GET'])
+def get_unread_signals():
+    """Get all unread opportunity signals"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT 
+                s.id, s.contact_id, s.signal_type, s.signal_date, s.signal_data, s.urgency_boost,
+                c.name, c.company, c.title, c.priority_score, c.email
+            FROM opportunity_signals s
+            JOIN contacts c ON s.contact_id = c.id
+            WHERE s.viewed = 0
+            ORDER BY s.signal_date DESC, s.urgency_boost DESC
+            LIMIT 20
+        ''')
+        
+        signals = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "signals": signals,
+            "total": len(signals)
+        })
+    except Exception as e:
+        logger.error(f"Get signals error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/signals/mark-read/<int:signal_id>', methods=['POST'])
+def mark_signal_read(signal_id):
+    """Mark a signal as viewed"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE opportunity_signals SET viewed = 1 WHERE id = ?", (signal_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"success": True, "message": "Signal marked as read"})
+    except Exception as e:
+        logger.error(f"Mark signal read error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
