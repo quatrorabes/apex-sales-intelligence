@@ -207,30 +207,135 @@ def get_contact(contact_id):
 
 @app.route('/api/hubspot/import', methods=['POST'])
 def hubspot_import():
+    """Import contacts from HubSpot with filtering"""
     if not HUBSPOT_TOKEN:
         return jsonify({'error': 'No token', 'imported': 0}), 400
+    
+    # Exclusion filters
+    EXCLUDED_LEAD_STATUS = ['unqualified', 'do not contact', 'unsubscribe', 'unassigned', '']
+    EXCLUDED_LIFECYCLE = ['unqualified', 'unassigned']
+    
     try:
-        r = requests.get('https://api.hubapi.com/crm/v3/objects/contacts',
-                        headers={"Authorization": f"Bearer {HUBSPOT_TOKEN}"},
-                        params={'limit': 100, 'properties': ['firstname','lastname','email','phone','company']})
+        # Request all needed properties from HubSpot
+        properties = [
+            'firstname', 'lastname', 'email', 'phone', 'company', 'jobtitle',
+            'lifecyclestage', 'hs_lead_status', 'industry', 'website',
+            'linkedin', 'city', 'state', 'country', 'hubspot_owner_id',
+            'createdate', 'lastmodifieddate', 'notes_last_updated',
+            'num_contacted_notes', 'hs_object_id', 'personal_contact'
+        ]
+        
+        all_contacts = []
+        after = None
+        
+        # Paginate through all contacts
+        while True:
+            params = {'limit': 100, 'properties': ','.join(properties)}
+            if after:
+                params['after'] = after
+                
+            r = requests.get('https://api.hubapi.com/crm/v3/objects/contacts',
+                           headers={"Authorization": f"Bearer {HUBSPOT_TOKEN}"},
+                           params=params)
+            
+            data = r.json()
+            results = data.get('results', [])
+            all_contacts.extend(results)
+            
+            # Check for more pages
+            paging = data.get('paging', {})
+            if paging.get('next', {}).get('after'):
+                after = paging['next']['after']
+            else:
+                break
+            
+            # Safety limit
+            if len(all_contacts) >= 1000:
+                break
+        
         conn = get_db()
         c = conn.cursor()
         imported = 0
-        for contact in r.json().get('results', [])[:100]:
+        skipped = 0
+        
+        for contact in all_contacts:
             props = contact.get('properties', {})
             email = props.get('email')
-            if email:
-                c.execute('SELECT id FROM contacts WHERE email = %s', (email,))
-                if not c.fetchone():
-                    c.execute('INSERT INTO contacts (name, email, phone, company, enrichment_status) VALUES (%s,%s,%s,%s,%s)',
-                             (f"{props.get('firstname','')} {props.get('lastname','')}".strip(), email,
-                              props.get('phone',''), props.get('company',''), 'pending'))
-                    imported += 1
+            
+            if not email:
+                skipped += 1
+                continue
+            
+            # Get filter fields
+            lead_status = (props.get('hs_lead_status') or '').lower().strip()
+            lifecycle_stage = (props.get('lifecyclestage') or '').lower().strip()
+            personal_contact = (props.get('personal_contact') or '').lower().strip()
+            
+            # Apply exclusion filters
+            if lead_status in [x.lower() for x in EXCLUDED_LEAD_STATUS]:
+                skipped += 1
+                continue
+            if lifecycle_stage in [x.lower() for x in EXCLUDED_LIFECYCLE]:
+                skipped += 1
+                continue
+            if personal_contact == 'yes':
+                skipped += 1
+                continue
+            
+            # Check if contact exists
+            c.execute('SELECT id FROM contacts WHERE email = %s', (email,))
+            existing = c.fetchone()
+            
+            # Build contact data
+            firstname = props.get('firstname', '') or ''
+            lastname = props.get('lastname', '') or ''
+            name = f"{firstname} {lastname}".strip() or email.split('@')[0]
+            
+            if existing:
+                # Update existing contact
+                c.execute("""UPDATE contacts SET
+                    name = %s, firstname = %s, lastname = %s, phone = %s, company = %s,
+                    title = %s, job_title = %s, industry = %s, website = %s,
+                    linkedin_url = %s, lifecycle_stage = %s, lead_status = %s,
+                    hubspot_id = %s, hs_object_id = %s, hubspot_owner = %s,
+                    location = %s, create_date = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE email = %s""",
+                    (name, firstname, lastname, props.get('phone', ''), props.get('company', ''),
+                     props.get('jobtitle', ''), props.get('jobtitle', ''), props.get('industry', ''),
+                     props.get('website', ''), props.get('linkedin', ''),
+                     props.get('lifecyclestage', ''), props.get('hs_lead_status', ''),
+                     contact.get('id', ''), props.get('hs_object_id', ''),
+                     props.get('hubspot_owner_id', ''),
+                     f"{props.get('city', '')} {props.get('state', '')} {props.get('country', '')}".strip(),
+                     props.get('createdate', ''), email))
+            else:
+                # Insert new contact
+                c.execute("""INSERT INTO contacts 
+                    (name, firstname, lastname, email, phone, company, title, job_title,
+                     industry, website, linkedin_url, lifecycle_stage, lead_status,
+                     hubspot_id, hs_object_id, hubspot_owner, location, create_date,
+                     enrichment_status, created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)""",
+                    (name, firstname, lastname, email, props.get('phone', ''), props.get('company', ''),
+                     props.get('jobtitle', ''), props.get('jobtitle', ''), props.get('industry', ''),
+                     props.get('website', ''), props.get('linkedin', ''),
+                     props.get('lifecyclestage', ''), props.get('hs_lead_status', ''),
+                     contact.get('id', ''), props.get('hs_object_id', ''),
+                     props.get('hubspot_owner_id', ''),
+                     f"{props.get('city', '')} {props.get('state', '')} {props.get('country', '')}".strip(),
+                     props.get('createdate', ''), 'pending'))
+                imported += 1
+        
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'imported': imported})
+        
+        logger.info(f"HubSpot import: {imported} imported, {skipped} skipped")
+        return jsonify({'success': True, 'imported': imported, 'skipped': skipped, 'total_fetched': len(all_contacts)})
+        
     except Exception as e:
+        logger.error(f"HubSpot import error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
 def score_single_contact(contact_id):
