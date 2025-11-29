@@ -207,30 +207,135 @@ def get_contact(contact_id):
 
 @app.route('/api/hubspot/import', methods=['POST'])
 def hubspot_import():
+    """Import contacts from HubSpot with filtering"""
     if not HUBSPOT_TOKEN:
         return jsonify({'error': 'No token', 'imported': 0}), 400
+    
+    # Exclusion filters
+    EXCLUDED_LEAD_STATUS = ['unqualified', 'do not contact', 'unsubscribe', 'unassigned', '']
+    EXCLUDED_LIFECYCLE = ['unqualified', 'unassigned']
+    
     try:
-        r = requests.get('https://api.hubapi.com/crm/v3/objects/contacts',
-                        headers={"Authorization": f"Bearer {HUBSPOT_TOKEN}"},
-                        params={'limit': 100, 'properties': ['firstname','lastname','email','phone','company']})
+        # Request all needed properties from HubSpot
+        properties = [
+            'firstname', 'lastname', 'email', 'phone', 'company', 'jobtitle',
+            'lifecyclestage', 'hs_lead_status', 'industry', 'website',
+            'linkedin', 'city', 'state', 'country', 'hubspot_owner_id',
+            'createdate', 'lastmodifieddate', 'notes_last_updated',
+            'num_contacted_notes', 'hs_object_id', 'personal_contact'
+        ]
+        
+        all_contacts = []
+        after = None
+        
+        # Paginate through all contacts
+        while True:
+            params = {'limit': 100, 'properties': ','.join(properties)}
+            if after:
+                params['after'] = after
+                
+            r = requests.get('https://api.hubapi.com/crm/v3/objects/contacts',
+                           headers={"Authorization": f"Bearer {HUBSPOT_TOKEN}"},
+                           params=params)
+            
+            data = r.json()
+            results = data.get('results', [])
+            all_contacts.extend(results)
+            
+            # Check for more pages
+            paging = data.get('paging', {})
+            if paging.get('next', {}).get('after'):
+                after = paging['next']['after']
+            else:
+                break
+            
+            # Safety limit
+            if len(all_contacts) >= 1000:
+                break
+        
         conn = get_db()
         c = conn.cursor()
         imported = 0
-        for contact in r.json().get('results', [])[:100]:
+        skipped = 0
+        
+        for contact in all_contacts:
             props = contact.get('properties', {})
             email = props.get('email')
-            if email:
-                c.execute('SELECT id FROM contacts WHERE email = %s', (email,))
-                if not c.fetchone():
-                    c.execute('INSERT INTO contacts (name, email, phone, company, enrichment_status) VALUES (%s,%s,%s,%s,%s)',
-                             (f"{props.get('firstname','')} {props.get('lastname','')}".strip(), email,
-                              props.get('phone',''), props.get('company',''), 'pending'))
-                    imported += 1
+            
+            if not email:
+                skipped += 1
+                continue
+            
+            # Get filter fields
+            lead_status = (props.get('hs_lead_status') or '').lower().strip()
+            lifecycle_stage = (props.get('lifecyclestage') or '').lower().strip()
+            personal_contact = (props.get('personal_contact') or '').lower().strip()
+            
+            # Apply exclusion filters
+            if lead_status in [x.lower() for x in EXCLUDED_LEAD_STATUS]:
+                skipped += 1
+                continue
+            if lifecycle_stage in [x.lower() for x in EXCLUDED_LIFECYCLE]:
+                skipped += 1
+                continue
+            if personal_contact == 'yes':
+                skipped += 1
+                continue
+            
+            # Check if contact exists
+            c.execute('SELECT id FROM contacts WHERE email = %s', (email,))
+            existing = c.fetchone()
+            
+            # Build contact data
+            firstname = props.get('firstname', '') or ''
+            lastname = props.get('lastname', '') or ''
+            name = f"{firstname} {lastname}".strip() or email.split('@')[0]
+            
+            if existing:
+                # Update existing contact
+                c.execute("""UPDATE contacts SET
+                    name = %s, firstname = %s, lastname = %s, phone = %s, company = %s,
+                    title = %s, job_title = %s, industry = %s, website = %s,
+                    linkedin_url = %s, lifecycle_stage = %s, lead_status = %s,
+                    hubspot_id = %s, hs_object_id = %s, hubspot_owner = %s,
+                    location = %s, create_date = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE email = %s""",
+                    (name, firstname, lastname, props.get('phone', ''), props.get('company', ''),
+                     props.get('jobtitle', ''), props.get('jobtitle', ''), props.get('industry', ''),
+                     props.get('website', ''), props.get('linkedin', ''),
+                     props.get('lifecyclestage', ''), props.get('hs_lead_status', ''),
+                     contact.get('id', ''), props.get('hs_object_id', ''),
+                     props.get('hubspot_owner_id', ''),
+                     f"{props.get('city', '')} {props.get('state', '')} {props.get('country', '')}".strip(),
+                     props.get('createdate', ''), email))
+            else:
+                # Insert new contact
+                c.execute("""INSERT INTO contacts 
+                    (name, firstname, lastname, email, phone, company, title, job_title,
+                     industry, website, linkedin_url, lifecycle_stage, lead_status,
+                     hubspot_id, hs_object_id, hubspot_owner, location, create_date,
+                     enrichment_status, created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)""",
+                    (name, firstname, lastname, email, props.get('phone', ''), props.get('company', ''),
+                     props.get('jobtitle', ''), props.get('jobtitle', ''), props.get('industry', ''),
+                     props.get('website', ''), props.get('linkedin', ''),
+                     props.get('lifecyclestage', ''), props.get('hs_lead_status', ''),
+                     contact.get('id', ''), props.get('hs_object_id', ''),
+                     props.get('hubspot_owner_id', ''),
+                     f"{props.get('city', '')} {props.get('state', '')} {props.get('country', '')}".strip(),
+                     props.get('createdate', ''), 'pending'))
+                imported += 1
+        
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'imported': imported})
+        
+        logger.info(f"HubSpot import: {imported} imported, {skipped} skipped")
+        return jsonify({'success': True, 'imported': imported, 'skipped': skipped, 'total_fetched': len(all_contacts)})
+        
     except Exception as e:
+        logger.error(f"HubSpot import error: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
 def score_single_contact(contact_id):
@@ -258,7 +363,7 @@ def score_batch_contacts():
 
 @app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
 def enrich_contact(contact_id):
-    """Enrich a contact using enhanced two-stage enrichment"""
+    """Enrich a contact using Perplexity AI"""
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -272,95 +377,243 @@ def enrich_contact(contact_id):
         contact = dict(row)
         conn.close()
         
-        # Import enrichment engine
-        import sys
-        enrichment_path = 'apps/backend/intelligence/engines/enrichment'
-        if enrichment_path not in sys.path:
-            sys.path.insert(0, enrichment_path)
+        # Build search query
+        name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
+        company = contact.get('company', '')
+        title = contact.get('title', '') or contact.get('job_title', '')
+        linkedin = contact.get('linkedin_url', '') or contact.get('linkedin', '')
         
-        try:
-            from enhanced_enrichment import EnhancedEnrichment
-            logger.info(f"✅ EnhancedEnrichment imported successfully")
-        except ImportError as e:
-            logger.error(f"❌ Failed to import EnhancedEnrichment: {e}")
-            logger.error(f"Python path: {sys.path}")
-            return jsonify({
-                "success": False,
-                "error": f"Could not import enrichment module: {str(e)}"
-            }), 500
+        logger.info(f"🔍 Enriching: {name} at {company}")
         
-        # Run enrichment
-        logger.info(f"🔍 Starting enrichment for {contact.get('firstname', '')} {contact.get('lastname', '')} (ID: {contact_id})")
-        logger.info(f"📧 Email: {contact.get('email', 'N/A')}")
-        logger.info(f"🏢 Company: {contact.get('company', 'N/A')}")
+        # Check for Perplexity API
+        perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+        if not perplexity_key:
+            return jsonify({"success": False, "error": "No Perplexity API key"}), 500
         
-        enricher = EnhancedEnrichment()
-        result = enricher.enrich_contact(contact)
+        # Build comprehensive prompt
+        search_context = f"{name}"
+        if company:
+            search_context += f" {company}"
+        if title:
+            search_context += f" {title}"
+        if linkedin:
+            search_context += f" LinkedIn: {linkedin}"
         
-        logger.info(f"📊 Enrichment result: {result.get('success', False) if result else 'None'}")
+        prompt = f"""Research this business professional and provide a comprehensive profile:
+
+**{name}**
+- Company: {company or 'Unknown'}
+- Title: {title or 'Unknown'}
+- LinkedIn: {linkedin or 'Not provided'}
+
+Please provide:
+1. **Professional Background** - Career history, current role, responsibilities
+2. **Company Overview** - What their company does, size, industry position
+3. **Industry Context** - Market trends, challenges in their sector
+4. **Communication Style** - Based on any public content, how they communicate
+5. **Potential Pain Points** - Business challenges someone in this role typically faces
+6. **Talking Points** - Topics that would resonate based on their background
+7. **Recent Activity** - Any recent news, posts, or company updates
+
+Be specific and factual. If information isn't available, note that."""
+
+        # Call Perplexity
+        headers = {
+            "Authorization": f"Bearer {perplexity_key}",
+            "Content-Type": "application/json"
+        }
         
-        if result and result.get('success'):
-            profile_text = result.get('profile_text', '')
-            char_count = result.get('character_count', len(profile_text))
-            
-            # Save to database
-            conn = get_db()
-            conn.execute("""
-                UPDATE contacts SET
-                profile_content = ?,
-                enrichment_status = 'completed',
-                enriched_at = ?
-                WHERE id = %s
-            """, (
-                profile_text,
-                datetime.now().isoformat(),
-                contact_id
-            ))
-            conn.commit()
-            conn.close()
-            
-            logger.info(f"✅ Enrichment complete for contact {contact_id} ({char_count} chars)")
-            
-            return jsonify({
-                'success': True,
-                'contact_id': contact_id,
-                'profile_length': char_count
-            }), 200
-        else:
-            error_msg = result.get('error', 'Unknown enrichment error') if result else 'Enrichment returned None'
-            logger.error(f"❌ Enrichment failed for contact {contact_id}: {error_msg}")
-            
-            # Mark as failed in database
-            conn = get_db()
-            conn.execute("""
-                UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s
-            """, (contact_id,))
-            conn.commit()
-            conn.close()
-            
-            return jsonify({
-                'success': False,
-                'error': error_msg
-            }), 500
-            
+        payload = {
+            "model": "sonar-pro",
+            "messages": [
+                {"role": "system", "content": "You are a professional research analyst. Provide detailed, factual profiles of business professionals."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4000
+        }
+        
+        response = requests.post(
+            "https://api.perplexity.ai/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Perplexity error: {response.status_code} - {response.text}")
+            return jsonify({"success": False, "error": f"Perplexity API error: {response.status_code}"}), 500
+        
+        result = response.json()
+        profile_text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+        
+        if not profile_text:
+            return jsonify({"success": False, "error": "Empty response from Perplexity"}), 500
+        
+        # Save to database
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts SET
+            profile_content = %s,
+            enrichment_status = %s,
+            enriched_at = %s
+            WHERE id = %s
+        """, (profile_text, 'completed', datetime.now().isoformat(), contact_id))
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Enrichment complete for {name} ({len(profile_text)} chars)")
+        
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'profile_length': len(profile_text)
+        }), 200
+        
     except Exception as e:
-        logger.error(f"❌ Enrichment error for contact {contact_id}: {e}")
-        logger.error(traceback.format_exc())
-        
-        # Mark as failed
+        logger.error(f"❌ Enrichment error: {e}")
         try:
             conn = get_db()
-            conn.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
+            conn.cursor().execute("UPDATE contacts SET enrichment_status = %s WHERE id = %s", ('failed', contact_id))
             conn.commit()
             conn.close()
         except:
             pass
-        
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
+    # ============================================================
+    # CONTACT REFRESH ENDPOINT - Apex v2.0 Railway Edition
+    # ============================================================
+    @app.route('/api/contacts/<int:contact_id>/refresh', methods=['POST'])
+    def refresh_contact(contact_id):
+        """
+        Refreshes a contact after enrichment for Railway/PostgreSQL.
+        Re-fetches vital HubSpot fields and repopulates dashboard data.
+        
+        Returns: {success: bool, contact: {...}, message: str, last_refreshed: str}
+        """
+        try:
+            # 1. Get DB connection (Railway Postgres)
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            # 2. Fetch contact - PostgreSQL uses %s placeholders
+            cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+            contact = cursor.fetchone()
+            
+            if not contact:
+                conn.close()
+                return jsonify(success=False, error="Contact not found.", contact_id=contact_id), 404
+            
+            # Convert to dict (assuming you have dict_factory or similar)
+            if hasattr(cursor, 'description'):
+                columns = [col[0] for col in cursor.description]
+                contact_dict = dict(zip(columns, contact))
+            else:
+                contact_dict = dict(contact)
+                
+            # 3. Re-enrich if enrichment engine available
+            enrichment_attempted = False
+            if enrichment_engine:
+                try:
+                    enriched_data = enrichment_engine.enrich_contact(contact_dict)
+                    
+                    cursor.execute("""
+                        UPDATE contacts 
+                        SET 
+                            profilecontent = %s, 
+                            enrichmentstatus = 'completed',
+                            enrichmentdata = %s,
+                            updatedat = %s
+                        WHERE id = %s
+                    """, (
+                        enriched_data.get("profilecontent"),
+                        enriched_data.get("enrichmentdata_json"),
+                        datetime.now().isoformat(),
+                        contact_id
+                    ))
+                    conn.commit()
+                    logger.info(f"✅ Contact {contact_id} re-enriched")
+                    enrichment_attempted = True
+                    
+                except Exception as enrich_err:
+                    logger.warning(f"⚠️ Enrichment failed during refresh: {enrich_err}")
+                    
+            # 4. Re-score if scoring engine available
+            scoring_attempted = False
+            if scoring_engine:
+                try:
+                    cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+                    updated_row = cursor.fetchone()
+                    
+                    if updated_row:
+                        columns = [col[0] for col in cursor.description]
+                        updated_contact = dict(zip(columns, updated_row))
+                        scores = scoring_engine.score_contact(updated_contact)
+                        
+                        cursor.execute("""
+                            UPDATE contacts 
+                            SET 
+                                mdcpscore = %s, 
+                                rssscore = %s, 
+                                priorityscore = %s,
+                                mdcptier = %s,
+                                rsstier = %s,
+                                urgencylevel = %s,
+                                lastscored = %s
+                            WHERE id = %s
+                        """, (
+                            scores.get("mdcp_score"),
+                            scores.get("rss_score"),
+                            scores.get("priority_score"),
+                            scores.get("mdcp_tier"),
+                            scores.get("rss_tier"),
+                            scores.get("urgency_level"),
+                            datetime.now().isoformat(),
+                            contact_id
+                        ))
+                        conn.commit()
+                        logger.info(f"✅ Contact {contact_id} re-scored")
+                        scoring_attempted = True
+                        
+                except Exception as score_err:
+                    logger.warning(f"⚠️ Scoring failed during refresh: {score_err}")
+                    
+            # 5. Fetch final refreshed contact with ALL vital fields
+            cursor.execute("""
+                SELECT 
+                    id, name, firstname, lastname, email, phone, company, title, 
+                    hubspotid, linkedinurl, enrichmentstatus, profilecontent, 
+                    mdcpscore, rssscore, priorityscore, mdcptier, rsstier, urgencylevel,
+                    lifecyclestage, leadstatus, lastcontactdate, lastscored,
+                    email1subject, email1body, callscript1, linkedinconnect,
+                    updatedat, createdat
+                FROM contacts 
+                WHERE id = %s
+            """, (contact_id,))
+            
+            final_row = cursor.fetchone()
+            columns = [col[0] for col in cursor.description]
+            refreshed_contact = dict(zip(columns, final_row))
+            
+            conn.close()
+            
+            return jsonify(
+                success=True,
+                contact=refreshed_contact,
+                message="Contact refreshed successfully (Railway/Postgres).",
+                last_refreshed=refreshed_contact['updatedat'],
+                enrichment_attempted=enrichment_attempted,
+                scoring_attempted=scoring_attempted
+            ), 200
+        
+        except Exception as e:
+            logger.error(f"❌ [Apex/Railway] Refresh error for contact {contact_id}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return jsonify(success=False, error=str(e)), 500
+        
 
 @app.route('/api/contacts/<int:contact_id>/intelligence', methods=['GET'])
 def get_contact_intelligence(contact_id):

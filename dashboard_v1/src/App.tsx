@@ -63,7 +63,7 @@ function HubSpotImportButton({ onImportComplete }: { onImportComplete?: () => vo
     setImporting(true);
     setResult(null);
     try {
-      const res = await fetch('http://localhost:8000/api/hubspot/import', {
+      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/hubspot/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -144,7 +144,7 @@ function ContactsBoard({ selectedContact, onSelectContact, refreshTrigger }: Con
   const fetchContacts = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:8000/api/contacts?limit=500');
+      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/contacts?limit=500');
       const data = await res.json();
       setContacts(data.contacts || data);
     } catch (err) {

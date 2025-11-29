@@ -52,7 +52,7 @@ const ContactEnrichmentView: React.FC<ContactEnrichmentViewProps> = ({ contact, 
     try {
       console.log('Starting enrichment for contact:', contact.id);
       
-      const response = await fetch('http://localhost:8000/api/contacts/' + contact.id + '/enrich', {
+      const response = await fetch('https://apex-intelligence-production.up.railway.app/api/contacts/' + contact.id + '/enrich', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -81,7 +81,7 @@ const ContactEnrichmentView: React.FC<ContactEnrichmentViewProps> = ({ contact, 
     setContentType(type);
     
     try {
-      const response = await fetch(`http://localhost:8000/api/contacts/${contact.id}/generate-content`, {
+      const response = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}/generate-content`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

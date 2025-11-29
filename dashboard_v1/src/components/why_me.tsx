@@ -27,7 +27,7 @@ export default function WhyMeTab() {
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState('');
 	
-	const API_BASE = 'http://localhost:8000';
+	const API_BASE = 'https://apex-intelligence-production.up.railway.app';
 	
 	// Load existing preferences
 	useEffect(() => {

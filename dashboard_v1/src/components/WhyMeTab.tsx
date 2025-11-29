@@ -30,7 +30,7 @@ export default function WhyMeTab() {
 
 	const fetchPreferences = async () => {
 		try {
-			const res = await fetch('http://localhost:8000/api/user/preferences');
+			const res = await fetch('https://apex-intelligence-production.up.railway.app/api/user/preferences');
 			const data = await res.json();
 			if (data.success && data.preferences) {
 				setPreferences(data.preferences);
@@ -45,7 +45,7 @@ export default function WhyMeTab() {
 	const savePreferences = async () => {
 		setSaving(true);
 		try {
-			const res = await fetch('http://localhost:8000/api/user/preferences', {
+			const res = await fetch('https://apex-intelligence-production.up.railway.app/api/user/preferences', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(preferences),

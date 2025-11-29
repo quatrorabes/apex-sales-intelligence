@@ -48,7 +48,7 @@ export default function ApexIntelligence() {
   const fetchContacts = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/contacts');
+      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/contacts');
       const data = await res.json();
       const contactList = (data.contacts as Contact[]) || (data as Contact[]) || [];
       
@@ -155,7 +155,7 @@ export default function ApexIntelligence() {
               onClick={async () => {
                 setLoading(true);
                 try {
-                  const res = await fetch('http://localhost:8000/api/contacts/score-all', {
+                  const res = await fetch('https://apex-intelligence-production.up.railway.app/api/contacts/score-all', {
                     method: 'POST'
                   });
                   const data = await res.json();

@@ -68,7 +68,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   const [justEnriched, setJustEnriched] = useState(false);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/api/contacts/${contact.id}`)
+    fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}`)
       .then(res => res.json())
       .then(data => {
         setLocalContact(data);
@@ -97,18 +97,18 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   };
 
   const dossierData = {
-    overview: extractSection('1', 'Overview'),
+    overview: extractSection('1', 'Professional Background'),
     background: extractSection('2', 'Background'),
     education: extractSection('3', 'Education'),
-    recentMentions: extractSection('4', 'Recent Mentions'),
+    recentMentions: extractSection('4', 'Recent Activity'),
     socialProfiles: extractSection('5', 'Social Profiles'),
-    personality: extractSection('6', 'Personality'),
+    personality: extractSection('6', 'Communication Style'),
     myersBriggs: extractSection('7', 'Myers-Briggs'),
-    companyOverview: extractSection('8', 'Company'),
-    painPoints: extractSection('9', 'Pain Points'),
+    companyOverview: extractSection('8', 'Company Overview'),
+    painPoints: extractSection('9', 'Potential Pain Points'),
     productFit: extractSection('10', 'Product Fit'),
-    keyInsights: extractSection('11', 'Key Insights'),
-    finalNote: extractSection('12', 'Final'),
+    keyInsights: extractSection('11', 'Talking Points'),
+    finalNote: extractSection('12', 'Industry Context'),
   };
 
   const handleEnrich = async () => {
@@ -116,10 +116,10 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
     setShowEnrichSuccess(false);
     setJustEnriched(false);
     try {
-      const res = await fetch(`http://localhost:8000/api/contacts/${contact.id}/enrich`, { method: 'POST' });
+      const res = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}/enrich`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
-        const updatedRes = await fetch(`http://localhost:8000/api/contacts/${contact.id}`);
+        const updatedRes = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}`);
         const updatedContact = await updatedRes.json();
         setLocalContact(updatedContact);
         onEnrichmentComplete?.(updatedContact);
@@ -140,13 +140,13 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
     setGenerating(true);
     setShowGenerateSuccess(false);
     try {
-      const res = await fetch(`http://localhost:8000/api/contacts/${contact.id}/generate-content`, {
+      const res = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}/generate-content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content_type: 'all' }),
       });
       const data = await res.json();
-      const updatedRes = await fetch(`http://localhost:8000/api/contacts/${contact.id}`);
+      const updatedRes = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}`);
       const updatedContact = await updatedRes.json();
       setLocalContact(updatedContact);
       onEnrichmentComplete?.(updatedContact);
@@ -160,7 +160,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
     } catch (err) {
       console.error('Content generation failed:', err);
       try {
-        const updatedRes = await fetch(`http://localhost:8000/api/contacts/${contact.id}`);
+        const updatedRes = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}`);
         const updatedContact = await updatedRes.json();
         setLocalContact(updatedContact);
       } catch {}
@@ -171,7 +171,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
 
   const handleSaveNotes = async () => {
     try {
-      await fetch(`http://localhost:8000/api/contacts/${contact.id}`, {
+      await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
@@ -752,7 +752,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
                     contactId={localContact.id}
                     contactName={localContact.name}
                     onActivityLogged={() => {
-                      fetch(`http://localhost:8000/api/contacts/${localContact.id}`)
+                      fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${localContact.id}`)
                         .then(res => res.json())
                         .then(data => {
                           setLocalContact(data);

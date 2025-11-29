@@ -19,7 +19,7 @@ export default function ActivityLogger({ contactId, contactName, onActivityLogge
     setLogging(true);
 
     try {
-      const res = await fetch('http://localhost:8000/api/activities/log', {
+      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/activities/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

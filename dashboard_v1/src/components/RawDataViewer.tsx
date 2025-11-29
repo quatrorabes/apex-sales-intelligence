@@ -21,7 +21,7 @@ export default function RawDataViewer() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['Basic Info']));
   const [copiedField, setCopiedField] = useState<string>('');
 
-  const API_BASE = 'http://localhost:8000';
+  const API_BASE = 'https://apex-intelligence-production.up.railway.app';
 
   useEffect(() => {
     fetchContacts();

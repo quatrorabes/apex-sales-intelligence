@@ -74,7 +74,7 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
   const fetchBoard = async () => {
     try {
       setLoading(true);
-      const res = await fetch('http://localhost:8000/api/todays-board');
+      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/todays-board');
       const json = await res.json();
       setData(json);
     } catch (err) {

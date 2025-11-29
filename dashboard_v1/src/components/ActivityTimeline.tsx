@@ -21,7 +21,7 @@ export default function ActivityTimeline({ contactId }: ActivityTimelineProps) {
   useEffect(() => {
     const fetchActivities = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/activities/${contactId}`);
+        const res = await fetch(`https://apex-intelligence-production.up.railway.app/api/activities/${contactId}`);
         const data = await res.json();
         if (data.success) {
           setActivities(data.activities);
