@@ -424,7 +424,7 @@ Be specific and factual. If information isn't available, note that."""
         }
         
         payload = {
-            "model": "llama-3.1-sonar-large-128k-online",
+            "model": "sonar-pro",
             "messages": [
                 {"role": "system", "content": "You are a professional research analyst. Provide detailed, factual profiles of business professionals."},
                 {"role": "user", "content": prompt}
