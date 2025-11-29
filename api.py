@@ -108,87 +108,65 @@ def ensure_schema():
         
         if database_url:
             # PostgreSQL syntax
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS contacts (
-                    id SERIAL PRIMARY KEY,
-                    name TEXT, firstname TEXT, lastname TEXT, email TEXT UNIQUE,
-                    phone TEXT, company TEXT, title TEXT, linkedin_url TEXT,
-                    profile_content TEXT, enrichment_status TEXT DEFAULT 'pending',
-                    priority_score REAL, mdcp_score REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    enriched_at TIMESTAMP, last_contact_date TEXT, content_generated_at TIMESTAMP,
-                    email_1_subject TEXT, email_1_body TEXT, email_2_subject TEXT, email_2_body TEXT,
-                    email_3_subject TEXT, email_3_body TEXT, call_script_1 TEXT, call_script_2 TEXT,
-                    call_script_3 TEXT
-                )
-            """)
+            c.execute("""CREATE TABLE IF NOT EXISTS contacts (
+                id SERIAL PRIMARY KEY, name TEXT, firstname TEXT, lastname TEXT, email TEXT UNIQUE,
+                phone TEXT, company TEXT, title TEXT, linkedin_url TEXT, profile_content TEXT,
+                enrichment_status TEXT DEFAULT 'pending', priority_score REAL, mdcp_score REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, enriched_at TIMESTAMP,
+                last_contact_date TEXT, content_generated_at TIMESTAMP,
+                email_1_subject TEXT, email_1_body TEXT, email_2_subject TEXT, email_2_body TEXT,
+                email_3_subject TEXT, email_3_body TEXT, call_script_1 TEXT, call_script_2 TEXT, call_script_3 TEXT
+            )""")
             conn.commit()
             
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS contact_activities (
-                    id SERIAL PRIMARY KEY, contact_id INTEGER, activity_type TEXT,
-                    activity_date TEXT, direction TEXT, subject TEXT, notes TEXT,
-                    outcome TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            c.execute("""CREATE TABLE IF NOT EXISTS contact_activities (
+                id SERIAL PRIMARY KEY, contact_id INTEGER, activity_type TEXT, activity_date TEXT,
+                direction TEXT, subject TEXT, notes TEXT, outcome TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
             conn.commit()
             
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS opportunity_signals (
-                    id SERIAL PRIMARY KEY, contact_id INTEGER, signal_type TEXT,
-                    signal_date TEXT, signal_data TEXT, urgency_boost INTEGER DEFAULT 0,
-                    viewed INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            c.execute("""CREATE TABLE IF NOT EXISTS opportunity_signals (
+                id SERIAL PRIMARY KEY, contact_id INTEGER, signal_type TEXT, signal_date TEXT,
+                signal_data TEXT, urgency_boost INTEGER DEFAULT 0, viewed INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
             conn.commit()
             
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    id SERIAL PRIMARY KEY, user_id TEXT UNIQUE,
-                    products TEXT, services TEXT, value_propositions TEXT,
-                    target_customers TEXT, personal_differentiators TEXT,
-                    company_differentiators TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            c.execute("""CREATE TABLE IF NOT EXISTS user_preferences (
+                id SERIAL PRIMARY KEY, user_id TEXT UNIQUE, products TEXT, services TEXT,
+                value_propositions TEXT, target_customers TEXT, personal_differentiators TEXT,
+                company_differentiators TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
             conn.commit()
-            
         else:
             # SQLite syntax
             c.execute("""CREATE TABLE IF NOT EXISTS contacts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT, firstname TEXT, lastname TEXT, email TEXT UNIQUE,
-                phone TEXT, company TEXT, title TEXT, linkedin_url TEXT,
-                profile_content TEXT, enrichment_status TEXT DEFAULT 'pending',
-                priority_score REAL, mdcp_score REAL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                enriched_at TIMESTAMP, last_contact_date TEXT, content_generated_at TIMESTAMP,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, firstname TEXT, lastname TEXT, email TEXT UNIQUE,
+                phone TEXT, company TEXT, title TEXT, linkedin_url TEXT, profile_content TEXT,
+                enrichment_status TEXT DEFAULT 'pending', priority_score REAL, mdcp_score REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, enriched_at TIMESTAMP,
+                last_contact_date TEXT, content_generated_at TIMESTAMP,
                 email_1_subject TEXT, email_1_body TEXT, email_2_subject TEXT, email_2_body TEXT,
-                email_3_subject TEXT, email_3_body TEXT, call_script_1 TEXT, call_script_2 TEXT,
-                call_script_3 TEXT
+                email_3_subject TEXT, email_3_body TEXT, call_script_1 TEXT, call_script_2 TEXT, call_script_3 TEXT
             )""")
-            
             c.execute("""CREATE TABLE IF NOT EXISTS contact_activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, contact_id INTEGER, activity_type TEXT,
-                activity_date TEXT, direction TEXT, subject TEXT, notes TEXT,
-                outcome TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                id INTEGER PRIMARY KEY AUTOINCREMENT, contact_id INTEGER, activity_type TEXT, activity_date TEXT,
+                direction TEXT, subject TEXT, notes TEXT, outcome TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )""")
-            
             c.execute("""CREATE TABLE IF NOT EXISTS opportunity_signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, contact_id INTEGER, signal_type TEXT,
-                signal_date TEXT, signal_data TEXT, urgency_boost INTEGER DEFAULT 0,
-                viewed INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                id INTEGER PRIMARY KEY AUTOINCREMENT, contact_id INTEGER, signal_type TEXT, signal_date TEXT,
+                signal_data TEXT, urgency_boost INTEGER DEFAULT 0, viewed INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )""")
-            
             c.execute("""CREATE TABLE IF NOT EXISTS user_preferences (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT UNIQUE,
-                products TEXT, services TEXT, value_propositions TEXT,
-                target_customers TEXT, personal_differentiators TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT UNIQUE, products TEXT, services TEXT,
+                value_propositions TEXT, target_customers TEXT, personal_differentiators TEXT,
                 company_differentiators TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )""")
-            
             conn.commit()
         
         conn.close()
         logger.info("✅ Schema ready")
-        
     except Exception as e:
         logger.error(f"❌ Schema error: {e}")
         try:
