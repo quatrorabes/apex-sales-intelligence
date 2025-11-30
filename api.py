@@ -592,47 +592,81 @@ def enrich_contact(contact_id):
         raw_profile = str(raw_profile)
         
       # STAGE 2: Polish with GPT-4
-      logger.info(f"✨ STAGE 2: GPT-4 polishing {len(raw_profile)} chars...")
-      profile_text = raw_profile  # fallback if GPT-4 fails
-      
-      try:
-        polish_response = openai.ChatCompletion.create(
-          model='gpt-4',
-          messages=[{
-            'role': 'user',
-            'content': f"""
-Transform this sales research into a structured dossier with clear sections.
-
-CONTACT: {contact.get('name')}
-
-RAW RESEARCH:
-{raw_profile}
-
-Add these sections at the end:
-
-## 9. Pain Points & Challenges
-[3-5 bullet points of likely frustrations in their role]
-
-## 10. Product Fit Analysis
-[How sales intelligence/CRM tools align with their needs]
-
-## 11. Outreach Strategy
-[Best channels, timing, messaging angles]
-
-## 12. Key Talking Points
-[3-5 specific conversation starters based on their background]
-
-Include all the original research, then add these structured sections.
-            """.strip()
-          }],
-          temperature=0.3,
-          max_tokens=3500
-        )
-        profile_text = polish_response.choices[0].message.content
-        logger.info(f"✅ STAGE 2 COMPLETE: {len(profile_text)} chars")
-      except Exception as e:
-        logger.warning(f"⚠️  Stage 2 GPT-4 polish failed, using raw profile: {e}")
-        # profile_text already set to raw_profile above
+        # STAGE 2: Polish with GPT-4
+        logger.info(f"✨ STAGE 2: GPT-4 polishing {len(raw_profile)} chars...")
+        profile_text = raw_profile  # fallback if GPT-4 fails
+        
+        try:
+          polish_response = openai.ChatCompletion.create(
+            model='gpt-4',
+            messages=[{
+              'role': 'user',
+              'content': f"""
+    Transform this sales research into a structured dossier with clear sections.
+    
+    CONTACT: {contact.get('name')}
+    
+    RAW RESEARCH:
+    {raw_profile}
+    
+    Add these sections at the end:
+    
+    ## 9. Pain Points & Challenges
+    [3-5 bullet points of likely frustrations in their role]
+    
+    ## 10. Product Fit Analysis
+    [How sales intelligence/CRM tools align with their needs]
+    
+    ## 11. Outreach Strategy
+    [Best channels, timing, messaging angles]
+    
+    ## 12. Key Talking Points
+    [3-5 specific conversation starters based on their background]
+    
+    Include all the original research, then add these structured sections.
+              """.strip()
+            }],
+            temperature=0.3,
+            max_tokens=3500
+          )
+          profile_text = polish_response.choices[0].message.content
+          logger.info(f"✅ STAGE 2 COMPLETE: {len(profile_text)} chars")
+        except Exception as e:
+          logger.warning(f"⚠️  Stage 2 GPT-4 polish failed, using raw profile: {e}")
+          # profile_text already set to raw_profile above
+          
+        # Save to database
+        conn = get_db()
+        cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
+        
+        if IS_PRODUCTION:
+          cursor.execute("""
+            UPDATE contacts SET
+            profile_content = %s,
+            enrichment_status = 'completed',
+            enrichment_date = %s
+            WHERE id = %s
+          """, (profile_text, datetime.now(), contact_id))
+        else:
+          cursor.execute("""
+            UPDATE contacts SET
+            profile_content = ?,
+            enrichment_status = 'completed',
+            enrichment_date = ?
+            WHERE id = ?
+          """, (profile_text, datetime.now().isoformat(), contact_id))
+          
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Enrichment complete for contact {contact_id}")
+        
+        return jsonify({
+          'success': True,
+          'contact_id': contact_id,
+          'profile_length': len(profile_text)
+        }), 200
+# profile_text already set to raw_profile above
         
       # Save to database (THIS SHOULD BE OUTSIDE THE TRY/EXCEPT)
       conn = get_db()
