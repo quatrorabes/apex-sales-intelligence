@@ -349,7 +349,10 @@ function ContactsBoard({ selectedContact, onSelectContact, refreshTrigger }: Con
                   return (
                     <tr
                       key={c.id}
-                      onClick={() => onSelectContact(c)}
+                      onClick={() => {
+                        console.log('🖱️ Contact clicked:', { id: c.id, name: c.name });
+                        onSelectContact(c);
+                      }}
                       style={{
                         borderBottom: '1px solid rgba(148,163,184,0.15)',
                         cursor: 'pointer',
@@ -564,7 +567,12 @@ export default function App() {
   const current = MAIN_TABS.find((t) => t.id === activeTab)!;
   
   const handleEnrichmentComplete = (updatedContact: Contact) => {
-    console.log('Enrichment completed for', updatedContact);
+    console.log('🎉 Enrichment completed for:', {
+      id: updatedContact.id,
+      name: updatedContact.name,
+      hasProfile: !!updatedContact.profile_content,
+      profileLength: updatedContact.profile_content?.length || 0
+    });
     setSelectedContact(updatedContact);
     setRefreshTrigger(p => p + 1);
   };
@@ -658,6 +666,7 @@ export default function App() {
     
       {selectedContact && (
         <ContactDetailModal
+          key={selectedContact.id}
           contact={selectedContact}
           onClose={handleCloseModal}
           onEnrichmentComplete={handleEnrichmentComplete}
