@@ -16,6 +16,7 @@ import logging
 import traceback
 from datetime import datetime
 from pathlib import Path
+import openai
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -74,10 +75,177 @@ scoring_engine = None
 auto_sequence_engine = None
 cadence_router = None
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INLINE ENHANCED ENRICHMENT ENGINE (2-Stage: Perplexity + GPT-4)
+# ═══════════════════════════════════════════════════════════════════════════
+class EnhancedEnrichment:
+  """Two-stage enrichment: Perplexity research → GPT-4 polishing"""
+  
+  def __init__(self):
+    self.perplexity_key = PERPLEXITY_API_KEY
+    self.openai_key = OPENAI_API_KEY
+    
+    if not self.perplexity_key:
+      raise ValueError("PERPLEXITY_API_KEY not set")
+    if not self.openai_key:
+      raise ValueError("OPENAI_API_KEY not set")
+      
+    openai.api_key = self.openai_key
+    logger.info("✅ EnhancedEnrichment initialized (2-stage)")
+    
+  def enrich_contact(self, contact: dict) -> dict:
+    """Main enrichment flow: Stage 1 (Perplexity) → Stage 2 (GPT-4)"""
+    try:
+      # STAGE 1: Perplexity Research
+      logger.info(f"🔍 STAGE 1: Perplexity research for {contact.get('name')}")
+      raw_profile = self._perplexity_research(contact)
+      logger.info(f"✅ STAGE 1 COMPLETE: {len(raw_profile)} characters")
+      
+      # STAGE 2: GPT-4 Polishing
+      logger.info(f"✨ STAGE 2: GPT-4 polishing...")
+      polished_profile = self._gpt4_polish(raw_profile, contact)
+      logger.info(f"✅ STAGE 2 COMPLETE: {len(polished_profile)} characters")
+      
+      return {
+        'status': 'success',
+        'enrichment_data': polished_profile,
+        'overview': polished_profile[:500],
+        'character_count': len(polished_profile)
+      }
+    
+    except Exception as e:
+      logger.error(f"❌ Enrichment failed: {e}")
+      return {
+        'status': 'error',
+        'error': str(e)
+      }
+    
+  def _perplexity_research(self, contact: dict) -> str:
+    """Stage 1: Comprehensive research via Perplexity sonar-pro"""
+    name = contact.get('name', 'Unknown')
+    company = contact.get('company', '')
+    title = contact.get('title', '')
+    
+    query = f"""
+Research {name} who works as {title} at {company}.
+
+Provide:
+1. Professional background and career trajectory
+2. Current role and responsibilities
+3. Company overview and industry context
+4. Education and certifications
+5. Notable achievements or projects
+6. Professional interests and expertise areas
+7. Personality indicators from public profiles
+8. Pain points they likely face in their role
+9. How they might benefit from sales intelligence tools
+10. Best approach for outreach
+
+Be thorough and cite sources where possible.
+    """.strip()
+    
+    try:
+      response = requests.post(
+        'https://api.perplexity.ai/chat/completions',
+        headers={
+          'Authorization': f'Bearer {self.perplexity_key}',
+          'Content-Type': 'application/json'
+        },
+        json={
+          'model': 'sonar-pro',
+          'messages': [{'role': 'user', 'content': query}],
+          'temperature': 0.2,
+          'max_tokens': 4000
+        },
+        timeout=60
+      )
+      response.raise_for_status()
+      result = response.json()
+      return result['choices'][0]['message']['content']
+    
+    except Exception as e:
+      logger.error(f"Perplexity API error: {e}")
+      raise
+      
+  def _gpt4_polish(self, raw_profile: str, contact: dict) -> str:
+    """Stage 2: Polish into structured intelligence format"""
+    name = contact.get('name', 'Unknown')
+    
+    prompt = f"""
+You are an expert sales intelligence analyst. Transform the following research into a structured sales dossier.
+
+CONTACT: {name}
+
+RAW RESEARCH:
+{raw_profile}
+
+FORMAT YOUR OUTPUT EXACTLY LIKE THIS:
+
+## 1. Overview – Current Title and Organization
+[2-3 sentence executive summary]
+
+## 2. Professional Background
+[Career trajectory, key roles, years of experience]
+
+## 3. Education & Credentials
+[Degrees, certifications, notable institutions]
+
+## 4. Current Company Context
+[Company overview, industry, size, stage]
+
+## 5. Role & Responsibilities
+[What they own, team size, reporting structure]
+
+## 6. Notable Achievements
+[Quantifiable wins, awards, recognitions]
+
+## 7. Professional Interests & Expertise
+[Domains they care about, speak on, write about]
+
+## 8. Personality & Communication Style
+[How they present themselves, tone, values]
+
+## 9. Pain Points & Challenges
+[3-5 bullet points of likely frustrations in their role]
+
+## 10. Product Fit Analysis
+[How sales intelligence/CRM tools align with their needs]
+
+## 11. Outreach Strategy
+[Best channels, timing, messaging angles]
+
+## 12. Key Talking Points
+[3-5 specific conversation starters based on their background]
+
+Be specific, actionable, and cite evidence from the research. Use professional but direct language.
+    """.strip()
+    
+    try:
+      response = openai.ChatCompletion.create(
+        model='gpt-4',
+        messages=[{'role': 'user', 'content': prompt}],
+        temperature=0.3,
+        max_tokens=3000
+      )
+      return response.choices[0].message.content
+    
+    except Exception as e:
+      logger.error(f"OpenAI API error: {e}")
+      raise
+      
+# Initialize enrichment engine
+enrichment_engine = None
+try:
+  enrichment_engine = EnhancedEnrichment()
+  logger.info("✅ Enrichment engine loaded (inline 2-stage)")
+except Exception as e:
+  logger.error(f"❌ Enrichment engine failed: {e}")
+  
 # Enrichment Engine
 try:
-    from intelligence.engines.enrichment.perplexity_enrichment import PerplexityEnrichment
-    enrichment_engine = PerplexityEnrichment
+    from intelligence.engines.enrichment.enhanced_enrichment import EnhancedEnrichment
+  
     logger.info("✅ Enrichment engine loaded")
 except ImportError as e:
     logger.warning(f"⚠️  Enrichment engine unavailable: {e}")
@@ -417,17 +585,59 @@ def enrich_contact(contact_id):
     
     # FIX: Check for 'status' instead of 'success'
     if result and result.get('status') == 'success':
-      # Save profile content to database
+      # STAGE 1: Get raw Perplexity output
+      raw_profile = result.get('enrichment_data', result.get('overview', ''))
+      
+      if isinstance(raw_profile, dict):
+        raw_profile = str(raw_profile)
+        
+      # STAGE 2: Polish with GPT-4
+      logger.info(f"✨ STAGE 2: GPT-4 polishing {len(raw_profile)} chars...")
+      profile_text = raw_profile  # fallback if GPT-4 fails
+      
+      try:
+        polish_response = openai.ChatCompletion.create(
+          model='gpt-4',
+          messages=[{
+            'role': 'user',
+            'content': f"""
+Transform this sales research into a structured dossier with clear sections.
+
+CONTACT: {contact.get('name')}
+
+RAW RESEARCH:
+{raw_profile}
+
+Add these sections at the end:
+
+## 9. Pain Points & Challenges
+[3-5 bullet points of likely frustrations in their role]
+
+## 10. Product Fit Analysis
+[How sales intelligence/CRM tools align with their needs]
+
+## 11. Outreach Strategy
+[Best channels, timing, messaging angles]
+
+## 12. Key Talking Points
+[3-5 specific conversation starters based on their background]
+
+Include all the original research, then add these structured sections.
+            """.strip()
+          }],
+          temperature=0.3,
+          max_tokens=3500
+        )
+        profile_text = polish_response.choices[0].message.content
+        logger.info(f"✅ STAGE 2 COMPLETE: {len(profile_text)} chars")
+      except Exception as e:
+        logger.warning(f"⚠️  Stage 2 GPT-4 polish failed, using raw profile: {e}")
+        # profile_text already set to raw_profile above
+        
+      # Save to database (THIS SHOULD BE OUTSIDE THE TRY/EXCEPT)
       conn = get_db()
       cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
       
-      # FIX: Get profile from 'enrichment_data' or 'overview'
-      profile_text = result.get('enrichment_data', result.get('overview', ''))
-      
-      # If enrichment_data is a dict, convert to string
-      if isinstance(profile_text, dict):
-        profile_text = str(profile_text)
-        
       if IS_PRODUCTION:
         cursor.execute("""
           UPDATE contacts SET
@@ -464,6 +674,7 @@ def enrich_contact(contact_id):
     logger.error(f"Enrichment error: {e}")
     logger.error(traceback.format_exc())
     return jsonify({'success': False, 'error': str(e)}), 500
+  
   
 # ================================================================
 # API ENDPOINTS - TODAY'S BOARD (PHASE 2)
