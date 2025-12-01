@@ -888,7 +888,7 @@ def get_todays_board():
 
         # Date calculation differs between PostgreSQL and SQLite
         if IS_PRODUCTION:
-            date_calc = "CASE WHEN last_contact_date IS NOT NULL AND last_contact_date != '' THEN EXTRACT(DAY FROM (CURRENT_DATE - last_contact_date::date)) ELSE 999 END"
+            date_calc = "CASE WHEN last_contact_date IS NOT NULL AND last_contact_date != '' THEN DATE_PART('day', CURRENT_DATE - last_contact_date::date) ELSE 999 END"
         else:
             date_calc = "CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)"
 
