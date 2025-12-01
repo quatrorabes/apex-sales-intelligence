@@ -888,11 +888,17 @@ def get_todays_board():
 
         # Date calculation differs between PostgreSQL and SQLite
         if IS_PRODUCTION:
-            date_calc = "CASE WHEN last_contact_date IS NOT NULL AND last_contact_date != '' THEN DATE_PART('day', CURRENT_DATE - last_contact_date::date) ELSE 999 END"
+          # INTEGER difference; avoids EXTRACT() type error
+          date_calc = (
+            "CASE WHEN last_contact_date IS NOT NULL "
+            "AND last_contact_date <> '' "
+            "THEN (CURRENT_DATE - last_contact_date::date) "
+            "ELSE 999 END"
+          )
         else:
-            date_calc = "CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)"
-
-        # RELATIONSHIPS QUERY
+          date_calc = "CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)"
+          
+      # RELATIONSHIPS QUERY
         query = f"""
             SELECT 
                 id, name, email, company, title, priority_score,
@@ -1502,3 +1508,4 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
     logger.info(f'🚀 Server Port: {port}')
     app.run(host='0.0.0.0', port=port, debug=True)
+  
