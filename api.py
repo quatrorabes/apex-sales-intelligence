@@ -1263,3 +1263,244 @@ if __name__ == '__main__':
     logger.info(f'🚀 Server Port: {port}')
     app.run(host='0.0.0.0', port=port, debug=True)
   
+# ============================================================================
+# HUBSPOT BACKFILL LAST CONTACT DATE
+# ============================================================================
+
+@app.route("/api/hubspot/backfill-activity", methods=["POST"])
+def hubspot_backfill_activity():
+    """
+    Backfill last_contact_date from HubSpot engagement history.
+    Updates contacts with their most recent email/call/meeting date.
+    """
+    hubspot_api_key = os.getenv("HUBSPOT_API_KEY")
+    if not hubspot_api_key:
+        return {"success": False, "error": "HUBSPOT_API_KEY not set"}, 401
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        headers = {"Authorization": f"Bearer {hubspot_api_key}"}
+        
+        # Get all contacts with hubspot_id
+        if IS_PRODUCTION:
+            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != ''")
+            contacts = cursor.fetchall()
+        else:
+            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != ''")
+            contacts = cursor.fetchall()
+        
+        updated = 0
+        skipped = 0
+        
+        logger.info(f"🔄 Backfilling activity for {len(contacts)} contacts...")
+        
+        for contact in contacts:
+            contact_id = contact[0]
+            hubspot_id = contact[1]
+            name = contact[2]
+            
+            try:
+                # Get engagements for this contact
+                url = f"https://api.hubapi.com/crm/v3/objects/contacts/{hubspot_id}/associations/engagements"
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code != 200:
+                    skipped += 1
+                    continue
+                
+                engagements = response.json().get("results", [])
+                
+                if not engagements:
+                    # Try getting notes/emails directly
+                    url = f"https://api.hubapi.com/crm/v3/objects/contacts/{hubspot_id}?properties=notes_last_updated,hs_last_sales_activity_timestamp,lastmodifieddate"
+                    response = requests.get(url, headers=headers)
+                    
+                    if response.status_code == 200:
+                        props = response.json().get("properties", {})
+                        last_activity = props.get("hs_last_sales_activity_timestamp") or props.get("lastmodifieddate")
+                        
+                        if last_activity:
+                            # Update contact
+                            if IS_PRODUCTION:
+                                cursor.execute("UPDATE contacts SET last_contact_date = %s WHERE id = %s", (last_activity, contact_id))
+                            else:
+                                cursor.execute("UPDATE contacts SET last_contact_date = ? WHERE id = ?", (last_activity, contact_id))
+                            updated += 1
+                            if IS_PRODUCTION:
+                                conn.commit()
+                    continue
+                
+                skipped += 1
+                
+            except Exception as e:
+                logger.error(f"Error backfilling {name}: {e}")
+                if IS_PRODUCTION:
+                    conn.rollback()
+                skipped += 1
+                continue
+        
+        if not IS_PRODUCTION:
+            conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Backfill complete: {updated} updated, {skipped} skipped")
+        
+        return {
+            "success": True,
+            "updated": updated,
+            "skipped": skipped,
+            "total": len(contacts)
+        }, 200
+        
+    except Exception as e:
+        logger.error(f"❌ Backfill failed: {e}")
+        return {"success": False, "error": str(e)}, 500
+
+
+# ============================================================================
+# BULK SCORING ENDPOINT
+# ============================================================================
+
+@app.route("/api/contacts/score-all", methods=["POST"])
+def score_all_contacts():
+    """
+    Run MDCP scoring on all contacts (or those missing scores).
+    """
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get contacts needing scoring
+        if IS_PRODUCTION:
+            cursor.execute("""
+                SELECT id, name, title, company, email, enrichment_status, last_contact_date, linkedin_url
+                FROM contacts 
+                WHERE mdcp_score IS NULL OR priority_score IS NULL
+                LIMIT 500
+            """)
+        else:
+            cursor.execute("""
+                SELECT id, name, title, company, email, enrichment_status, last_contact_date, linkedin_url
+                FROM contacts 
+                WHERE mdcp_score IS NULL OR priority_score IS NULL
+                LIMIT 500
+            """)
+        
+        contacts = cursor.fetchall()
+        scored = 0
+        
+        logger.info(f"🎯 Scoring {len(contacts)} contacts...")
+        
+        for contact in contacts:
+            contact_id = contact[0]
+            name = contact[1]
+            title = contact[2] or ""
+            company = contact[3] or ""
+            enrichment_status = contact[5] or "pending"
+            last_contact_date = contact[6]
+            linkedin_url = contact[7]
+            
+            # Calculate MDCP score based on title/seniority
+            mdcp_score = 50  # Base score
+            
+            # Title scoring
+            title_lower = title.lower()
+            if any(t in title_lower for t in ['ceo', 'cfo', 'coo', 'president', 'owner', 'founder', 'principal']):
+                mdcp_score += 40
+            elif any(t in title_lower for t in ['vp', 'vice president', 'director', 'head of', 'chief']):
+                mdcp_score += 30
+            elif any(t in title_lower for t in ['senior', 'manager', 'lead']):
+                mdcp_score += 20
+            elif any(t in title_lower for t in ['associate', 'analyst', 'coordinator']):
+                mdcp_score += 10
+            
+            # Company presence bonus
+            if company:
+                mdcp_score += 5
+            
+            # LinkedIn bonus
+            if linkedin_url:
+                mdcp_score += 5
+            
+            # Enrichment bonus
+            if enrichment_status == 'enriched':
+                mdcp_score += 10
+            
+            # Cap at 100
+            mdcp_score = min(mdcp_score, 100)
+            
+            # Priority score (MDCP weighted + recency)
+            priority_score = mdcp_score
+            
+            # Recency boost
+            if last_contact_date:
+                try:
+                    from datetime import datetime, timedelta
+                    if isinstance(last_contact_date, str):
+                        # Parse various date formats
+                        for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%SZ']:
+                            try:
+                                last_date = datetime.strptime(last_contact_date[:26], fmt)
+                                break
+                            except:
+                                continue
+                        else:
+                            last_date = None
+                        
+                        if last_date:
+                            days_since = (datetime.now() - last_date).days
+                            if days_since < 7:
+                                priority_score += 10
+                            elif days_since < 30:
+                                priority_score += 5
+                            elif days_since > 90:
+                                priority_score -= 10
+                except:
+                    pass
+            
+            priority_score = max(0, min(priority_score, 100))
+            
+            # Determine tier
+            if priority_score >= 90:
+                mdcp_tier = 'hot'
+            elif priority_score >= 75:
+                mdcp_tier = 'warm'
+            elif priority_score >= 60:
+                mdcp_tier = 'qualified'
+            else:
+                mdcp_tier = 'nurture'
+            
+            # Update contact
+            if IS_PRODUCTION:
+                cursor.execute("""
+                    UPDATE contacts 
+                    SET mdcp_score = %s, priority_score = %s, mdcp_tier = %s, last_scored = NOW()
+                    WHERE id = %s
+                """, (mdcp_score, priority_score, mdcp_tier, contact_id))
+                conn.commit()
+            else:
+                cursor.execute("""
+                    UPDATE contacts 
+                    SET mdcp_score = ?, priority_score = ?, mdcp_tier = ?, last_scored = datetime('now')
+                    WHERE id = ?
+                """, (mdcp_score, priority_score, mdcp_tier, contact_id))
+            
+            scored += 1
+        
+        if not IS_PRODUCTION:
+            conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Scoring complete: {scored} contacts scored")
+        
+        return {
+            "success": True,
+            "scored": scored,
+            "message": f"Scored {scored} contacts"
+        }, 200
+        
+    except Exception as e:
+        logger.error(f"❌ Scoring failed: {e}")
+        return {"success": False, "error": str(e)}, 500
+
