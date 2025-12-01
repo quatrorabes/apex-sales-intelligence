@@ -1008,139 +1008,225 @@ def get_todays_board():
 # ================================================================
 # MAIN
 # ================================================================
-# ================================================================
-# HUBSPOT IMPORT ENDPOINT (WITH PAGINATION + FILTERS)
-# ================================================================
-@app.route("/api/hubspot/import", methods=["POST", "OPTIONS"])
+
+
+# ============================================================================
+# HUBSPOT IMPORT ENDPOINT — WITH FILTERS INSTALLED
+# ============================================================================
+
+@app.route("/api/hubspot/import", methods=["POST"])
 def hubspot_import():
-    """Import qualified contacts from HubSpot CRM with pagination"""
-    import requests as req
+    """
+    Paginated HubSpot import with quality filters.
+    EXCLUDES: unqualified, do not contact, unsubscribed, personal emails, missing required fields
+    REQUIRED: email, name, company
+    """
+    PERSONAL_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'aol.com', 'icloud.com', 
+                        'outlook.com', 'live.com', 'msn.com', 'me.com', 'comcast.net',
+                        'sbcglobal.net', 'att.net', 'verizon.net', 'cox.net']
     
-    if request.method == "OPTIONS":
-        return "", 204
+    EXCLUDED_LEAD_STATUSES = ['unqualified', 'do not contact', 'unsubscribed', 'bad timing']
+    EXCLUDED_LIFECYCLES = ['unqualified', 'subscriber']
     
-    HUBSPOT_API_KEY = os.getenv("HUBSPOT_API_KEY")
-    if not HUBSPOT_API_KEY:
-        return jsonify({"success": False, "error": "HUBSPOT_API_KEY not configured"}), 400
-    
-    # Lead statuses to EXCLUDE
-    EXCLUDED_LEAD_STATUS = {'unqualified', 'do not contact', 'unsubscribed', 'bad timing', 'dq'}
-    EXCLUDED_LIFECYCLE = {'unqualified'}
-    
+    hubspot_api_key = os.getenv("HUBSPOT_API_KEY")
+    if not hubspot_api_key:
+        return {"success": False, "error": "HUBSPOT_API_KEY not set"}, 401
+
     try:
-        headers = {"Authorization": f"Bearer {HUBSPOT_API_KEY}"}
-        all_contacts = []
+        conn = get_db()
+        cursor = conn.cursor()
+
+        imported = 0
+        updated = 0
+        skipped = 0
+        filtered_out = 0
+        filter_reasons = {"no_email": 0, "no_name": 0, "no_company": 0, "personal_email": 0,
+                         "lead_status": 0, "lifecycle": 0, "dnc": 0}
+
         after = None
-        page = 0
-        
+        headers = {"Authorization": f"Bearer {hubspot_api_key}"}
+
+        logger.info("🔄 Starting HubSpot import with filters...")
+
+        batch_num = 0
         while True:
-            page += 1
+            batch_num += 1
+            url = "https://api.hubapi.com/crm/v3/objects/contacts"
             params = {
-                "limit": 100, 
-                "properties": "firstname,lastname,email,phone,mobilephone,company,jobtitle,hs_linkedinbio,linkedin,hs_lead_status,lifecyclestage"
+                "limit": 100,
+                "properties": [
+                    "firstname", "lastname", "email", "phone", "mobilephone",
+                    "company", "jobtitle", "lifecyclestage", "hs_lead_status",
+                    "do_not_contact", "linkedin_url"
+                ]
             }
             if after:
                 params["after"] = after
-            
-            print(f"📥 Fetching HubSpot page {page}...")
-            response = req.get("https://api.hubapi.com/crm/v3/objects/contacts", headers=headers, params=params)
-            
-            if response.status_code != 200:
-                return jsonify({"success": False, "error": f"HubSpot API error: {response.status_code}"}), 400
-            
-            data = response.json()
-            results = data.get("results", [])
-            all_contacts.extend(results)
-            
-            paging = data.get("paging", {})
-            next_page = paging.get("next", {})
-            after = next_page.get("after")
-            
-            if not after:
-                break
-        
-        print(f"📊 Total HubSpot contacts fetched: {len(all_contacts)}")
-        
-        imported, updated, skipped, filtered = 0, 0, 0, 0
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        for hs_contact in all_contacts:
-            props = hs_contact.get("properties", {})
-            
-            # FILTER: Must have email
-            email = (props.get("email") or "").strip().lower()
-            if not email:
-                skipped += 1
-                continue
-            
-            # FILTER: Must have company
-            company = (props.get("company") or "").strip()
-            if not company:
-                filtered += 1
-                continue
-            
-            # FILTER: Exclude bad lead statuses
-            lead_status = (props.get("hs_lead_status") or "").strip().lower()
-            if lead_status in EXCLUDED_LEAD_STATUS:
-                filtered += 1
-                continue
-            
-            # FILTER: Exclude unqualified lifecycle
-            lifecycle = (props.get("lifecyclestage") or "").strip().lower()
-            if lifecycle in EXCLUDED_LIFECYCLE:
-                filtered += 1
-                continue
-            
-            first = props.get("firstname") or ""
-            last = props.get("lastname") or ""
-            name = f"{first} {last}".strip() or email.split("@")[0]
-            
-            cursor.execute("SELECT id FROM contacts WHERE email = ?", (email,))
-            existing = cursor.fetchone()
-            
-            if existing:
-                cursor.execute(
-                    "UPDATE contacts SET name=?, title=?, company=?, phone=?, phone_mobile=?, linkedin_url=?, hubspot_id=?, updated_at=CURRENT_TIMESTAMP WHERE email=?",
-                    (name, props.get("jobtitle") or "", company, props.get("phone") or "", props.get("mobilephone") or "", props.get("hs_linkedinbio") or props.get("linkedin") or "", hs_contact.get("id"), email)
-                )
-                updated += 1
-            else:
-                cursor.execute(
-                    "INSERT INTO contacts (name, email, title, company, phone, phone_mobile, linkedin_url, hubspot_id, created_at) VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
-                    (name, email, props.get("jobtitle") or "", company, props.get("phone") or "", props.get("mobilephone") or "", props.get("hs_linkedinbio") or props.get("linkedin") or "", hs_contact.get("id"))
-                )
-                imported += 1
-        
-        conn.commit()
-        conn.close()
-        
-        print(f"✅ Import complete: {imported} new, {updated} updated, {skipped} no email, {filtered} filtered out")
-        return jsonify({
-            "success": True, 
-            "imported": imported, 
-            "updated": updated, 
-            "skipped": skipped,
-            "filtered": filtered,
-            "total": len(all_contacts)
-        })
-    
-    except Exception as e:
-        print(f"❌ HubSpot import error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-if __name__ == '__main__':
-    ensure_schema()
-    logger.info(f"")
-    logger.info(f"═══════════════════════════════════════════════════════")
-    logger.info(f"🚀 APEX API SERVER STARTING")
-    logger.info(f"═══════════════════════════════════════════════════════")
-    logger.info(f"   Environment: {ENVIRONMENT}")
-    logger.info(f"   Database: {'PostgreSQL (Railway)' if IS_PRODUCTION else 'SQLite (Local)'}")
-    logger.info(f"   Port: {PORT}")
-    logger.info(f"   Enrichment: {'Available' if enrichment_engine else 'Unavailable'}")
-    logger.info(f"   Scoring: {'Available' if scoring_engine else 'Unavailable'}")
-    logger.info(f"═══════════════════════════════════════════════════════")
-    logger.info(f"")
 
-    app.run(host='0.0.0.0', port=PORT, debug=(not IS_PRODUCTION))
+            logger.info(f"📦 Batch {batch_num}: Fetching from HubSpot...")
+
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("results"):
+                logger.info("✅ No more contacts to fetch")
+                break
+
+            results = data.get("results", [])
+            logger.info(f"   Processing {len(results)} contacts...")
+
+            for idx, hs_contact in enumerate(results):
+                try:
+                    if not isinstance(hs_contact, dict):
+                        skipped += 1
+                        continue
+
+                    props = hs_contact.get("properties", {})
+                    if not isinstance(props, dict):
+                        skipped += 1
+                        continue
+
+                    # === EXTRACT FIELDS (HubSpot v3 = direct strings) ===
+                    email = str(props.get("email") or "").strip().lower()
+                    first_name = str(props.get("firstname") or "").strip()
+                    last_name = str(props.get("lastname") or "").strip()
+                    name = f"{first_name} {last_name}".strip()
+                    company = str(props.get("company") or "").strip()
+                    phone = str(props.get("phone") or "").strip()
+                    mobile = str(props.get("mobilephone") or "").strip()
+                    title = str(props.get("jobtitle") or "").strip()
+                    linkedin_url = str(props.get("linkedin_url") or "").strip()
+                    lifecycle = str(props.get("lifecyclestage") or "").lower()
+                    lead_status = str(props.get("hs_lead_status") or "").lower()
+                    dnc = str(props.get("do_not_contact") or "").lower()
+                    hubspot_id = hs_contact.get("id", "")
+
+                    # === FILTER 1: REQUIRED FIELDS ===
+                    if not email:
+                        filter_reasons["no_email"] += 1
+                        filtered_out += 1
+                        continue
+
+                    if not name or name == "":
+                        filter_reasons["no_name"] += 1
+                        filtered_out += 1
+                        continue
+
+                    if not company:
+                        filter_reasons["no_company"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 2: PERSONAL EMAIL DOMAINS ===
+                    email_domain = email.split("@")[-1] if "@" in email else ""
+                    if email_domain in PERSONAL_DOMAINS:
+                        filter_reasons["personal_email"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 3: LEAD STATUS ===
+                    if lead_status in EXCLUDED_LEAD_STATUSES:
+                        filter_reasons["lead_status"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 4: LIFECYCLE STAGE ===
+                    if lifecycle in EXCLUDED_LIFECYCLES:
+                        filter_reasons["lifecycle"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 5: DO NOT CONTACT FLAG ===
+                    if dnc in ["yes", "true", "1"]:
+                        filter_reasons["dnc"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === PASSED ALL FILTERS - UPSERT ===
+                    cursor.execute("""
+                        INSERT INTO contacts 
+                        (name, email, phone, phone_mobile, company, title, linkedin_url, 
+                         hubspot_id, data_source, sync_date, firstname, lastname, 
+                         lifecycle_stage, lead_status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'hubspot', datetime('now'), ?, ?, ?, ?)
+                        ON CONFLICT(hubspot_id) DO UPDATE SET
+                            name = excluded.name,
+                            email = excluded.email,
+                            phone = COALESCE(excluded.phone, phone),
+                            phone_mobile = COALESCE(excluded.phone_mobile, phone_mobile),
+                            company = COALESCE(excluded.company, company),
+                            title = COALESCE(excluded.title, title),
+                            linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
+                            sync_date = datetime('now'),
+                            firstname = excluded.firstname,
+                            lastname = excluded.lastname,
+                            lifecycle_stage = excluded.lifecycle_stage,
+                            lead_status = excluded.lead_status
+                    """, (name, email, phone, mobile, company, title, linkedin_url,
+                          hubspot_id, first_name, last_name, lifecycle, lead_status))
+
+                    if cursor.rowcount > 0:
+                        updated += 1
+                    else:
+                        imported += 1
+
+                except Exception as e:
+                    logger.error(f"   ❌ Error processing contact {idx}: {e}")
+                    skipped += 1
+                    continue
+
+            conn.commit()
+
+            paging = data.get("paging", {})
+            after = paging.get("next", {}).get("after")
+            if not after:
+                logger.info("✅ Pagination complete")
+                break
+
+        conn.close()
+
+        total = imported + updated + skipped + filtered_out
+        
+        logger.info(f"""
+✅ IMPORT COMPLETE
+   Total processed: {total}
+   ✅ Imported (new): {imported}
+   ♻️  Updated (existing): {updated}
+   🚫 Filtered out: {filtered_out}
+      - No email: {filter_reasons['no_email']}
+      - No name: {filter_reasons['no_name']}
+      - No company: {filter_reasons['no_company']}
+      - Personal email: {filter_reasons['personal_email']}
+      - Lead status (unqualified/DNC): {filter_reasons['lead_status']}
+      - Lifecycle (unqualified): {filter_reasons['lifecycle']}
+      - Do not contact flag: {filter_reasons['dnc']}
+   ⚠️  Skipped (errors): {skipped}
+   📊 Qualified contacts: {imported + updated}
+        """)
+
+        return {
+            "success": True,
+            "message": f"Import complete: {imported} new, {updated} updated, {filtered_out} filtered, {skipped} skipped",
+            "imported": imported,
+            "updated": updated,
+            "filtered": filtered_out,
+            "filter_breakdown": filter_reasons,
+            "skipped": skipped,
+            "total": total,
+            "qualified_count": imported + updated
+        }, 200
+
+    except requests.RequestException as e:
+        logger.error(f"❌ HubSpot API error: {e}")
+        return {"success": False, "error": str(e)}, 500
+    except Exception as e:
+        logger.error(f"❌ Import failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}, 500
+
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8000))
+    logger.info(f'🚀 Server Port: {port}')
+    app.run(host='0.0.0.0', port=port, debug=True)
   
