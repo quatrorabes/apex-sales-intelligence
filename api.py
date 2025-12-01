@@ -1257,12 +1257,6 @@ def hubspot_import():
         logger.error(f"❌ Import failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}, 500
 
-
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8000))
-    logger.info(f'🚀 Server Port: {port}')
-    app.run(host='0.0.0.0', port=port, debug=True)
-  
 # ============================================================================
 # HUBSPOT BACKFILL LAST CONTACT DATE
 # ============================================================================
@@ -1504,3 +1498,7 @@ def score_all_contacts():
         logger.error(f"❌ Scoring failed: {e}")
         return {"success": False, "error": str(e)}, 500
 
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8000))
+    logger.info(f'🚀 Server Port: {port}')
+    app.run(host='0.0.0.0', port=port, debug=True)
