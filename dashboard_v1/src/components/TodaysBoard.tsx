@@ -71,19 +71,22 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
   const [viewMode, setViewMode] = useState<'relationships' | 'prospects'>('relationships');
   const [selectedTier, setSelectedTier] = useState<string>('urgent');
 
-  const fetchBoard = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/todays-board');
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      console.error('Failed to fetch today\'s board:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+const fetchBoard = async () => {
+  try {
+    setLoading(true);
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    
+    // ADD THIS LINE - Actually call fetch()
+    const res = await fetch(`${API_URL}/api/todays-board`);
+    const json = await res.json();
+    setData(json);
+  } catch (err) {
+    console.error('Failed to fetch today\'s board:', err);
+  } finally {
+    setLoading(false);
+  }
+};
+  
   useEffect(() => {
     fetchBoard();
   }, []);
@@ -190,19 +193,19 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           <div style={{ background: 'rgba(239,68,68,0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(239,68,68,0.3)' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>
-              {data.relationships.urgent_count + data.relationships.warm_count}
+              {(data?.relationships?.tiers?.urgent?.length ?? 0) + (data?.relationships?.tiers?.warm?.length ?? 0)}
             </div>
             <div style={{ fontSize: 13, color: '#fca5a5' }}>🔥 Relationships Need Attention</div>
           </div>
           <div style={{ background: 'rgba(34,197,94,0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(34,197,94,0.3)' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#22c55e', marginBottom: 4 }}>
-              {data.new_prospects.hot_count + data.new_prospects.qualified_count}
+              {(data?.new_prospects?.tiers?.hot?.length ?? 0) + (data?.new_prospects?.tiers?.qualified?.length ?? 0)}
             </div>
             <div style={{ fontSize: 13, color: '#4ade80' }}>🎯 Hot New Prospects</div>
           </div>
           <div style={{ background: 'rgba(99,102,241,0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(99,102,241,0.3)' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#818cf8', marginBottom: 4 }}>
-              {data.total_actions}
+              {(data?.relationships?.total ?? 0) + (data?.new_prospects?.total ?? 0)}
             </div>
             <div style={{ fontSize: 13, color: '#a5b4fc' }}>✅ Total Actions Today</div>
           </div>
@@ -235,7 +238,7 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
           <div>
             <div>🔥 Existing Relationships</div>
             <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.8 }}>
-              {data.relationships.total} contacts • {data.relationships.urgent_count + data.relationships.warm_count} priority
+              {data.relationships.total} contacts • {(data?.relationships?.tiers?.urgent?.length ?? 0) + (data?.relationships?.tiers?.warm?.length ?? 0)} priority
             </div>
           </div>
         </button>
@@ -263,7 +266,7 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
           <div>
             <div>🎯 New Prospects</div>
             <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.8 }}>
-              {data.new_prospects.total} prospects • {data.new_prospects.hot_count + data.new_prospects.qualified_count} qualified
+              {data.new_prospects.total} prospects • {(data?.new_prospects?.tiers?.hot?.length ?? 0) + (data?.new_prospects?.tiers?.qualified?.length ?? 0)} qualified
             </div>
           </div>
         </button>
@@ -273,38 +276,38 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         {viewMode === 'relationships' ? (
           <>
-            {data.relationships.urgent_count > 0 && (
+            {(data?.relationships?.tiers?.urgent?.length ?? 0) > 0 && (
               <TierButton
                 id="urgent"
                 label="🔥 Urgent"
-                count={data.relationships.urgent_count}
+                count={(data?.relationships?.tiers?.urgent?.length ?? 0)}
                 selected={selectedTier === 'urgent'}
                 onClick={() => setSelectedTier('urgent')}
               />
             )}
-            {data.relationships.warm_count > 0 && (
+            {(data?.relationships?.tiers?.warm?.length ?? 0) > 0 && (
               <TierButton
                 id="warm"
                 label="⏰ Warm"
-                count={data.relationships.warm_count}
+                count={(data?.relationships?.tiers?.warm?.length ?? 0)}
                 selected={selectedTier === 'warm'}
                 onClick={() => setSelectedTier('warm')}
               />
             )}
-            {data.relationships.nurture_count > 0 && (
+            {(data?.relationships?.tiers?.nurture?.length ?? 0) > 0 && (
               <TierButton
                 id="nurture"
                 label="💎 Nurture"
-                count={data.relationships.nurture_count}
+                count={(data?.relationships?.tiers?.nurture?.length ?? 0)}
                 selected={selectedTier === 'nurture'}
                 onClick={() => setSelectedTier('nurture')}
               />
             )}
-            {data.relationships.stable_count > 0 && (
+            {(data?.relationships?.tiers?.stable?.length ?? 0) > 0 && (
               <TierButton
                 id="stable"
                 label="📚 Stable"
-                count={data.relationships.stable_count}
+                count={(data?.relationships?.tiers?.stable?.length ?? 0)}
                 selected={selectedTier === 'stable'}
                 onClick={() => setSelectedTier('stable')}
               />
@@ -312,29 +315,29 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
           </>
         ) : (
           <>
-            {data.new_prospects.hot_count > 0 && (
+            {(data?.new_prospects?.tiers?.hot?.length ?? 0) > 0 && (
               <TierButton
                 id="hot"
                 label="🎯 Hot"
-                count={data.new_prospects.hot_count}
+                count={(data?.new_prospects?.tiers?.hot?.length ?? 0)}
                 selected={selectedTier === 'hot'}
                 onClick={() => setSelectedTier('hot')}
               />
             )}
-            {data.new_prospects.qualified_count > 0 && (
+            {(data?.new_prospects?.tiers?.qualified?.length ?? 0) > 0 && (
               <TierButton
                 id="qualified"
                 label="✅ Qualified"
-                count={data.new_prospects.qualified_count}
+                count={(data?.new_prospects?.tiers?.qualified?.length ?? 0)}
                 selected={selectedTier === 'qualified'}
                 onClick={() => setSelectedTier('qualified')}
               />
             )}
-            {data.new_prospects.potential_count > 0 && (
+            {(data?.new_prospects?.tiers?.potential?.length ?? 0) > 0 && (
               <TierButton
                 id="potential"
                 label="🔍 Potential"
-                count={data.new_prospects.potential_count}
+                count={(data?.new_prospects?.tiers?.potential?.length ?? 0)}
                 selected={selectedTier === 'potential'}
                 onClick={() => setSelectedTier('potential')}
               />
@@ -532,7 +535,7 @@ function ContactCard({ contact, onSelect }: { contact: Contact; onSelect: () => 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
             {contact.priority_score && (
               <div style={{ fontSize: 24, fontWeight: 700, color: '#22c55e' }}>
-                {contact.priority_score.toFixed(0)}
+                {(contact.priority_score ?? 0).toFixed(0)}
               </div>
             )}
             <div style={{ fontSize: 11, color: '#9ca3af' }}>Priority</div>
@@ -721,3 +724,4 @@ function ContactCard({ contact, onSelect }: { contact: Contact; onSelect: () => 
     </div>
   );
 }
+                  

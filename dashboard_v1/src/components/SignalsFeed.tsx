@@ -20,7 +20,7 @@ export default function SignalsFeed() {
   const fetchSignals = async () => {
     try {
       setLoading(true);
-      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/signals/unread');
+      const res = await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/signals/unread');
       const data = await res.json();
       if (data.success) {
         setSignals(data.signals);
@@ -35,7 +35,7 @@ export default function SignalsFeed() {
   const scanForSignals = async () => {
     setScanning(true);
     try {
-      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/signals/detect', {
+      const res = await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/signals/detect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -53,7 +53,7 @@ export default function SignalsFeed() {
 
   const markAsRead = async (signalId: number) => {
     try {
-      await fetch(`https://apex-intelligence-production.up.railway.app/api/signals/mark-read/${signalId}`, {
+      await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/signals/mark-read/${signalId}`, {
         method: 'POST',
       });
       setSignals(signals.filter((s) => s.id !== signalId));

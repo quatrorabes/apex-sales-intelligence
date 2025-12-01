@@ -27,7 +27,7 @@ export default function WhyMeTab() {
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState('');
 	
-	const API_BASE = 'https://apex-intelligence-production.up.railway.app';
+	const API_BASE = '${import.meta.env.VITE_API_URL || "http://localhost:8000"}';
 	
 	// Load existing preferences
 	useEffect(() => {

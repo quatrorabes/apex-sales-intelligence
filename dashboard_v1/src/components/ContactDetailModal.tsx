@@ -70,7 +70,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
 
   const fetchedRef = useRef(false);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://apex-intelligence-production.up.railway.app';
+  const API_URL = import.meta.env.VITE_API_URL || '${import.meta.env.VITE_API_URL || "http://localhost:8000"}';
 
   // FIXED: Only fetch once, preserve existing profile_content
   useEffect(() => {
@@ -120,41 +120,54 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
                        localContact.call_script_1 || localContact.linkedin_connect);
 
   // Simple section extraction - just by number
-  const extractSection = (sectionNumber: string): string | null => {
-    const profile = localContact.profile_content || '';
-    if (!profile || profile.length < 50) return null;
-
-    try {
-      // Look for "## N." or just "N." patterns
-      const regex = new RegExp(
-        `(?:##\\s*)?${sectionNumber}\\.\\s*[^\\n]*\\n([\\s\\S]*?)(?=(?:##\\s*)?\\d+\\.|$)`,
-        'i'
-      );
-      const match = profile.match(regex);
-      if (match && match[1] && match[1].trim().length > 20) {
+// ===== START: SECTION EXTRACTION FIX (Lines 45-85 approximately) =====
+  
+  const extractSection = (sectionNumber: number, sectionName: string): string | null => {
+    if (!localContact.profile_content) return null;
+    
+    const content = localContact.profile_content;
+    
+    // Flexible patterns - section name can have additional text after it
+    const patterns = [
+      // Pattern 1: "## 9. Pain Points & Challenges" or "## 9. Pain Points"
+      new RegExp(`##\\s+${sectionNumber}\\.\\s+${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s+\\d|$)`, 'i'),
+      
+      // Pattern 2: "## Pain Points" (no number)
+      new RegExp(`##\\s+${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`, 'i'),
+      
+      // Pattern 3: "9. Pain Points" (numbered, no ##)
+      new RegExp(`${sectionNumber}\\.\\s+${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=\\n\\d+\\.\\s+|$)`, 'i')
+    ];
+    
+    for (const pattern of patterns) {
+      const match = content.match(pattern);
+      if (match && match[1] && match[1].trim().length > 10) {
         return match[1].trim();
       }
-    } catch (e) {
-      console.error('extractSection error:', e);
     }
+    
     return null;
   };
-
-  const dossierData = {
-    overview: extractSection('1'),
-    background: extractSection('2'),
-    education: extractSection('3'),
-    recentMentions: extractSection('4'),
-    socialProfiles: extractSection('5'),
-    personality: extractSection('6'),
-    myersBriggs: extractSection('7'),
-    companyOverview: extractSection('8'),
-    painPoints: extractSection('9'),
-    productFit: extractSection('10'),
-    keyInsights: extractSection('11'),
-    finalNote: extractSection('12'),
-  };
-
+  
+const dossierData = {
+  // Dossier Tab Sections
+  overview: extractSection(1, 'Overview'),
+  background: extractSection(2, 'Professional Background'),
+  education: extractSection(3, 'Education'),
+  personality: extractSection(6, 'Personality Detail'),
+  myersBriggs: extractSection(7, 'Myers-Briggs'),
+  companyOverview: extractSection(8, 'Company Overview'),
+  
+  // Intelligence Tab Sections (CORRECTED)
+  painPoints: extractSection(9, 'Pain Points'),
+  productFit: extractSection(10, 'Sales Opportunities'),  // Section 10 is "Sales Opportunities"
+  keyInsights: extractSection(11, 'Key Insights'),
+  finalNote: extractSection(12, 'Final Note')
+};
+  
+  
+// ===== END: SECTION EXTRACTION FIX =====
+  
   const handleEnrich = async () => {
     setEnriching(true);
     setShowEnrichSuccess(false);
@@ -425,43 +438,243 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 // HELPER COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
 function StatusBadge({ contact }: { contact: Contact }) {
-  if (contact.call_script_1 || contact.email_1_body || contact.linkedin_connect) return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)', color: '#10b981', fontSize: 11, fontWeight: 700 }}>✍️ Content Ready</span>;
-  if (contact.priority_score) return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.5)', color: '#fbbf24', fontSize: 11, fontWeight: 700 }}>🎯 Scored</span>;
-  if (contact.enrichment_status === 'completed') return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.5)', color: '#8b5cf6', fontSize: 11, fontWeight: 700 }}>✨ Enriched</span>;
-  return <span style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(71,85,105,0.15)', border: '1px solid rgba(71,85,105,0.5)', color: '#64748b', fontSize: 11, fontWeight: 700 }}>○ Pending</span>;
+  const baseStyle = {
+    padding: '4px 10px',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 700
+  };
+
+  if (contact.call_script_1 || contact.email_1_body || contact.linkedin_connect) {
+    return (
+      <span style={{ ...baseStyle, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.5)', color: '#10b981' }}>
+        ✍️ Content Ready
+      </span>
+    );
+  }
+  if (contact.priority_score) {
+    return (
+      <span style={{ ...baseStyle, background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.5)', color: '#fbbf24' }}>
+        🎯 Scored
+      </span>
+    );
+  }
+  if (contact.enrichment_status === 'completed') {
+    return (
+      <span style={{ ...baseStyle, background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.5)', color: '#8b5cf6' }}>
+        ✨ Enriched
+      </span>
+    );
+  }
+  return (
+    <span style={{ ...baseStyle, background: 'rgba(71,85,105,0.15)', border: '1px solid rgba(71,85,105,0.5)', color: '#64748b' }}>
+      ○ Pending
+    </span>
+  );
 }
 
 function EmptyState({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
-  return <div style={{ textAlign: 'center', padding: '60px 20px' }}><div style={{ marginBottom: 16 }}>{icon}</div><div style={{ fontSize: 18, fontWeight: 600, color: '#e5e7eb', marginBottom: 8 }}>{title}</div><div style={{ fontSize: 14, color: '#9ca3af' }}>{subtitle}</div></div>;
+  return (
+    <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+      <div style={{ marginBottom: 16 }}>{icon}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: '#e5e7eb', marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 14, color: '#9ca3af' }}>{subtitle}</div>
+    </div>
+  );
 }
 
 function ContentSection({ title, content, icon }: { title: string; content?: string | null; icon?: React.ReactNode }) {
-  return <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)', marginBottom: 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>{icon}<h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb' }}>{title}</h3></div><div style={{ fontSize: 14, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content || 'No data available'}</div></div>;
+  // Clean markdown from content
+  const cleanContent = content
+    ?.replace(/^###\s+[\d.]+\s*/gm, '')     // Remove ### 8.1. style headers
+    ?.replace(/^##\s+[\d.]+\s*/gm, '')      // Remove ## 8. style headers
+    ?.replace(/^##\s+/gm, '')               // Remove remaining ##
+    ?.replace(/^###\s+/gm, '')              // Remove remaining ###
+    ?.replace(/\*\*(.+?)\*\*/g, '$1')       // Remove bold markers
+    ?.replace(/^- \*\*(.+?)\*\*/gm, '• $1') // Convert list bold to bullet
+    ?.replace(/^- /gm, '• ')                // Convert dashes to bullets
+    ?.replace(/\n{3,}/g, '\n\n')            // Clean up extra newlines
+    ?.trim();
+
+  return (
+    <div style={{
+      background: 'rgba(30,41,59,0.5)',
+      borderRadius: 12,
+      padding: 20,
+      border: '1px solid rgba(148,163,184,0.2)',
+      marginBottom: 16
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        {icon}
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb', margin: 0 }}>{title}</h3>
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
+        {cleanContent || 'No data available'}
+      </div>
+    </div>
+  );
 }
 
 function DossierCard({ title, content, icon }: { title: string; content?: string | null; icon?: React.ReactNode }) {
   if (!content) return null;
-  return <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)', marginBottom: 16 }}><div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>{icon}<h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb' }}>{title}</h3></div><div style={{ fontSize: 14, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div></div>;
+  
+  // Clean markdown from content
+  const cleanContent = content
+    ?.replace(/^###\s+[\d.]+\s*/gm, '')
+    ?.replace(/^##\s+[\d.]+\s*/gm, '')
+    ?.replace(/^##\s+/gm, '')
+    ?.replace(/^###\s+/gm, '')
+    ?.replace(/\*\*(.+?)\*\*/g, '$1')
+    ?.replace(/^- /gm, '• ')
+    ?.replace(/\n{3,}/g, '\n\n')
+    ?.trim();
+
+  return (
+    <div style={{
+      background: 'rgba(30,41,59,0.5)',
+      borderRadius: 12,
+      padding: 20,
+      border: '1px solid rgba(148,163,184,0.2)',
+      marginBottom: 16
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        {icon}
+        <h3 style={{ fontSize: 16, fontWeight: 600, color: '#e5e7eb', margin: 0 }}>{title}</h3>
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.7, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>
+        {cleanContent}
+      </div>
+    </div>
+  );
 }
 
 function ScoreCard({ label, value, color }: { label: string; value?: number; color: string }) {
-  return <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)', textAlign: 'center' }}><div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>{label}</div><div style={{ fontSize: 32, fontWeight: 700, color }}>{value != null ? Math.round(value) : '—'}</div></div>;
+  return (
+    <div style={{
+      background: 'rgba(30,41,59,0.5)',
+      borderRadius: 12,
+      padding: 20,
+      border: '1px solid rgba(148,163,184,0.2)',
+      textAlign: 'center'
+    }}>
+      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 32, fontWeight: 700, color }}>
+        {value != null ? Math.round(value) : '—'}
+      </div>
+    </div>
+  );
 }
 
-function EmailCard({ number, subject, body, onCopy, copiedField }: { number: number; subject: string; body: string; onCopy: (t: string, f: string) => void; copiedField: string | null }) {
+function EmailCard({ number, subject, body, onCopy, copiedField }: { 
+  number: number; 
+  subject: string; 
+  body: string; 
+  onCopy: (t: string, f: string) => void; 
+  copiedField: string | null 
+}) {
   const labels = ['Initial Outreach', 'Follow-up', 'Break-up'];
   const colors = ['#6366f1', '#8b5cf6', '#a855f7'];
-  return <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: `1px solid ${colors[number-1]}30` }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><div><div style={{ fontSize: 14, fontWeight: 600, color: colors[number-1] }}>Email {number}</div><div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{labels[number-1]}</div></div><button onClick={() => onCopy(`Subject: ${subject}\n\n${body}`, `email_${number}`)} style={{ background: 'transparent', border: 'none', color: copiedField === `email_${number}` ? '#10b981' : '#64748b', cursor: 'pointer', fontSize: 12 }}>{copiedField === `email_${number}` ? <Check size={16} /> : <Copy size={16} />}</button></div><div style={{ marginBottom: 8 }}><div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af' }}>SUBJECT</div><div style={{ fontSize: 13, color: '#e5e7eb' }}>{subject}</div></div><div><div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af' }}>BODY</div><div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{body}</div></div></div>;
+  const color = colors[number - 1];
+
+  return (
+    <div style={{
+      background: 'rgba(30,41,59,0.5)',
+      borderRadius: 12,
+      padding: 20,
+      border: `1px solid ${color}30`
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color }}>Email {number}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{labels[number - 1]}</div>
+        </div>
+        <button
+          onClick={() => onCopy(`Subject: ${subject}\n\n${body}`, `email_${number}`)}
+          style={{ background: 'transparent', border: 'none', color: copiedField === `email_${number}` ? '#10b981' : '#64748b', cursor: 'pointer' }}
+        >
+          {copiedField === `email_${number}` ? <Check size={16} /> : <Copy size={16} />}
+        </button>
+      </div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af' }}>SUBJECT</div>
+        <div style={{ fontSize: 13, color: '#e5e7eb' }}>{subject}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af' }}>BODY</div>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{body}</div>
+      </div>
+    </div>
+  );
 }
 
-function CallScriptCard({ number, label, content, onCopy, copiedField }: { number: number; label: string; content: string; onCopy: (t: string, f: string) => void; copiedField: string | null }) {
+function CallScriptCard({ number, label, content, onCopy, copiedField }: { 
+  number: number; 
+  label: string; 
+  content: string; 
+  onCopy: (t: string, f: string) => void; 
+  copiedField: string | null 
+}) {
   const colors = ['#10b981', '#22c55e', '#16a34a'];
-  return <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: `1px solid ${colors[number-1]}30` }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><div><div style={{ fontSize: 14, fontWeight: 600, color: colors[number-1] }}>Script {number}</div><div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{label}</div></div><button onClick={() => onCopy(content, `call_${number}`)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}><Copy size={16} /></button></div><div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div></div>;
+  const color = colors[number - 1];
+
+  return (
+    <div style={{
+      background: 'rgba(30,41,59,0.5)',
+      borderRadius: 12,
+      padding: 20,
+      border: `1px solid ${color}30`
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color }}>Script {number}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>{label}</div>
+        </div>
+        <button
+          onClick={() => onCopy(content, `call_${number}`)}
+          style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}
+        >
+          <Copy size={16} />
+        </button>
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div>
+    </div>
+  );
 }
 
-function LinkedInCard({ title, content, onCopy, copiedField, fieldKey }: { title: string; content?: string; onCopy: (t: string, f: string) => void; copiedField: string | null; fieldKey: string }) {
+function LinkedInCard({ title, content, onCopy, copiedField, fieldKey }: { 
+  title: string; 
+  content?: string; 
+  onCopy: (t: string, f: string) => void; 
+  copiedField: string | null; 
+  fieldKey: string 
+}) {
   if (!content) return null;
-  return <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(14,165,233,0.3)' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Linkedin size={18} color="#0ea5e9" /><div style={{ fontSize: 14, fontWeight: 600, color: '#e5e7eb' }}>{title}</div></div><button onClick={() => onCopy(content, fieldKey)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}><Copy size={16} /></button></div><div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div></div>;
+
+  return (
+    <div style={{
+      background: 'rgba(30,41,59,0.5)',
+      borderRadius: 12,
+      padding: 20,
+      border: '1px solid rgba(14,165,233,0.3)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Linkedin size={18} color="#0ea5e9" />
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#e5e7eb' }}>{title}</div>
+        </div>
+        <button
+          onClick={() => onCopy(content, fieldKey)}
+          style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}
+        >
+          <Copy size={16} />
+        </button>
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', whiteSpace: 'pre-wrap' }}>{content}</div>
+    </div>
+  );
 }

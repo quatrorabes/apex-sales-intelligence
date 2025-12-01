@@ -16,19 +16,19 @@ export function ContactDetailPage({ contact }: { contact: any }) {
             <div className="flex gap-3 mt-4">
               <ScorePill 
                 label="Priority" 
-                score={contact.priority_score} 
+                score={contact.priority_score ?? 0} 
                 color={getScoreColor(contact.priority_score)}
                 icon={<Target className="w-4 h-4" />}
               />
               <ScorePill 
                 label="Role Fit" 
-                score={contact.rss_score} 
+                score={contact.rss_score ?? 0} 
                 color="blue"
                 icon={<User className="w-4 h-4" />}
               />
               <ScorePill 
                 label="Data" 
-                score={contact.mdcp_score} 
+                score={contact.mdcp_score ?? 0} 
                 color="green"
                 icon={<TrendingUp className="w-4 h-4" />}
               />
@@ -63,7 +63,7 @@ export function ContactDetailPage({ contact }: { contact: any }) {
                 strokeWidth="12"
                 fill="none"
                 strokeDasharray={`${2 * Math.PI * 56}`}
-                strokeDashoffset={`${2 * Math.PI * 56 * (1 - contact.priority_score / 100)}`}
+                strokeDashoffset={`${2 * Math.PI * 56 * (1 - (contact.priority_score ?? 0) / 100)}`}
                 className={`${getScoreGradient(contact.priority_score)} transition-all duration-500`}
               />
             </svg>

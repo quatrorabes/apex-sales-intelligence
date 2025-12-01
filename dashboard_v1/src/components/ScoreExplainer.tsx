@@ -9,7 +9,7 @@ export function ScoreExplainer({ contact }: { contact: any }) {
     <>
       {/* Inline Score Badge with Info Icon */}
       <div className="inline-flex items-center gap-2">
-        <span className="text-2xl font-bold text-white">{contact.priority_score}</span>
+        <span className="text-2xl font-bold text-white">{contact.priority_score ?? 0}</span>
         <button
           onClick={() => setShowDetails(true)}
           className="p-1 rounded-full hover:bg-slate-700 transition-colors"
@@ -32,7 +32,7 @@ export function ScoreExplainer({ contact }: { contact: any }) {
                     <Target className="w-5 h-5 text-blue-400" />
                     <span className="font-medium text-white">Role Fit (70%)</span>
                   </div>
-                  <span className="text-xl font-bold text-blue-400">{contact.rss_score}</span>
+                  <span className="text-xl font-bold text-blue-400">{contact.rss_score ?? 0}</span>
                 </div>
                 <div className="text-sm text-slate-400">
                   {contact.title?.includes('VP') || contact.title?.includes('Director') 
@@ -44,7 +44,7 @@ export function ScoreExplainer({ contact }: { contact: any }) {
                 <div className="mt-2 bg-slate-800 rounded-full h-2">
                   <div 
                     className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${contact.rss_score}%` }}
+                    style={{ width: `${contact.rss_score ?? 0}%` }}
                   />
                 </div>
               </div>
@@ -56,7 +56,7 @@ export function ScoreExplainer({ contact }: { contact: any }) {
                     <Building2 className="w-5 h-5 text-green-400" />
                     <span className="font-medium text-white">Data Quality (30%)</span>
                   </div>
-                  <span className="text-xl font-bold text-green-400">{contact.mdcp_score}</span>
+                  <span className="text-xl font-bold text-green-400">{contact.mdcp_score ?? 0}</span>
                 </div>
                 <div className="text-sm text-slate-400">
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -71,7 +71,7 @@ export function ScoreExplainer({ contact }: { contact: any }) {
               {/* Final Score */}
               <div className="bg-gradient-to-r from-blue-900/30 to-green-900/30 rounded-lg p-4 border border-slate-700">
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-white">{contact.priority_score}</div>
+                  <div className="text-3xl font-bold text-white">{contact.priority_score ?? 0}</div>
                   <div className="text-sm text-slate-400 mt-1">Final Priority Score</div>
                   <div className="text-xs text-slate-500 mt-2">
                     (RSS × 0.7) + (MDCP × 0.3) = Priority

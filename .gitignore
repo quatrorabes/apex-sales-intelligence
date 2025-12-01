@@ -40,3 +40,10 @@ secrets/
 
 # Enrichment profiles (generated files)
 enrichment_profiles/
+
+# Backup files from development
+*.backup-*
+*.backup
+*.bak
+api copy*.py
+fix_*.sh

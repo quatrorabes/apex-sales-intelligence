@@ -17,7 +17,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 import openai
-
+from openai import OpenAI
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -77,203 +77,301 @@ cadence_router = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# INLINE ENHANCED ENRICHMENT ENGINE (2-Stage: Perplexity + GPT-4)
+# INLINE PROFILE BUILDER ENRICHMENT ENGINE (3-Stage Intelligence)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INLINE PROFILE BUILDER ENRICHMENT ENGINE (3-Stage Intelligence)
 # ═══════════════════════════════════════════════════════════════════════════
 class EnhancedEnrichment:
-  """Two-stage enrichment: Perplexity research → GPT-4 polishing"""
-  
-  def __init__(self):
-    self.perplexity_key = PERPLEXITY_API_KEY
-    self.openai_key = OPENAI_API_KEY
+    """
+    Profile Builder - Three-stage enrichment pipeline:
+      Stage 1: Perplexity sonar-pro comprehensive research
+      Stage 2: GPT-4 intelligence interpolation & structuring
+      Stage 3: Database persistence (handled by endpoint)
     
-    if not self.perplexity_key:
-      raise ValueError("PERPLEXITY_API_KEY not set")
-    if not self.openai_key:
-      raise ValueError("OPENAI_API_KEY not set")
-      
-    openai.api_key = self.openai_key
-    logger.info("✅ EnhancedEnrichment initialized (2-stage)")
+    Output matches "Profile Builder" Perplexity Space format
+    """
     
-  def enrich_contact(self, contact: dict) -> dict:
-    """Main enrichment flow: Stage 1 (Perplexity) → Stage 2 (GPT-4)"""
-    try:
-      # STAGE 1: Perplexity Research
-      logger.info(f"🔍 STAGE 1: Perplexity research for {contact.get('name')}")
-      raw_profile = self._perplexity_research(contact)
-      logger.info(f"✅ STAGE 1 COMPLETE: {len(raw_profile)} characters")
-      
-      # STAGE 2: GPT-4 Polishing
-      logger.info(f"✨ STAGE 2: GPT-4 polishing...")
-      polished_profile = self._gpt4_polish(raw_profile, contact)
-      logger.info(f"✅ STAGE 2 COMPLETE: {len(polished_profile)} characters")
-      
-      return {
-        'status': 'success',
-        'enrichment_data': polished_profile,
-        'overview': polished_profile[:500],
-        'character_count': len(polished_profile)
-      }
+    def __init__(self):
+        self.perplexity_key = PERPLEXITY_API_KEY
+        self.openai_key = OPENAI_API_KEY
+        
+        if not self.perplexity_key:
+            raise ValueError("PERPLEXITY_API_KEY not set")
+        if not self.openai_key:
+            raise ValueError("OPENAI_API_KEY not set")
+        
+        # NEW: OpenAI v1.0+ - No global api_key setting needed
+        self.output_dir = 'enrichment_profiles'
+        
+        try:
+            import os
+            os.makedirs(self.output_dir, exist_ok=True)
+        except:
+            pass  # Directory creation is optional
+        
+        logger.info("✅ EnhancedEnrichment initialized (Profile Builder 3-stage)")
     
-    except Exception as e:
-      logger.error(f"❌ Enrichment failed: {e}")
-      return {
-        'status': 'error',
-        'error': str(e)
-      }
+    def enrich_contact(self, contact: dict) -> dict:
+        """Main enrichment pipeline - returns dict with status and enrichment_data"""
+        name = contact.get('name', 'Unknown')
+        company = contact.get('company', '')
+        contact_id = contact.get('id', 'unknown')
+        
+        logger.info("=" * 80)
+        logger.info(f"PROFILE BUILDER ENRICHMENT: {name} at {company}")
+        logger.info("=" * 80)
+        
+        # STAGE 1: Perplexity Research
+        query = self._build_profile_builder_query(contact)
+        logger.info("🔍 STAGE 1: PERPLEXITY RESEARCH (sonar-pro)")
+        
+        raw_profile = self._call_perplexity(query)
+        if not raw_profile:
+            logger.error("❌ No result from Perplexity")
+            return {'status': 'error', 'error': 'Perplexity returned no data'}
+        
+        logger.info(f"✅ STAGE 1 COMPLETE: {len(raw_profile)} characters")
+        
+        # STAGE 2: GPT-4 Intelligence Layer
+        logger.info("✨ STAGE 2: GPT-4 INTELLIGENCE INTERPOLATION...")
+        
+        polished_profile = self._gpt4_intelligence_layer(raw_profile, contact)
+        if not polished_profile:
+            logger.warning("⚠️  Stage 2 failed, using raw profile")
+            polished_profile = raw_profile
+        else:
+            logger.info(f"✅ STAGE 2 COMPLETE: {len(polished_profile)} characters")
+        
+        # Save debug files
+        try:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{self.output_dir}/profile_{contact_id}_{timestamp}_polished.txt"
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(f"Profile for {name}\n")
+                f.write("=" * 80 + "\n")
+                f.write(polished_profile)
+            logger.info(f"📄 Saved: {filename}")
+        except Exception as e:
+            logger.warning(f"Could not save debug file: {e}")
+        
+        logger.info("=" * 80)
+        logger.info("THREE-STAGE ENRICHMENT COMPLETE!")
+        logger.info("=" * 80)
+        
+        return {
+            'status': 'success',
+            'enrichment_data': polished_profile,
+            'overview': polished_profile[:500],
+            'character_count': len(polished_profile)
+        }
     
-  def _perplexity_research(self, contact: dict) -> str:
-    """Stage 1: Comprehensive research via Perplexity sonar-pro"""
-    name = contact.get('name', 'Unknown')
-    company = contact.get('company', '')
-    title = contact.get('title', '')
-    
-    query = f"""
-Research {name} who works as {title} at {company}.
+    def _build_profile_builder_query(self, contact: dict) -> str:
+        """Build comprehensive query based on Profile Builder instructions"""
+        name = contact.get('name', '')
+        title = contact.get('title', '')
+        company = contact.get('company', '')
+        linkedin_url = contact.get('linkedin_url', '')
+        
+        context = f"{name}, {title} at {company}"
+        if linkedin_url:
+            context += f"\nLinkedIn: {linkedin_url} (use as PRIMARY source)"
+        
+        query = f"""{context}
 
-Provide:
-1. Professional background and career trajectory
-2. Current role and responsibilities
-3. Company overview and industry context
-4. Education and certifications
-5. Notable achievements or projects
-6. Professional interests and expertise areas
-7. Personality indicators from public profiles
-8. Pain points they likely face in their role
-9. How they might benefit from sales intelligence tools
-10. Best approach for outreach
+You are a professional profile-building assistant. Generate a comprehensive profile using LinkedIn and public sources.
 
-Be thorough and cite sources where possible.
-    """.strip()
-    
-    try:
-      response = requests.post(
-        'https://api.perplexity.ai/chat/completions',
-        headers={
-          'Authorization': f'Bearer {self.perplexity_key}',
-          'Content-Type': 'application/json'
-        },
-        json={
-          'model': 'sonar-pro',
-          'messages': [{'role': 'user', 'content': query}],
-          'temperature': 0.2,
-          'max_tokens': 4000
-        },
-        timeout=60
-      )
-      response.raise_for_status()
-      result = response.json()
-      return result['choices'][0]['message']['content']
-    
-    except Exception as e:
-      logger.error(f"Perplexity API error: {e}")
-      raise
-      
-  def _gpt4_polish(self, raw_profile: str, contact: dict) -> str:
-    """Stage 2: Polish into structured intelligence format"""
-    name = contact.get('name', 'Unknown')
-    
-    prompt = f"""
-You are an expert sales intelligence analyst. Transform the following research into a structured sales dossier.
+**FOR THE PERSON ({name}):**
+1. Overview – Current role, organization summary
+2. Background – Career trajectory with years and companies
+3. Education – Degrees, institutions, years, honors
+4. Recent Mentions – News, LinkedIn posts, appearances
+5. Social Media – LinkedIn, Twitter, Facebook, Instagram handles
+6. Personality Detail – Myers-Briggs assessment (infer from behavior)
+7. Myers-Briggs Summary – How it relates to work style
 
-CONTACT: {name}
+**FOR THE COMPANY ({company}):**
+8. Company Overview – Mission, founding, HQ
+8.1. Products & Services
+8.2. Leadership
+8.3. Market & Competitors
+8.4. Recent News
+8.5. Fun Facts
 
-RAW RESEARCH:
+**STRATEGIC INTELLIGENCE:**
+9. Pain Points – 5 specific challenges for {title} role
+10. Business Needs – 5 ways sales tools/financing could help
+11. Key Insights – 3 non-obvious insights for conversations
+12. Final Note – Strategic summary for outreach
+
+Be thorough, cite sources, include dates and context.
+"""
+        return query.strip()
+    
+    def _gpt4_intelligence_layer(self, raw_profile: str, contact: dict) -> str:
+        """Stage 2: GPT-4 adds intelligence and structures output"""
+        name = contact.get('name', '')
+        title = contact.get('title', '')
+        company = contact.get('company', '')
+        
+        prompt = f"""You are an expert sales intelligence analyst.
+
+Transform this research into a structured profile with added intelligence.
+
+**CONTACT:** {name}, {title} at {company}
+
+**RAW RESEARCH:**
 {raw_profile}
 
-FORMAT YOUR OUTPUT EXACTLY LIKE THIS:
+**OUTPUT FORMAT (EXACT STRUCTURE):**
 
-## 1. Overview – Current Title and Organization
+## 1. Overview
 [2-3 sentence executive summary]
 
 ## 2. Professional Background
-[Career trajectory, key roles, years of experience]
+[Career trajectory with companies, roles, years, achievements]
 
 ## 3. Education & Credentials
-[Degrees, certifications, notable institutions]
+[Degrees, institutions, years, honors - e.g., UC Berkeley BA Economics 1976-1980]
 
-## 4. Current Company Context
-[Company overview, industry, size, stage]
+## 4. Recent Mentions
+[News, LinkedIn activity, speaking - with dates]
 
-## 5. Role & Responsibilities
-[What they own, team size, reporting structure]
+## 5. Social Media Profiles
+- **LinkedIn:** [URL or "Not found"]
+- **Twitter/X:** [Handle or "Not publicly available"]
+- **Facebook:** ["Not publicly available"]
+- **Instagram:** ["Not publicly available"]
 
-## 6. Notable Achievements
-[Quantifiable wins, awards, recognitions]
+## 6. Personality Detail
+[Myers-Briggs assessment inferred from leadership style, communication, career choices]
 
-## 7. Professional Interests & Expertise
-[Domains they care about, speak on, write about]
+## 7. Myers-Briggs Personality Assessment Summary
+[How personality manifests in work: decision-making, leadership, communication, engagement approach]
 
-## 8. Personality & Communication Style
-[How they present themselves, tone, values]
+## 8. Company Overview – {company}
+[Mission, founding, HQ, size]
+
+### 8.1. Products & Services
+[Offerings, markets, value proposition]
+
+### 8.2. Leadership
+[Key executives, founders]
+
+### 8.3. Market & Competitors
+[Industry position, competitors]
+
+### 8.4. Recent News
+[Announcements, deals, launches - with dates]
+
+### 8.5. Company Fun Facts
+[Culture, volunteer work, awards, unique details]
 
 ## 9. Pain Points & Challenges
-[3-5 bullet points of likely frustrations in their role]
+[5 specific pain points for {title}:]
+- [Pain 1]
+- [Pain 2]
+- [Pain 3]
+- [Pain 4]
+- [Pain 5]
 
-## 10. Product Fit Analysis
-[How sales intelligence/CRM tools align with their needs]
+## 10. Sales Opportunities & Talking Points
+[5 actionable talking points:]
+- [Point 1]
+- [Point 2]
+- [Point 3]
+- [Point 4]
+- [Point 5]
 
-## 11. Outreach Strategy
-[Best channels, timing, messaging angles]
+## 11. Key Insights (Deep Intelligence)
+[3 non-obvious insights:]
+- [Insight 1]
+- [Insight 2]
+- [Insight 3]
 
-## 12. Key Talking Points
-[3-5 specific conversation starters based on their background]
+## 12. Final Note – Strategic Summary
+[One paragraph: who they are, what they care about, how to engage, why now]
 
-Be specific, actionable, and cite evidence from the research. Use professional but direct language.
-    """.strip()
+**INSTRUCTIONS:**
+- Use EXACT structure above
+- Add intelligence beyond raw data
+- Include dates, numbers, specifics
+- If data missing, say "Not publicly available"
+- Be professional and actionable
+"""
+        
+        try:
+            # NEW: OpenAI v1.0+ syntax
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_key)
+            
+            response = client.chat.completions.create(
+                model='gpt-4',
+                messages=[
+                    {'role': 'system', 'content': 'You are a professional business intelligence analyst specializing in sales enablement.'},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.4,
+                max_tokens=4000
+            )
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"❌ GPT-4 error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
     
-    try:
-      response = openai.ChatCompletion.create(
-        model='gpt-4',
-        messages=[{'role': 'user', 'content': prompt}],
-        temperature=0.3,
-        max_tokens=3000
-      )
-      return response.choices[0].message.content
-    
-    except Exception as e:
-      logger.error(f"OpenAI API error: {e}")
-      raise
-      
-# Initialize enrichment engine
-enrichment_engine = None
+    def _call_perplexity(self, query: str) -> str:
+        """Call Perplexity API with sonar-pro"""
+        url = 'https://api.perplexity.ai/chat/completions'
+        headers = {
+            'Authorization': f'Bearer {self.perplexity_key}',
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            'model': 'sonar-pro',
+            'messages': [{'role': 'user', 'content': query}],
+            'temperature': 0.2,
+            'max_tokens': 4000
+        }
+        
+        try:
+            import requests
+            logger.info("🌐 Calling Perplexity API...")
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info("✅ Perplexity API successful!")
+                return data['choices'][0]['message']['content']
+            else:
+                logger.error(f"❌ Perplexity API Error: {response.status_code}")
+                logger.error(f"Response: {response.text}")
+                return None
+            
+        except Exception as e:
+            logger.error(f"❌ Perplexity request error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INITIALIZE ENRICHMENT ENGINE
+# ═══════════════════════════════════════════════════════════════════════════
 try:
-  enrichment_engine = EnhancedEnrichment()
-  logger.info("✅ Enrichment engine loaded (inline 2-stage)")
+    enrichment_engine = EnhancedEnrichment
+    logger.info("✅ EnhancedEnrichment class loaded (Profile Builder)")
 except Exception as e:
-  logger.error(f"❌ Enrichment engine failed: {e}")
+    logger.error(f"❌ Failed to load EnhancedEnrichment: {e}")
+    enrichment_engine = None
   
-# Enrichment Engine
-try:
-    from intelligence.engines.enrichment.enhanced_enrichment import EnhancedEnrichment
+# ═══════════════════════════════════════════════════════════════════════════
+# NOW YOUR FLASK ENDPOINTS START HERE
+# ═══════════════════════════════════════════════════════════════════════════
   
-    logger.info("✅ Enrichment engine loaded")
-except ImportError as e:
-    logger.warning(f"⚠️  Enrichment engine unavailable: {e}")
-except Exception as e:
-    logger.error(f"❌ Enrichment engine initialization failed: {e}")
-
-# Scoring Engine
-try:
-    from intelligence.engines.scoring.apex_scoring_engine import ApexScoringEngine
-    scoring_engine = ApexScoringEngine
-    logger.info("✅ Scoring engine loaded")
-except ImportError as e:
-    logger.warning(f"⚠️  Scoring engine unavailable: {e}")
-except Exception as e:
-    logger.error(f"❌ Scoring engine initialization failed: {e}")
-
-# Outreach Engines
-try:
-    from intelligence.engines.outreach.auto_sequence_engine import AutoSequenceEngine
-    from intelligence.engines.scoring.cadence_router import CadenceRouter
-    auto_sequence_engine = AutoSequenceEngine
-    cadence_router = CadenceRouter
-    logger.info("✅ Cadence engines loaded")
-except ImportError as e:
-    logger.warning(f"⚠️  Cadence engines unavailable: {e}")
-except Exception as e:
-    logger.error(f"❌ Cadence engines initialization failed: {e}")
-
 # ================================================================
 # FLASK APP INITIALIZATION
 # ================================================================
@@ -549,12 +647,17 @@ def get_contact(contact_id):
         logger.error(f"Get contact error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ================================================================
-# API ENDPOINTS - ENRICHMENT (STAGE 2)
-# ================================================================
+  ## ================================================================
+  # API ENDPOINTS - ENRICHMENT (STAGE 2 + SCORING STAGE 3)
+  # ================================================================
 @app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
 def enrich_contact(contact_id):
-  """Enrich a contact using AI enrichment - STAGE 2"""
+  """
+  3-Stage Enrichment Pipeline:
+  STAGE 1: Perplexity raw research
+  STAGE 2: GPT-4 structuring + intelligence layers
+  STAGE 3: Database save + MDCP scoring
+  """
   try:
     if not enrichment_engine:
       return jsonify({'success': False, 'error': 'Enrichment engine unavailable'}), 503
@@ -578,97 +681,63 @@ def enrich_contact(contact_id):
     
     conn.close()
     
-    # Run enrichment
-    logger.info(f"🔍 Enriching contact {contact_id}: {contact.get('name')}")
+    # ===== STAGE 1: Run enrichment engine =====
+    logger.info(f"🔍 STAGE 1: Enriching contact {contact_id}: {contact.get('name')}")
     enricher = enrichment_engine()
     result = enricher.enrich_contact(contact)
     
-    # FIX: Check for 'status' instead of 'success'
+    # Check for 'status' instead of 'success'
     if result and result.get('status') == 'success':
-      # STAGE 1: Get raw Perplexity output
+      # Get raw Perplexity output
       raw_profile = result.get('enrichment_data', result.get('overview', ''))
       
       if isinstance(raw_profile, dict):
         raw_profile = str(raw_profile)
         
-      # STAGE 2: Polish with GPT-4
-        # STAGE 2: Polish with GPT-4
-        logger.info(f"✨ STAGE 2: GPT-4 polishing {len(raw_profile)} chars...")
-        profile_text = raw_profile  # fallback if GPT-4 fails
+        # ===== STAGE 2: Polish with GPT-4 =====
+      logger.info(f"✨ STAGE 2: GPT-4 polishing {len(raw_profile)} chars...")
+      profile_text = raw_profile  # fallback if GPT-4 fails
+      
+      try:
+        polish_response = openai.ChatCompletion.create(
+          model='gpt-4',
+          messages=[{
+            'role': 'user',
+            'content': f"""
+Transform this sales research into a structured dossier with clear sections.
+
+CONTACT: {contact.get('name')}
+
+RAW RESEARCH:
+{raw_profile}
+
+Add these sections at the end:
+
+## 9. Pain Points & Challenges
+[3-5 bullet points of likely frustrations in their role]
+
+## 10. Product Fit Analysis
+[How sales intelligence/CRM tools align with their needs]
+
+## 11. Outreach Strategy
+[Best channels, timing, messaging angles]
+
+## 12. Key Talking Points
+[3-5 specific conversation starters based on their background]
+
+Include all the original research, then add these structured sections.
+            """.strip()
+          }],
+          temperature=0.3,
+          max_tokens=3500
+        )
+        profile_text = polish_response.choices[0].message.content
+        logger.info(f"✅ STAGE 2 COMPLETE: {len(profile_text)} chars")
+      except Exception as e:
+        logger.warning(f"⚠️  Stage 2 GPT-4 polish failed, using raw profile: {e}")
+        # profile_text already set to raw_profile above
         
-        try:
-          polish_response = openai.ChatCompletion.create(
-            model='gpt-4',
-            messages=[{
-              'role': 'user',
-              'content': f"""
-    Transform this sales research into a structured dossier with clear sections.
-    
-    CONTACT: {contact.get('name')}
-    
-    RAW RESEARCH:
-    {raw_profile}
-    
-    Add these sections at the end:
-    
-    ## 9. Pain Points & Challenges
-    [3-5 bullet points of likely frustrations in their role]
-    
-    ## 10. Product Fit Analysis
-    [How sales intelligence/CRM tools align with their needs]
-    
-    ## 11. Outreach Strategy
-    [Best channels, timing, messaging angles]
-    
-    ## 12. Key Talking Points
-    [3-5 specific conversation starters based on their background]
-    
-    Include all the original research, then add these structured sections.
-              """.strip()
-            }],
-            temperature=0.3,
-            max_tokens=3500
-          )
-          profile_text = polish_response.choices[0].message.content
-          logger.info(f"✅ STAGE 2 COMPLETE: {len(profile_text)} chars")
-        except Exception as e:
-          logger.warning(f"⚠️  Stage 2 GPT-4 polish failed, using raw profile: {e}")
-          # profile_text already set to raw_profile above
-          
-        # Save to database
-        conn = get_db()
-        cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
-        
-        if IS_PRODUCTION:
-          cursor.execute("""
-            UPDATE contacts SET
-            profile_content = %s,
-            enrichment_status = 'completed',
-            enrichment_date = %s
-            WHERE id = %s
-          """, (profile_text, datetime.now(), contact_id))
-        else:
-          cursor.execute("""
-            UPDATE contacts SET
-            profile_content = ?,
-            enrichment_status = 'completed',
-            enrichment_date = ?
-            WHERE id = ?
-          """, (profile_text, datetime.now().isoformat(), contact_id))
-          
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"✅ Enrichment complete for contact {contact_id}")
-        
-        return jsonify({
-          'success': True,
-          'contact_id': contact_id,
-          'profile_length': len(profile_text)
-        }), 200
-# profile_text already set to raw_profile above
-        
-      # Save to database (THIS SHOULD BE OUTSIDE THE TRY/EXCEPT)
+        # ===== STAGE 3A: Save to database =====
       conn = get_db()
       cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
       
@@ -677,42 +746,124 @@ def enrich_contact(contact_id):
           UPDATE contacts SET
           profile_content = %s,
           enrichment_status = 'completed',
-          enrichment_date = %s
+          enrichment_date = %s,
+          updated_at = %s
           WHERE id = %s
-        """, (profile_text, datetime.now(), contact_id))
+        """, (profile_text, datetime.now(), datetime.now(), contact_id))
       else:
         cursor.execute("""
           UPDATE contacts SET
           profile_content = ?,
           enrichment_status = 'completed',
-          enrichment_date = ?
+          enrichment_date = ?,
+          updated_at = ?
           WHERE id = ?
-        """, (profile_text, datetime.now().isoformat(), contact_id))
+        """, (profile_text, datetime.now().isoformat(), datetime.now().isoformat(), contact_id))
         
       conn.commit()
+      logger.info(f"💾 STAGE 3A: Profile saved to database")
+      
+      # ===== STAGE 3B: Calculate MDCP Scoring =====
+      scores = None
+      if scoring_engine:
+        logger.info(f"🎯 STAGE 3B: Running MDCP scoring...")
+        
+        # Re-fetch contact with enriched profile
+        param_style = '%s' if IS_PRODUCTION else '?'
+        cursor.execute(f"SELECT * FROM contacts WHERE id = {param_style}", (contact_id,))
+        
+        if IS_PRODUCTION:
+          enriched_contact = cursor.fetchone()
+        else:
+          row = cursor.fetchone()
+          enriched_contact = dict(row) if row else None
+          
+        if enriched_contact:
+          try:
+            scores = scoring_engine.score_contact(enriched_contact)
+            
+            if scores:
+              if IS_PRODUCTION:
+                cursor.execute("""
+                  UPDATE contacts SET
+                  mdcp_score = %s,
+                  priority_score = %s,
+                  rss_score = %s,
+                  mdcp_tier = %s,
+                  urgency_level = %s,
+                  last_scored = %s,
+                  updated_at = %s
+                  WHERE id = %s
+                """, (
+                    scores.get('mdcp_score'),
+                    scores.get('priority_score'),
+                    scores.get('rss_score'),
+                    scores.get('mdcp_tier'),
+                    scores.get('urgency_level'),
+                    datetime.now(),
+                    datetime.now(),
+                    contact_id
+                  ))
+              else:
+                cursor.execute("""
+                  UPDATE contacts SET
+                  mdcp_score = ?,
+                  priority_score = ?,
+                  rss_score = ?,
+                  mdcp_tier = ?,
+                  urgency_level = ?,
+                  last_scored = ?,
+                  updated_at = ?
+                  WHERE id = ?
+                """, (
+                    scores.get('mdcp_score'),
+                    scores.get('priority_score'),
+                    scores.get('rss_score'),
+                    scores.get('mdcp_tier'),
+                    scores.get('urgency_level'),
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                    contact_id
+                  ))
+                
+              conn.commit()
+              logger.info(f"✅ STAGE 3B COMPLETE: MDCP={scores.get('mdcp_score'):.1f}, Priority={scores.get('priority_score'):.1f}")
+              
+          except Exception as score_error:
+            logger.warning(f"⚠️  Scoring failed (enrichment still saved): {score_error}")
+            # Don't fail the whole enrichment if scoring errors
+            
       conn.close()
       
-      logger.info(f"✅ Enrichment complete for contact {contact_id}")
+      logger.info(f"✅ ✅ ✅ ENRICHMENT COMPLETE for contact {contact_id}")
       
       return jsonify({
-        'success': True,
-        'contact_id': contact_id,
-        'profile_length': len(profile_text)
-      }), 200
+    'success': True,
+    'contact_id': contact_id,
+    'profile_length': len(profile_text),
+    'enrichment_status': 'completed',
+    'scoring': {
+      'mdcp_score': scores.get('mdcp_score') if scores else None,
+      'priority_score': scores.get('priority_score') if scores else None,
+      'tier': scores.get('mdcp_tier') if scores else None
+    } if scores else None
+    }), 200
+    
     else:
       error_msg = result.get('error', 'Enrichment failed') if result else 'No result returned'
       logger.error(f"❌ Enrichment failed: {error_msg}")
       return jsonify({'success': False, 'error': error_msg}), 500
     
   except Exception as e:
-    logger.error(f"Enrichment error: {e}")
+    logger.error(f"❌ Enrichment error: {e}")
     logger.error(traceback.format_exc())
     return jsonify({'success': False, 'error': str(e)}), 500
   
   
-# ================================================================
-# API ENDPOINTS - TODAY'S BOARD (PHASE 2)
-# ================================================================
+  # ================================================================
+  # API ENDPOINTS - TODAY'S BOARD (PHASE 2)
+  # ================================================================
+
 @app.route('/api/todays-board', methods=['GET'])
 def get_todays_board():
     """Generate daily prioritized action list"""

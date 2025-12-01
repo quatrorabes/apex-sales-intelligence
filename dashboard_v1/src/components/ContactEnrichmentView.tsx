@@ -52,7 +52,7 @@ const ContactEnrichmentView: React.FC<ContactEnrichmentViewProps> = ({ contact, 
     try {
       console.log('Starting enrichment for contact:', contact.id);
       
-      const response = await fetch('https://apex-intelligence-production.up.railway.app/api/contacts/' + contact.id + '/enrich', {
+      const response = await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/contacts/' + contact.id + '/enrich', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -81,7 +81,7 @@ const ContactEnrichmentView: React.FC<ContactEnrichmentViewProps> = ({ contact, 
     setContentType(type);
     
     try {
-      const response = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contact.id}/generate-content`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/contacts/${contact.id}/generate-content`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -265,7 +265,7 @@ const ContactEnrichmentView: React.FC<ContactEnrichmentViewProps> = ({ contact, 
                     padding: '0.5rem 1rem'
                   }}>
                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-                      {Math.round(contact.rss_score || 0)}
+                      {Math.round(contact.rss_score ?? 0)}
                     </div>
                     <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Role</div>
                   </div>
@@ -276,7 +276,7 @@ const ContactEnrichmentView: React.FC<ContactEnrichmentViewProps> = ({ contact, 
                     padding: '0.5rem 1rem'
                   }}>
                     <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
-                      {Math.round(contact.mdcp_score || 0)}
+                      {Math.round(contact.mdcp_score ?? 0)}
                     </div>
                     <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Data</div>
                   </div>

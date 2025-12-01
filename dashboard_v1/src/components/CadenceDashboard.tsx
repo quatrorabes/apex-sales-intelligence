@@ -51,8 +51,8 @@ export default function CadenceDashboard() {
   
   const fetchCadences = async () => {
     try {
-      const res = await fetch('https://apex-intelligence-production.up.railway.app/api/cadences/active');
-      const data = await res.json();
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${API_URL}/api/cadences/active`);
       
       if (data.success) {
         // Transform API data to component format
@@ -83,7 +83,7 @@ export default function CadenceDashboard() {
   
   const handlePauseSequence = async (sequenceId: number) => {
     try {
-      const res = await fetch(`https://apex-intelligence-production.up.railway.app/api/cadences/${sequenceId}/pause`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/cadences/${sequenceId}/pause`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual_pause' })
@@ -102,7 +102,7 @@ export default function CadenceDashboard() {
     if (!window.confirm('Stop this cadence permanently?')) return;
     
     try {
-      const res = await fetch(`https://apex-intelligence-production.up.railway.app/api/cadences/${sequenceId}/stop`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/cadences/${sequenceId}/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual_stop' })

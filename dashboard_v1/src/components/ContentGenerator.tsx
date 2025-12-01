@@ -49,7 +49,7 @@ export default function ContentGenerator({ contactId, contactName, profileConten
     setError(null);
 
     try {
-      const response = await fetch(`https://apex-intelligence-production.up.railway.app/api/contacts/${contactId}/generate-content`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/contacts/${contactId}/generate-content`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
