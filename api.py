@@ -1508,4 +1508,4 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
     logger.info(f'🚀 Server Port: {port}')
     app.run(host='0.0.0.0', port=port, debug=True)
-  
+  # Force deploy Mon Dec  1 12:23:48 PST 2025
