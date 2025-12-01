@@ -357,7 +357,6 @@ Transform this research into a structured profile with added intelligence.
             logger.error(traceback.format_exc())
             return None
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 # INITIALIZE ENRICHMENT ENGINE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -369,15 +368,21 @@ except Exception as e:
     enrichment_engine = None
   
 # ═══════════════════════════════════════════════════════════════════════════
-# NOW YOUR FLASK ENDPOINTS START HERE
+# INITIALIZE SCORING ENGINE
 # ═══════════════════════════════════════════════════════════════════════════
+try:
+  from apps.backend.intelligence.engines.scoring import ApexScoringEngine
+  scoring_engine = ApexScoringEngine()
+  logger.info("✅ ApexScoringEngine loaded")
+except Exception as e:
+  logger.warning(f"⚠️ Scoring engine not available: {e}")
+  scoring_engine = None
   
 # ================================================================
 # FLASK APP INITIALIZATION
 # ================================================================
 app = Flask(__name__)
 CORS(app)
-
 # ================================================================
 # SMART DATABASE CONFIGURATION
 # ================================================================
