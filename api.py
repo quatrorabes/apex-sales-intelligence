@@ -1197,6 +1197,9 @@ def hubspot_import():
                     else:
                         imported += 1
 
+                    if IS_PRODUCTION:
+                        conn.commit()
+
                 except Exception as e:
                     logger.error(f"   ❌ Error processing contact {idx}: {e}")
                     try:
