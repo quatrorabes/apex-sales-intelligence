@@ -1278,10 +1278,10 @@ def hubspot_backfill_activity():
         
         # Get all contacts with hubspot_id
         if IS_PRODUCTION:
-            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != ''")
+            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != '' LIMIT 50")
             contacts = cursor.fetchall()
         else:
-            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != ''")
+            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != '' LIMIT 50")
             contacts = cursor.fetchall()
         
         updated = 0
