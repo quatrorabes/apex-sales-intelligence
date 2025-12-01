@@ -440,6 +440,12 @@ def ensure_schema():
     """Ensure all required tables and columns exist"""
     conn = get_db()
 
+    # Clear any failed transaction state (PostgreSQL)
+    try:
+        conn.rollback()
+    except:
+        pass
+
     if IS_PRODUCTION:
         cursor = dict_cursor(conn)
     else:
@@ -500,6 +506,7 @@ def ensure_schema():
             pass  # Column already exists
 
     # Create Phase 2 tables
+    conn.rollback()  # Clear any failed transaction state
     if IS_PRODUCTION:
         # PostgreSQL syntax
         cursor.execute("""
