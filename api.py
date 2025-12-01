@@ -1034,6 +1034,8 @@ def hubspot_import():
 
     try:
         conn = get_db()
+        if IS_PRODUCTION:
+            conn.autocommit = True  # Each INSERT is independent
         cursor = conn.cursor()
 
         imported = 0
