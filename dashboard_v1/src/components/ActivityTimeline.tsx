@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { Phone, Mail, Linkedin, Users, Clock, CheckCircle, XCircle } from 'lucide-react';
 
 interface Activity {

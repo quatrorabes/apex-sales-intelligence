@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../config';
 import { Mail, Phone, MessageSquare, Copy, Check, Sparkles, RefreshCw, Loader, ChevronRight } from 'lucide-react';
 import "../styles/ContentGenerator.css";
 

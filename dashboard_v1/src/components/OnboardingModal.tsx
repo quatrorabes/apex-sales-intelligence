@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../config';
 import { Target, Building2, Users, TrendingUp, CheckCircle, X } from 'lucide-react';
 
 interface OnboardingModalProps {

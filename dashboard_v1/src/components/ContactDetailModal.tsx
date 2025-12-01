@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { API_BASE } from '../config';
 import {
   X, Sparkles, Loader, Mail, Phone, Linkedin, Target, Lightbulb,
   PhoneCall, StickyNote, Copy, Check, Zap, FileText, User, Building2,
@@ -12,6 +13,7 @@ interface Contact {
   name: string;
   email: string;
   phone: string;
+  phone_mobile?: string;
   company: string;
   title: string;
   enrichment_status?: string;
@@ -70,7 +72,6 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
 
   const fetchedRef = useRef(false);
 
-  const API_URL = import.meta.env.VITE_API_URL || '${import.meta.env.VITE_API_URL || "http://localhost:8000"}';
 
   // FIXED: Only fetch once, preserve existing profile_content
   useEffect(() => {
@@ -79,7 +80,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
 
     console.log('🔄 Fetching contact:', contact.id);
 
-    fetch(`${API_URL}/api/contacts/${contact.id}`)
+    fetch(`${API_BASE}/api/contacts/${contact.id}`)
       .then(res => res.json())
       .then(data => {
         console.log('📥 API returned:', { 
@@ -100,7 +101,7 @@ export default function ContactDetailModal({ contact, onClose, onEnrichmentCompl
         console.error('❌ Fetch failed:', err);
         setDataLoaded(true); // Still mark as loaded to show existing data
       });
-  }, [contact.id, API_URL]);
+  }, [contact.id, API_BASE]);
 
   // Debug: Log whenever localContact changes
   useEffect(() => {
@@ -174,12 +175,12 @@ const dossierData = {
     setJustEnriched(false);
     try {
       console.log('🚀 Starting enrichment for:', contact.id);
-      const res = await fetch(`${API_URL}/api/contacts/${contact.id}/enrich`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/api/contacts/${contact.id}/enrich`, { method: 'POST' });
       const data = await res.json();
       console.log('📨 Enrich response:', data);
 
       if (data.success) {
-        const updatedRes = await fetch(`${API_URL}/api/contacts/${contact.id}`);
+        const updatedRes = await fetch(`${API_BASE}/api/contacts/${contact.id}`);
         const updatedContact = await updatedRes.json();
         console.log('✅ Updated contact:', { profileLength: updatedContact.profile_content?.length });
         setLocalContact(updatedContact);
@@ -201,13 +202,13 @@ const dossierData = {
     setGenerating(true);
     setShowGenerateSuccess(false);
     try {
-      const res = await fetch(`${API_URL}/api/contacts/${contact.id}/generate-content`, {
+      const res = await fetch(`${API_BASE}/api/contacts/${contact.id}/generate-content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content_type: 'all' }),
       });
       const data = await res.json();
-      const updatedRes = await fetch(`${API_URL}/api/contacts/${contact.id}`);
+      const updatedRes = await fetch(`${API_BASE}/api/contacts/${contact.id}`);
       const updatedContact = await updatedRes.json();
       setLocalContact(updatedContact);
       onEnrichmentComplete?.(updatedContact);
@@ -227,7 +228,7 @@ const dossierData = {
 
   const handleSaveNotes = async () => {
     try {
-      await fetch(`${API_URL}/api/contacts/${contact.id}`, {
+      await fetch(`${API_BASE}/api/contacts/${contact.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
@@ -289,9 +290,11 @@ const dossierData = {
               </div>
               <StatusBadge contact={localContact} />
             </div>
-            <div style={{ display: 'flex', gap: 12, fontSize: 12, color: '#9ca3af' }}>
-              {localContact.email && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={14} />{localContact.email}</div>}
-              {localContact.phone && <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={14} />{localContact.phone}</div>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 12, color: "#9ca3af" }}>
+              {localContact.email && <div style={{ display: "flex", alignItems: "center", gap: 4 }}><Mail size={14} />{localContact.email}</div>}
+              {localContact.phone && <div style={{ display: "flex", alignItems: "center", gap: 4 }}><Phone size={14} />{localContact.phone}</div>}
+              {localContact.phone_mobile && <div style={{ display: "flex", alignItems: "center", gap: 4 }}><Phone size={14} />📱 {localContact.phone_mobile}</div>}
+              {localContact.linkedin_url && <a href={localContact.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 4, color: "#60a5fa", textDecoration: "none" }}><Linkedin size={14} />LinkedIn</a>}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

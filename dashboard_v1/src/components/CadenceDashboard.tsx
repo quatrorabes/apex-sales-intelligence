@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { 
   Play, 
   Pause, 
@@ -51,8 +52,8 @@ export default function CadenceDashboard() {
   
   const fetchCadences = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${API_URL}/api/cadences/active`);
+      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+      const res = await fetch(`${API_BASE}/api/cadences/active`);
       
       if (data.success) {
         // Transform API data to component format
@@ -83,7 +84,7 @@ export default function CadenceDashboard() {
   
   const handlePauseSequence = async (sequenceId: number) => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/cadences/${sequenceId}/pause`, {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/cadences/${sequenceId}/pause`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual_pause' })
@@ -102,7 +103,7 @@ export default function CadenceDashboard() {
     if (!window.confirm('Stop this cadence permanently?')) return;
     
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/cadences/${sequenceId}/stop`, {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/cadences/${sequenceId}/stop`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'manual_stop' })

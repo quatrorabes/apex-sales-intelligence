@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from './config';
 import { 
   ChevronUp, ChevronDown, Search, Download, Users, Gauge, 
   Activity, Sparkles, Database, Target, ChevronLeft, ChevronRight, Zap 
@@ -63,7 +64,7 @@ function HubSpotImportButton({ onImportComplete }: { onImportComplete?: () => vo
     setImporting(true);
     setResult(null);
     try {
-      const res = await fetch(`${API_URL}/api/hubspot/import`, {
+      const res = await fetch(`${API_BASE}/api/hubspot/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -133,7 +134,6 @@ function ContactsBoard({ selectedContact, onSelectContact, refreshTrigger }: Con
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'https://apex-intelligence-production.up.railway.app';
   const [sortField, setSortField] = useState<SortField>('priority_score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [searchTerm, setSearchTerm] = useState('');
@@ -146,7 +146,7 @@ function ContactsBoard({ selectedContact, onSelectContact, refreshTrigger }: Con
   const fetchContacts = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/contacts?limit=500&_t=${Date.now()}`);
+      const res = await fetch(`${API_BASE}/api/contacts?limit=500&_t=${Date.now()}`);
       const data = await res.json();
       setContacts(data.contacts || data);
     } catch (err) {

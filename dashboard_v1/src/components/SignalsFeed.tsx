@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { TrendingUp, Zap, RefreshCw, Eye } from 'lucide-react';
 
 interface Signal {

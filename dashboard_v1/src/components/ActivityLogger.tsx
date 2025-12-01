@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE } from '../config';
 import { Phone, Mail, Linkedin, Users, CheckCircle, Clock } from 'lucide-react';
 
 interface ActivityLoggerProps {

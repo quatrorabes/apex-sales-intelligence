@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { Save, RefreshCw, Package, Wrench, Gem, Target, Lightbulb, X, User, Building2 } from 'lucide-react';
 
 interface UserPreferences {

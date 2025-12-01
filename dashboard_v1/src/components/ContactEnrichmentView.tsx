@@ -1,4 +1,5 @@
 // ContactEnrichmentView.tsx
+import { API_BASE } from '../config';
 // Complete working version with Chat Things tab and content generation
 
 import React, { useState, useEffect } from 'react';

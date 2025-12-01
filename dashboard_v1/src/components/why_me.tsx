@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import { API_BASE } from '../config';
 
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, Plus, X, AlertCircle } from 'lucide-react';

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 import { 
   Phone, Mail, Linkedin, Calendar, Clock, Flame, 
   Zap, ChevronRight, RefreshCw, Star, TrendingUp,
@@ -74,10 +75,10 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
 const fetchBoard = async () => {
   try {
     setLoading(true);
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
     
     // ADD THIS LINE - Actually call fetch()
-    const res = await fetch(`${API_URL}/api/todays-board`);
+    const res = await fetch(`${API_BASE}/api/todays-board`);
     const json = await res.json();
     setData(json);
   } catch (err) {
