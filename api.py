@@ -1197,6 +1197,10 @@ def hubspot_import():
 
                 except Exception as e:
                     logger.error(f"   ❌ Error processing contact {idx}: {e}")
+                    try:
+                        conn.rollback()
+                    except:
+                        pass
                     skipped += 1
                     continue
 
