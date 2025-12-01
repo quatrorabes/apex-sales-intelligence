@@ -1144,27 +1144,51 @@ def hubspot_import():
                         continue
 
                     # === PASSED ALL FILTERS - UPSERT ===
-                    cursor.execute("""
-                        INSERT INTO contacts 
-                        (name, email, phone, phone_mobile, company, title, linkedin_url, 
-                         hubspot_id, data_source, sync_date, firstname, lastname, 
-                         lifecycle_stage, lead_status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'hubspot', datetime('now'), ?, ?, ?, ?)
-                        ON CONFLICT(hubspot_id) DO UPDATE SET
-                            name = excluded.name,
-                            email = excluded.email,
-                            phone = COALESCE(excluded.phone, phone),
-                            phone_mobile = COALESCE(excluded.phone_mobile, phone_mobile),
-                            company = COALESCE(excluded.company, company),
-                            title = COALESCE(excluded.title, title),
-                            linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
-                            sync_date = datetime('now'),
-                            firstname = excluded.firstname,
-                            lastname = excluded.lastname,
-                            lifecycle_stage = excluded.lifecycle_stage,
-                            lead_status = excluded.lead_status
-                    """, (name, email, phone, mobile, company, title, linkedin_url,
-                          hubspot_id, first_name, last_name, lifecycle, lead_status))
+                    # Database-agnostic INSERT (PostgreSQL vs SQLite)
+                    if IS_PRODUCTION:
+                        cursor.execute("""
+                            INSERT INTO contacts 
+                            (name, email, phone, phone_mobile, company, title, linkedin_url, 
+                             hubspot_id, data_source, sync_date, firstname, lastname, 
+                             lifecycle_stage, lead_status)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'hubspot', NOW(), %s, %s, %s, %s)
+                            ON CONFLICT(hubspot_id) DO UPDATE SET
+                                name = EXCLUDED.name,
+                                email = EXCLUDED.email,
+                                phone = COALESCE(EXCLUDED.phone, contacts.phone),
+                                phone_mobile = COALESCE(EXCLUDED.phone_mobile, contacts.phone_mobile),
+                                company = COALESCE(EXCLUDED.company, contacts.company),
+                                title = COALESCE(EXCLUDED.title, contacts.title),
+                                linkedin_url = COALESCE(EXCLUDED.linkedin_url, contacts.linkedin_url),
+                                sync_date = NOW(),
+                                firstname = EXCLUDED.firstname,
+                                lastname = EXCLUDED.lastname,
+                                lifecycle_stage = EXCLUDED.lifecycle_stage,
+                                lead_status = EXCLUDED.lead_status
+                        """, (name, email, phone, mobile, company, title, linkedin_url,
+                              hubspot_id, first_name, last_name, lifecycle, lead_status))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO contacts 
+                            (name, email, phone, phone_mobile, company, title, linkedin_url, 
+                             hubspot_id, data_source, sync_date, firstname, lastname, 
+                             lifecycle_stage, lead_status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'hubspot', datetime('now'), ?, ?, ?, ?)
+                            ON CONFLICT(hubspot_id) DO UPDATE SET
+                                name = excluded.name,
+                                email = excluded.email,
+                                phone = COALESCE(excluded.phone, phone),
+                                phone_mobile = COALESCE(excluded.phone_mobile, phone_mobile),
+                                company = COALESCE(excluded.company, company),
+                                title = COALESCE(excluded.title, title),
+                                linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
+                                sync_date = datetime('now'),
+                                firstname = excluded.firstname,
+                                lastname = excluded.lastname,
+                                lifecycle_stage = excluded.lifecycle_stage,
+                                lead_status = excluded.lead_status
+                        """, (name, email, phone, mobile, company, title, linkedin_url,
+                              hubspot_id, first_name, last_name, lifecycle, lead_status))
 
                     if cursor.rowcount > 0:
                         updated += 1
