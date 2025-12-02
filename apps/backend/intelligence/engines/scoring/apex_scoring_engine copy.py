@@ -1,91 +1,17 @@
-#!/usr/bin/env python3
 """
 Apex Intelligence - Main Scoring Engine
 Adaptive MDCP + RSS scoring with lifecycle tracking for commercial real estate lending
-Supports both SQLite (local) and PostgreSQL (Railway)
-
-Version: 2.0.0
+Version: 1.0.0
 """
 
-import os
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
+import statistics
+import json
 
 # ============================================================================
-# DATABASE ABSTRACTION LAYER
-# ============================================================================
-
-class DatabaseAdapter:
-    """Database adapter that supports both SQLite and PostgreSQL"""
-    
-    def __init__(self, db_path: str = None):
-        """Initialize database connection based on environment"""
-        # Auto-detect database type
-        if db_path is None:
-            db_path = os.getenv('DATABASE_URL') or '/Users/chrisrabenold/projects/apex/apex.db'
-        
-        self.db_path = db_path
-        self.is_postgres = db_path.startswith('postgres')
-        self.conn = None
-        self.cursor = None
-        
-        self._connect()
-    
-    def _connect(self):
-        """Establish database connection"""
-        if self.is_postgres:
-            try:
-                import psycopg2
-                from psycopg2.extras import RealDictCursor
-                self.conn = psycopg2.connect(self.db_path)
-                self.cursor = self.conn.cursor(cursor_factory=RealDictCursor)
-            except ImportError:
-                raise ImportError("psycopg2 not installed. Run: pip install psycopg2-binary")
-        else:
-            import sqlite3
-            self.conn = sqlite3.connect(self.db_path)
-            self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
-    
-    def execute(self, query: str, params: tuple = None):
-        """Execute query with proper parameter style"""
-        if self.is_postgres:
-            # Convert ? to %s for PostgreSQL
-            query = query.replace('?', '%s')
-        
-        if params:
-            self.cursor.execute(query, params)
-        else:
-            self.cursor.execute(query)
-    
-    def fetchone(self) -> Optional[Dict]:
-        """Fetch one row as dict"""
-        row = self.cursor.fetchone()
-        if row is None:
-            return None
-        return dict(row)
-    
-    def fetchall(self) -> List[Dict]:
-        """Fetch all rows as list of dicts"""
-        rows = self.cursor.fetchall()
-        return [dict(row) for row in rows]
-    
-    def commit(self):
-        """Commit transaction"""
-        self.conn.commit()
-    
-    def rollback(self):
-        """Rollback transaction"""
-        self.conn.rollback()
-    
-    def close(self):
-        """Close connection"""
-        if self.conn:
-            self.conn.close()
-
-
-# ============================================================================
-# INLINE UTILITIES
+# INLINE UTILITIES (replacing relative imports)
 # ============================================================================
 
 def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
@@ -113,7 +39,6 @@ def calculate_days_between(date1, date2=None) -> int:
         return abs((date2 - date1).days)
     except:
         return 0
-
 
 # ============================================================================
 # LEAD TYPE PROFILES
@@ -146,40 +71,30 @@ class LeadTypeProfile:
         if not lead_type:
             lead_type = 'BORROWER'
         return cls.PROFILES.get(lead_type.upper(), cls.PROFILES['BORROWER'])
-
-
 # ============================================================================
 # MAIN SCORING ENGINE
 # ============================================================================
 
 class ApexScoringEngine:
-    """Main scoring engine for Apex Intelligence - supports SQLite and PostgreSQL"""
+    """Main scoring engine for Apex Intelligence"""
     
-    VERSION = "2.0.0"
+    VERSION = "1.0.0"
     
-    def __init__(self, db_path: str = None):
-        """Initialize scoring engine with database-agnostic adapter"""
-        if db_path is None:
-            db_path = os.getenv('DATABASE_URL') or '/Users/chrisrabenold/projects/apex/apex.db'
-        
+    def __init__(self, db_path: str = "/Users/chrisrabenold/projects/apex/apex.db"):
+        """Initialize scoring engine"""
         self.db_path = db_path
-        self.db = DatabaseAdapter(db_path)
-        self.is_postgres = self.db.is_postgres
-        
-        db_type = "PostgreSQL" if self.is_postgres else "SQLite"
-        print(f"ApexScoringEngine initialized ({db_type})")
+        self.db = sqlite3.connect(db_path)
+        self.db.row_factory = sqlite3.Row
+        self.cursor = self.db.cursor()
     
     def __del__(self):
         """Clean up database connection"""
-        if hasattr(self, 'db') and self.db:
+        if hasattr(self, 'db'):
             self.db.close()
-    
-    def _get_fresh_connection(self) -> DatabaseAdapter:
-        """Get a fresh database connection (thread-safe)"""
-        return DatabaseAdapter(self.db_path)
     
     def score_contact(self, contact_id: int, save_to_db: bool = True) -> Dict:
         """Complete scoring for a single contact"""
+        
         contact = self.fetch_contact_data(contact_id)
         if not contact:
             raise ValueError(f"Contact {contact_id} not found")
@@ -202,7 +117,7 @@ class ApexScoringEngine:
         
         result = {
             'contact_id': contact_id,
-            'contact_name': contact.get('name') or f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip(),
+            'contact_name': f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip(),
             'company': contact.get('company', ''),
             'lead_type': lead_type,
             'lifecycle_stage': lifecycle_stage,
@@ -226,6 +141,7 @@ class ApexScoringEngine:
     
     def calculate_mdcp_score(self, contact: Dict, lead_type: str, lifecycle_stage: str) -> Dict:
         """Calculate MDCP score"""
+        
         profile = LeadTypeProfile.get_profile(lead_type)
         weights = profile['mdcp_weights']
         
@@ -258,7 +174,9 @@ class ApexScoringEngine:
     
     def score_money(self, contact: Dict, lead_type: str) -> float:
         """Score Money component"""
+        # Simplified - customize based on your data
         equity_percent = contact.get('equity_percent', 0) or 0
+        
         if equity_percent >= 35:
             return 95.0
         elif equity_percent >= 30:
@@ -293,6 +211,7 @@ class ApexScoringEngine:
         """Score Credibility"""
         base_score = 50.0
         
+        # Adjust based on lifecycle
         if lifecycle_stage == 'ESTABLISHED':
             base_score = 80.0
         elif lifecycle_stage == 'ACTIVE':
@@ -304,6 +223,7 @@ class ApexScoringEngine:
     
     def score_pain(self, contact: Dict, lead_type: str) -> float:
         """Score Pain/Urgency"""
+        # Default medium urgency
         return 50.0
     
     def classify_mdcp_tier(self, score: float) -> str:
@@ -319,37 +239,57 @@ class ApexScoringEngine:
     
     def calculate_rss_score(self, contact: Dict, lifecycle_stage: str) -> Dict:
         """Calculate RSS score based on role seniority and scope"""
+        
+        # Start with base score
+        base_score = 0.0
         title = (contact.get('title') or '').lower()
+        company = contact.get('company') or ''
         
         # 1. SENIORITY ANALYSIS (0-40 points)
         seniority_score = 0
         
+        # C-Suite / Executive
         if any(word in title for word in ['ceo', 'cfo', 'coo', 'cto', 'chief', 'president', 'founder', 'owner', 'partner']):
             seniority_score = 40
+        # VP Level
         elif any(word in title for word in ['vp', 'vice president', 'evp', 'svp']):
             seniority_score = 35
+        # Director Level
         elif 'director' in title:
-            seniority_score = 30 if ('senior' in title or 'sr.' in title) else 25
+            if 'senior' in title or 'sr.' in title:
+                seniority_score = 30
+            else:
+                seniority_score = 25
+        # Manager Level
         elif 'manager' in title:
-            seniority_score = 20 if ('senior' in title or 'sr.' in title) else 15
+            if 'senior' in title or 'sr.' in title:
+                seniority_score = 20
+            else:
+                seniority_score = 15
+        # Specialist/Analyst
         elif any(word in title for word in ['specialist', 'analyst', 'coordinator', 'associate']):
             seniority_score = 10
+        # Individual contributor
         else:
             seniority_score = 5
-        
+            
         # 2. SCOPE INDICATORS (0-30 points)
         scope_score = 0
         
+        # Regional/National scope
         if any(word in title for word in ['national', 'regional', 'global', 'international']):
             scope_score += 15
+        # Department/Division leadership
         if any(word in title for word in ['head', 'lead', 'principal']):
             scope_score += 10
+        # Team leadership
         if any(word in title for word in ['senior', 'sr.', 'lead']):
             scope_score += 5
-        
+            
         # 3. DECISION AUTHORITY (0-30 points)
         authority_score = 0
         
+        # Clear decision-making roles
         if any(word in title for word in ['director', 'vp', 'president', 'chief', 'head']):
             authority_score = 30
         elif any(word in title for word in ['manager', 'supervisor', 'lead']):
@@ -358,18 +298,19 @@ class ApexScoringEngine:
             authority_score = 15
         else:
             authority_score = 10
-        
+            
         # Calculate total RSS
         total_rss = seniority_score + scope_score + authority_score
         
-        # Apply lifecycle adjustment
+        # Apply lifecycle adjustment (relationship factor)
         if lifecycle_stage == 'ESTABLISHED':
-            total_rss = min(100, total_rss * 1.2)
+            total_rss = min(100, total_rss * 1.2)  # 20% boost for established relationships
         elif lifecycle_stage == 'ACTIVE':
-            total_rss = min(100, total_rss * 1.1)
+            total_rss = min(100, total_rss * 1.1)  # 10% boost for active contacts
         elif lifecycle_stage == 'WARMING':
-            total_rss = min(100, total_rss * 1.05)
-        
+            total_rss = min(100, total_rss * 1.05)  # 5% boost for warming
+        # NEW and COLD get no boost
+            
         total_rss = round(total_rss, 2)
         
         return {
@@ -393,6 +334,7 @@ class ApexScoringEngine:
     
     def calculate_priority_score(self, mdcp: float, rss: float, lifecycle: str, lead_type: str) -> Dict:
         """Calculate priority score"""
+        
         if lifecycle in ['NEW', 'COLD']:
             priority = mdcp
         elif lifecycle == 'WARMING':
@@ -431,22 +373,14 @@ class ApexScoringEngine:
     def determine_lifecycle_stage(self, contact: Dict) -> str:
         """Determine lifecycle stage"""
         created_date = contact.get('created_at')
+        
         if not created_date:
             return 'NEW'
         
         try:
             if isinstance(created_date, str):
-                # Handle various date formats
-                for fmt in ['%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d']:
-                    try:
-                        created_date = datetime.strptime(created_date.split('+')[0].split('Z')[0], fmt)
-                        break
-                    except ValueError:
-                        continue
-                else:
-                    return 'NEW'
-            
-            days_since_created = (datetime.now() - created_date).days
+                created_date = datetime.fromisoformat(created_date.replace('Z', '+00:00'))
+            days_since_created = (datetime.now(created_date.tzinfo) - created_date).days
         except:
             return 'NEW'
         
@@ -460,22 +394,16 @@ class ApexScoringEngine:
             return 'ESTABLISHED'
     
     def fetch_contact_data(self, contact_id: int) -> Optional[Dict]:
-        """Fetch contact data - thread-safe with fresh connection"""
-        db = self._get_fresh_connection()
-        try:
-            db.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
-            result = db.fetchone()
-            return result
-        finally:
-            db.close()
+        """Fetch contact data"""
+        self.cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+        return self.cursor.fetchone()
     
     def save_scores_to_db(self, result: Dict):
-        """Save scores to database - thread-safe with fresh connection"""
+        """Save scores to database in the columns the API/UI expect"""
         contact_id = result['contact_id']
-        db = self._get_fresh_connection()
-        
         try:
-            db.execute("""
+            # 1) Write current scores/tier/metadata
+            self.cursor.execute("""
                 UPDATE contacts SET
                     mdcp_score = ?,
                     mdcp_tier = ?,
@@ -500,28 +428,29 @@ class ApexScoringEngine:
                 contact_id
             ))
             
-            db.commit()
+            # 2) Optionally keep a JSON blob of the full calculation for debugging
+            #    Comment out if you don't want this persisted
+            self.cursor.execute("""
+                UPDATE contacts SET
+                    enrichment_data = COALESCE(enrichment_data, '{}')
+            """)
+            # If you prefer to persist the full scoring payload elsewhere, create a scoring_blob column
+            
+            self.db.commit()
             print(f"✅ Saved scores for contact {contact_id}")
         except Exception as e:
             print(f"❌ Error saving scores: {e}")
-            db.rollback()
-        finally:
-            db.close()
-
-
-# ============================================================================
-# QUICK FUNCTIONS
-# ============================================================================
-
-def score_contact(contact_id: int, db_path: str = None) -> Dict:
+            self.db.rollback()
+            
+# Quick score function
+def score_contact(contact_id: int, db_path: str = "./apex.db") -> Dict:
     """Quick function to score a single contact"""
     engine = ApexScoringEngine(db_path)
     return engine.score_contact(contact_id)
 
-
 if __name__ == "__main__":
     import sys
-    db_path = sys.argv[1] if len(sys.argv) > 1 else None
+    db_path = sys.argv[1] if len(sys.argv) > 1 else "./apex.db"
     engine = ApexScoringEngine(db_path)
     print("APEX Intelligence - Scoring Engine Ready")
-    print(f"Database: {'PostgreSQL' if engine.is_postgres else 'SQLite'}")
+    

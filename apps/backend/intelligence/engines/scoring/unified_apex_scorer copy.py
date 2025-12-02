@@ -1,17 +1,14 @@
-#!/usr/bin/env python3
 """
 APEX Unified Scoring - Phase 1 & 2 Integration
 Combines ApexScoringEngine (foundation) + UserSpecificScoringEngine (CRE intelligence)
-Supports both SQLite (local) and PostgreSQL (Railway)
 
-Version: 2.0.0
+Auto-generated: 2025-12-01T15:29:09.168220
 """
 
 import sys
 import os
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 from pathlib import Path
-from datetime import datetime
 
 # Ensure we can import sibling modules
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -20,35 +17,31 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from apex_scoring_engine import ApexScoringEngine
 from user_scoring_engine import UserSpecificScoringEngine
 
+# HARDCODED DATABASE PATH
+DEFAULT_DB_PATH = os.getenv('DATABASE_URL') or "/Users/chrisrabenold/projects/apex/apex.db"
 
 class UnifiedApexScorer:
-    """Unified scorer combining foundation MDCP/RSS + CRE vertical intelligence
-    Supports both SQLite (local) and PostgreSQL (Railway)
-    """
-    
-    VERSION = "2.0.0"
-    
     def __init__(self, db_path: str = None, user_id: str = None):
-        """Initialize both scoring engines with database auto-detection"""
-        
-        # Auto-detect database from environment if not provided
         if db_path is None:
-            db_path = os.getenv('DATABASE_URL') or '/Users/chrisrabenold/projects/apex/apex.db'
-        
-        self.db_path = db_path
-        self.is_postgres = db_path.startswith('postgres') if db_path else False
-        self.user_id = user_id or os.getenv('CURRENT_USER_ID', 'default')
-        
-        db_type = "PostgreSQL" if self.is_postgres else "SQLite"
-        print(f"Initializing unified scoring engines...")
-        print(f"  Database: {db_type}")
+            db_path = DEFAULT_DB_PATH
+            
+        # If PostgreSQL URL provided, use it
+        if db_path and db_path.startswith('postgres'):
+            self.use_postgres = True
+            self.db_path = db_path
+        else:
+            self.use_postgres = False
+            self.db_path = db_path
+            
+        print(f"Initializing scoring engines...")
+        print(f"  Database: {self.db_path}")
         print(f"  User: {self.user_id}")
         
         # Initialize engines with explicit path
         self.apex_engine = ApexScoringEngine(db_path=self.db_path)
         self.cre_engine = UserSpecificScoringEngine(self.user_id, self.db_path)
         
-        print(f"✅ Unified scorer initialized ({db_type})")
+        print(f"✅ Unified scorer initialized")
     
     def score_contact_unified(self, contact_id: int, save_to_db: bool = True) -> Dict:
         """
@@ -76,11 +69,7 @@ class UnifiedApexScorer:
         print("\n[2/3] Applying CRE vertical intelligence...")
         
         # Fetch contact for CRE analysis
-        contact = self.apex_engine.fetch_contact_data(contact_id)
-        if contact:
-            contact = dict(contact)
-        else:
-            raise ValueError(f"Contact {contact_id} not found")
+        contact = dict(self.apex_engine.fetch_contact_data(contact_id))
         
         # Get CRE-specific RSS score
         cre_rss_result = self.cre_engine.calculate_personalized_rss(contact)
@@ -141,7 +130,7 @@ class UnifiedApexScorer:
         
         return final_result
     
-    def bulk_score_unified(self, contact_ids: List[int]) -> List[Dict]:
+    def bulk_score_unified(self, contact_ids: list) -> list:
         """Score multiple contacts with unified pipeline"""
         results = []
         
@@ -170,7 +159,7 @@ def score_contact_unified(contact_id: int, db_path: str = None, user_id: str = N
     return scorer.score_contact_unified(contact_id)
 
 
-def bulk_score_unified(contact_ids: List[int], db_path: str = None, user_id: str = None) -> List[Dict]:
+def bulk_score_unified(contact_ids: list, db_path: str = None, user_id: str = None) -> list:
     """Quick function to score multiple contacts with unified pipeline"""
     scorer = UnifiedApexScorer(db_path, user_id)
     return scorer.bulk_score_unified(contact_ids)
@@ -187,10 +176,6 @@ if __name__ == "__main__":
         print("Usage:")
         print("  python unified_apex_scorer.py tact_id>          # Score single contact")
         print("  python unified_apex_scorer.py <id1> <id2> <id3>...  # Score multiple contacts")
-        print("")
-        print("Environment variables:")
-        print("  DATABASE_URL  - PostgreSQL connection string (optional)")
-        print("  If not set, uses local SQLite at /Users/chrisrabenold/projects/apex/apex.db")
         sys.exit(1)
     
     contact_ids = [int(cid) for cid in sys.argv[1:]]
@@ -208,3 +193,4 @@ if __name__ == "__main__":
         for r in results:
             if 'error' not in r:
                 print(f"   {r['contact_id']:3d} | {r['contact_name']:30s} | Priority: {r['priority_score']:5.2f} | {r['urgency_level']}")
+                
