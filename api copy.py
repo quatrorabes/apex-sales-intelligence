@@ -1,975 +1,1582 @@
 #!/usr/bin/env python3
 """
-Apex API Server - Flask Version with REAL AI Enrichment + Scoring
+═══════════════════════════════════════════════════════════════════
+APEX SALES INTELLIGENCE API SERVER
+Smart Dual-Environment Configuration
+- LOCAL: SQLite (fast development)
+- PRODUCTION: PostgreSQL on Railway
+Date: November 29, 2025
+═══════════════════════════════════════════════════════════════════
 """
-from config import *
+
 import os
 import sys
 import json
+import logging
+import traceback
+from datetime import datetime
+from pathlib import Path
+import openai
+from openai import OpenAI
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from datetime import datetime
-import sqlite3
 from dotenv import load_dotenv
 import requests
-import logging
+import sqlite3
 
-# ============= LOAD ENV ONCE AT THE TOP =============
-load_dotenv('/Users/chrisrabenold/projects/apex/.env')
 
-# ============= FIX PATH TO ENRICHMENT & SCORING ENGINES =============
-BACKEND_PATH = '/Users/chrisrabenold/projects/apex/apps/backend'
-sys.path.insert(0, BACKEND_PATH)
+
+# ================================================================
+# ENVIRONMENT SETUP
+# ================================================================
+load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s:%(name)s:%(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Get API keys - TRY ALL POSSIBLE ENVIRONMENT VARIABLE NAMES
-HUBSPOT_TOKEN = (
-    os.getenv('HUBSPOT_ACCESS_TOKEN') or 
-    os.getenv('HUBSPOT_API_KEY') or 
-    os.getenv('HUBSPOT_ACCESS_KEY')
-)
+# ================================================================
+# SMART ENVIRONMENT DETECTION
+# ================================================================
+IS_PRODUCTION = os.getenv('DATABASE_URL') is not None  # Railway sets this
+ENVIRONMENT = "PRODUCTION" if IS_PRODUCTION else "LOCAL"
+
+logger.info(f"🌍 Environment: {ENVIRONMENT}")
+
+# ================================================================
+# PATH CONFIGURATION
+# ================================================================
+# Point to apps/backend where intelligence modules live
+BACKEND_PATH = Path(__file__).parent / 'apps' / 'backend'
+
+if str(BACKEND_PATH) not in sys.path:
+    sys.path.insert(0, str(BACKEND_PATH))
+
+GENERATORS_PATH = BACKEND_PATH / 'intelligence' / 'engines' / 'outreach' / 'generators'
+if str(GENERATORS_PATH) not in sys.path:
+    sys.path.insert(0, str(GENERATORS_PATH))
+
+# ================================================================
+# API KEYS
+# ================================================================
+HUBSPOT_TOKEN = os.getenv('HUBSPOT_ACCESS_TOKEN') or os.getenv('HUBSPOT_API_KEY')
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-# Debug: Print what we loaded
-logger.info(f"Loaded HubSpot Token: {HUBSPOT_TOKEN[:20] if HUBSPOT_TOKEN else 'NONE'}...")
+logger.info(f"HubSpot Token: {'✅ Found' if HUBSPOT_TOKEN else '❌ Missing'}")
 logger.info(f"Perplexity Key: {'✅ Found' if PERPLEXITY_API_KEY else '❌ Missing'}")
 logger.info(f"OpenAI Key: {'✅ Found' if OPENAI_API_KEY else '❌ Missing'}")
 
-# Try to import enrichment engine
-ENRICHMENT_AVAILABLE = False
-PerplexityEnrichment = None
+# ================================================================
+# IMPORT ENGINES (with graceful degradation)
+# ================================================================
+enrichment_engine = None
+scoring_engine = None
+auto_sequence_engine = None
+cadence_router = None
+
+# ============================================================================
+# ENVIRONMENT & DATABASE SETUP
+# ============================================================================
+
+# Database path
+DB_PATH = os.path.join(os.path.dirname(__file__), 'apex.db')
+
+
+# ============================================================================
+# APEX UNIFIED SCORING INTEGRATION
+# ============================================================================
+
+scoring_path = os.path.join(os.path.dirname(__file__), 'apps', 'backend', 'intelligence', 'engines', 'scoring')
+sys.path.insert(0, scoring_path)
 
 try:
-    from intelligence.engines.enrichment.apex_intelligence_engine import ApexScoringEngine
-    from intelligence.engines.enrichment.scoring_orchestrator import ScoringOrchestrator
-    SCORING_AVAILABLE = True
-    logger.info("✅ Scoring engines loaded successfully")
-except ImportError as e:
-    SCORING_AVAILABLE = False
-    ApexScoringEngine = None
-    ScoringOrchestrator = None
-    logger.warning(f"⚠️ Scoring engines not available: {e}")
+  from unified_apex_scorer import UnifiedApexScorer
+  SCORING_AVAILABLE = True
+  
+  # Pass correct database path based on environment
+  if IS_PRODUCTION:
+    SCORING_DB_PATH = os.getenv('DATABASE_URL')  # PostgreSQL on Railway
+  else:
+    SCORING_DB_PATH = DB_PATH  # SQLite locally
     
-# Try to import scoring engine
-SCORING_AVAILABLE = False
-score_contact_func = None
+  print(f"✅ Unified Apex Scoring Engine loaded (DB: {'PostgreSQL' if IS_PRODUCTION else 'SQLite'})")
+except ImportError as e:
+  print(f"⚠️  Scoring engine not available: {e}")
+  SCORING_AVAILABLE = False
+  SCORING_DB_PATH = None
+  
+# ═══════════════════════════════════════════════════════════════════════════
+# INLINE PROFILE BUILDER ENRICHMENT ENGINE (3-Stage Intelligence)
+# ═══════════════════════════════════════════════════════════════════════════
+class EnhancedEnrichment:
+    """
+    Profile Builder - Three-stage enrichment pipeline:
+      Stage 1: Perplexity sonar-pro comprehensive research
+      Stage 2: GPT-4 intelligence interpolation & structuring
+      Stage 3: Database persistence (handled by endpoint)
+    
+    Output matches "Profile Builder" Perplexity Space format
+    """
+    
+    def __init__(self):
+        self.perplexity_key = PERPLEXITY_API_KEY
+        self.openai_key = OPENAI_API_KEY
+        
+        if not self.perplexity_key:
+            raise ValueError("PERPLEXITY_API_KEY not set")
+        if not self.openai_key:
+            raise ValueError("OPENAI_API_KEY not set")
+        
+        # NEW: OpenAI v1.0+ - No global api_key setting needed
+        self.output_dir = 'enrichment_profiles'
+        
+        try:
+            import os
+            os.makedirs(self.output_dir, exist_ok=True)
+        except:
+            pass  # Directory creation is optional
+        
+        logger.info("✅ EnhancedEnrichment initialized (Profile Builder 3-stage)")
+    
+    def enrich_contact(self, contact: dict) -> dict:
+        """Main enrichment pipeline - returns dict with status and enrichment_data"""
+        name = contact.get('name', 'Unknown')
+        company = contact.get('company', '')
+        contact_id = contact.get('id', 'unknown')
+        
+        logger.info("=" * 80)
+        logger.info(f"PROFILE BUILDER ENRICHMENT: {name} at {company}")
+        logger.info("=" * 80)
+        
+        # STAGE 1: Perplexity Research
+        query = self._build_profile_builder_query(contact)
+        logger.info("🔍 STAGE 1: PERPLEXITY RESEARCH (sonar-pro)")
+        
+        raw_profile = self._call_perplexity(query)
+        if not raw_profile:
+            logger.error("❌ No result from Perplexity")
+            return {'status': 'error', 'error': 'Perplexity returned no data'}
+        
+        logger.info(f"✅ STAGE 1 COMPLETE: {len(raw_profile)} characters")
+        
+        # STAGE 2: GPT-4 Intelligence Layer
+        logger.info("✨ STAGE 2: GPT-4 INTELLIGENCE INTERPOLATION...")
+        
+        polished_profile = self._gpt4_intelligence_layer(raw_profile, contact)
+        if not polished_profile:
+            logger.warning("⚠️  Stage 2 failed, using raw profile")
+            polished_profile = raw_profile
+        else:
+            logger.info(f"✅ STAGE 2 COMPLETE: {len(polished_profile)} characters")
+        
+        # Save debug files
+        try:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{self.output_dir}/profile_{contact_id}_{timestamp}_polished.txt"
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(f"Profile for {name}\n")
+                f.write("=" * 80 + "\n")
+                f.write(polished_profile)
+            logger.info(f"📄 Saved: {filename}")
+        except Exception as e:
+            logger.warning(f"Could not save debug file: {e}")
+        
+        logger.info("=" * 80)
+        logger.info("THREE-STAGE ENRICHMENT COMPLETE!")
+        logger.info("=" * 80)
+        
+        return {
+            'status': 'success',
+            'enrichment_data': polished_profile,
+            'overview': polished_profile[:500],
+            'character_count': len(polished_profile)
+        }
+    
+    def _build_profile_builder_query(self, contact: dict) -> str:
+        """Build comprehensive query based on Profile Builder instructions"""
+        name = contact.get('name', '')
+        title = contact.get('title', '')
+        company = contact.get('company', '')
+        linkedin_url = contact.get('linkedin_url', '')
+        
+        context = f"{name}, {title} at {company}"
+        if linkedin_url:
+            context += f"\nLinkedIn: {linkedin_url} (use as PRIMARY source)"
+        
+        query = f"""{context}
+
+You are a professional profile-building assistant. Generate a comprehensive profile using LinkedIn and public sources.
+
+**FOR THE PERSON ({name}):**
+1. Overview – Current role, organization summary
+2. Background – Career trajectory with years and companies
+3. Education – Degrees, institutions, years, honors
+4. Recent Mentions – News, LinkedIn posts, appearances
+5. Social Media – LinkedIn, Twitter, Facebook, Instagram handles
+6. Personality Detail – Myers-Briggs assessment (infer from behavior)
+7. Myers-Briggs Summary – How it relates to work style
+
+**FOR THE COMPANY ({company}):**
+8. Company Overview – Mission, founding, HQ
+8.1. Products & Services
+8.2. Leadership
+8.3. Market & Competitors
+8.4. Recent News
+8.5. Fun Facts
+
+**STRATEGIC INTELLIGENCE:**
+9. Pain Points – 5 specific challenges for {title} role
+10. Business Needs – 5 ways sales tools/financing could help
+11. Key Insights – 3 non-obvious insights for conversations
+12. Final Note – Strategic summary for outreach
+
+Be thorough, cite sources, include dates and context.
+"""
+        return query.strip()
+    
+    def _gpt4_intelligence_layer(self, raw_profile: str, contact: dict) -> str:
+        """Stage 2: GPT-4 adds intelligence and structures output"""
+        name = contact.get('name', '')
+        title = contact.get('title', '')
+        company = contact.get('company', '')
+        
+        prompt = f"""You are an expert sales intelligence analyst.
+
+Transform this research into a structured profile with added intelligence.
+
+**CONTACT:** {name}, {title} at {company}
+
+**RAW RESEARCH:**
+{raw_profile}
+
+**OUTPUT FORMAT (EXACT STRUCTURE):**
+
+## 1. Overview
+[2-3 sentence executive summary]
+
+## 2. Professional Background
+[Career trajectory with companies, roles, years, achievements]
+
+## 3. Education & Credentials
+[Degrees, institutions, years, honors - e.g., UC Berkeley BA Economics 1976-1980]
+
+## 4. Recent Mentions
+[News, LinkedIn activity, speaking - with dates]
+
+## 5. Social Media Profiles
+- **LinkedIn:** [URL or "Not found"]
+- **Twitter/X:** [Handle or "Not publicly available"]
+- **Facebook:** ["Not publicly available"]
+- **Instagram:** ["Not publicly available"]
+
+## 6. Personality Detail
+[Myers-Briggs assessment inferred from leadership style, communication, career choices]
+
+## 7. Myers-Briggs Personality Assessment Summary
+[How personality manifests in work: decision-making, leadership, communication, engagement approach]
+
+## 8. Company Overview – {company}
+[Mission, founding, HQ, size]
+
+### 8.1. Products & Services
+[Offerings, markets, value proposition]
+
+### 8.2. Leadership
+[Key executives, founders]
+
+### 8.3. Market & Competitors
+[Industry position, competitors]
+
+### 8.4. Recent News
+[Announcements, deals, launches - with dates]
+
+### 8.5. Company Fun Facts
+[Culture, volunteer work, awards, unique details]
+
+## 9. Pain Points & Challenges
+[5 specific pain points for {title}:]
+- [Pain 1]
+- [Pain 2]
+- [Pain 3]
+- [Pain 4]
+- [Pain 5]
+
+## 10. Sales Opportunities & Talking Points
+[5 actionable talking points:]
+- [Point 1]
+- [Point 2]
+- [Point 3]
+- [Point 4]
+- [Point 5]
+
+## 11. Key Insights (Deep Intelligence)
+[3 non-obvious insights:]
+- [Insight 1]
+- [Insight 2]
+- [Insight 3]
+
+## 12. Final Note – Strategic Summary
+[One paragraph: who they are, what they care about, how to engage, why now]
+
+**INSTRUCTIONS:**
+- Use EXACT structure above
+- Add intelligence beyond raw data
+- Include dates, numbers, specifics
+- If data missing, say "Not publicly available"
+- Be professional and actionable
+"""
+        
+        try:
+            # NEW: OpenAI v1.0+ syntax
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_key)
+            
+            response = client.chat.completions.create(
+                model='gpt-4',
+                messages=[
+                    {'role': 'system', 'content': 'You are a professional business intelligence analyst specializing in sales enablement.'},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.4,
+                max_tokens=4000
+            )
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"❌ GPT-4 error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
+    def _call_perplexity(self, query: str) -> str:
+        """Call Perplexity API with sonar-pro"""
+        url = 'https://api.perplexity.ai/chat/completions'
+        headers = {
+            'Authorization': f'Bearer {self.perplexity_key}',
+            'Content-Type': 'application/json'
+        }
+        payload = {
+            'model': 'sonar-pro',
+            'messages': [{'role': 'user', 'content': query}],
+            'temperature': 0.2,
+            'max_tokens': 4000
+        }
+        
+        try:
+            import requests
+            logger.info("🌐 Calling Perplexity API...")
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            
+            if response.status_code == 200:
+                data = response.json()
+                logger.info("✅ Perplexity API successful!")
+                return data['choices'][0]['message']['content']
+            else:
+                logger.error(f"❌ Perplexity API Error: {response.status_code}")
+                logger.error(f"Response: {response.text}")
+                return None
+            
+        except Exception as e:
+            logger.error(f"❌ Perplexity request error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INITIALIZE ENRICHMENT ENGINE
+# ═══════════════════════════════════════════════════════════════════════════
+try:
+    enrichment_engine = EnhancedEnrichment
+    logger.info("✅ EnhancedEnrichment class loaded (Profile Builder)")
+except Exception as e:
+    logger.error(f"❌ Failed to load EnhancedEnrichment: {e}")
+    enrichment_engine = None
+  
+# ═══════════════════════════════════════════════════════════════════════════
+# INITIALIZE SCORING ENGINE
+# ═══════════════════════════════════════════════════════════════════════════
 
 try:
-    from intelligence.engines.scoring.apex_intelligence_engine import score_contact as score_contact_func
-    SCORING_AVAILABLE = True
-    logger.info(f"✅ Scoring engine loaded")
-except ImportError as e:
-    logger.warning(f"⚠️ Could not load scoring engine: {e}")
-    
-# Verify tokens loaded
-if HUBSPOT_TOKEN:
-    logger.info(f"✅ HubSpot Token Loaded")
-else:
-    logger.warning("⚠️ HubSpot Token NOT FOUND")
-    
-if PERPLEXITY_API_KEY:
-    logger.info(f"✅ Perplexity API Key Loaded")
-else:
-    logger.warning("⚠️ Perplexity API Key NOT FOUND")
-    
-# Initialize Flask
+    from apps.backend.intelligence.engines.scoring import ApexScoringEngine
+    scoring_engine = ApexScoringEngine()
+    logger.info("✅ ApexScoringEngine loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Scoring engine not available: {e}")
+    scoring_engine = None
+  
+# ================================================================
+# FLASK APP INITIALIZATION
+# ================================================================
+  
 app = Flask(__name__)
 CORS(app)
 
-# Configuration
-DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
-PORT = 8000
+# ================================================================
+# SMART DATABASE CONFIGURATION
+# ================================================================
+PORT = int(os.getenv('PORT', 8000))
 
-# ... rest of your helper functions stay the same ...
-
-
-# ============= HELPER FUNCTIONS =============
-
-def get_db():
-    """Get database connection"""
+if IS_PRODUCTION:
+  # PRODUCTION: PostgreSQL on Railway
+  DATABASE_URL = os.getenv('DATABASE_URL')
+  logger.info(f"📊 Database: PostgreSQL (Railway)")
+  
+  # Import PostgreSQL adapter
+  try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    
+    def get_db():
+      """Get PostgreSQL database connection"""
+      conn = psycopg2.connect(DATABASE_URL)
+      return conn
+    
+    def dict_cursor(conn):
+      """Get dictionary cursor for PostgreSQL"""
+      return conn.cursor(cursor_factory=RealDictCursor)
+    
+    logger.info("✅ PostgreSQL adapter loaded")
+  except ImportError:
+    logger.error("❌ psycopg2 not installed - install with: pip install psycopg2-binary")
+    raise
+    
+else:
+  # LOCAL: SQLite for development
+  import sqlite3
+  
+  DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
+  logger.info(f"📊 Database: SQLite ({DATABASE})")
+  
+  def get_db():
+    """Get SQLite database connection"""
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
+  
+  def dict_cursor(conn):
+    """Get cursor for SQLite (returns Row objects that act like dicts)"""
+    return conn.cursor()
+  
+# ADD THIS FUNCTION HERE (after both if/else blocks)
+def get_db_connection():
+  """Alias for get_db() - used by scoring endpoints"""
+  return get_db()
 
-def column_exists(cursor, table, column):
-    """Check if a column exists in a table"""
-    cursor.execute(f"PRAGMA table_info({table})")
-    columns = [row[1] for row in cursor.fetchall()]
-    return column in columns
+logger.info(f"🚀 Server Port: {PORT}")
 
-def init_db():
-    """Initialize database with complete schema and migrations"""
+# ================================================================
+# DATABASE SCHEMA MANAGEMENT
+# ================================================================
+
+def ensure_schema():
+    """Ensure all required tables and columns exist"""
     conn = get_db()
-    cursor = conn.cursor()
-    
-    # Create comprehensive contacts table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS contacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            firstname TEXT,
-            lastname TEXT,
-            email TEXT,
-            phone TEXT,
-            company TEXT,
-            title TEXT,
-            hubspot_id TEXT UNIQUE,
-            linkedin_url TEXT,
-            lead_status TEXT,
-            lifecycle_stage TEXT,
-            enrichment_status TEXT DEFAULT 'pending',
-            enrichment_data TEXT DEFAULT '{}',
-            enrichment_date TEXT,
-            opportunity_score REAL,
-            priority_score REAL,
-            mdcp_score REAL,
-            rss_score REAL,
-            persona_tier TEXT,
-            persona_type TEXT,
-            urgency_level TEXT DEFAULT 'LOW',
-            recommended_action TEXT,
-            enriched INTEGER DEFAULT 0,
-            last_scored TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # Migrate existing database - add missing columns
-    migrations = [
-        ('firstname', 'TEXT'),
-        ('lastname', 'TEXT'),
-        ('lead_status', 'TEXT'),
-        ('lifecycle_stage', 'TEXT'),
-        ('opportunity_score', 'REAL'),
-        ('priority_score', 'REAL'),
-        ('mdcp_score', 'REAL'),
-        ('rss_score', 'REAL'),
-        ('persona_tier', 'TEXT'),
-        ('persona_type', 'TEXT'),
-        ('urgency_level', 'TEXT DEFAULT "LOW"'),
+
+    # Clear any failed transaction state (PostgreSQL)
+    try:
+        conn.rollback()
+    except:
+        pass
+
+    if IS_PRODUCTION:
+        cursor = dict_cursor(conn)
+    else:
+        cursor = conn.cursor()
+
+    # All enrichment and Phase 2 columns
+    columns_to_add = [
+        # Scoring
+        ('mdcp_score', 'REAL' if not IS_PRODUCTION else 'DECIMAL'),
+        ('mdcp_tier', 'TEXT' if not IS_PRODUCTION else 'VARCHAR(50)'),
+        ('rss_score', 'REAL' if not IS_PRODUCTION else 'DECIMAL'),
+        ('rss_tier', 'TEXT' if not IS_PRODUCTION else 'VARCHAR(50)'),
+        ('priority_score', 'REAL' if not IS_PRODUCTION else 'DECIMAL'),
+        ('urgency_level', 'TEXT' if not IS_PRODUCTION else 'VARCHAR(50)'),
         ('recommended_action', 'TEXT'),
-        ('linkedin_url', 'TEXT'),
-        ('hubspot_id', 'TEXT'),
-        ('enrichment_date', 'TEXT'),
-        ('last_scored', 'TEXT')
+        ('calculation_version', 'TEXT' if not IS_PRODUCTION else 'VARCHAR(50)'),
+        ('last_scored', 'TEXT' if not IS_PRODUCTION else 'TIMESTAMP'),
+        ('lead_type', 'TEXT' if not IS_PRODUCTION else 'VARCHAR(50)'),
+        # Enrichment
+        ('profile_content', 'TEXT'),
+        ('enrichment_status', 'TEXT' if not IS_PRODUCTION else 'VARCHAR(50)'),
+        ('enrichment_date', 'TEXT' if not IS_PRODUCTION else 'TIMESTAMP'),
+        ('pain_points', 'TEXT'),
+        ('talking_points', 'TEXT'),
+        ('product_match', 'TEXT'),
+        ('match_reasoning', 'TEXT'),
+        # Content generation
+        ('email_1_subject', 'TEXT'),
+        ('email_1_body', 'TEXT'),
+        ('email_2_subject', 'TEXT'),
+        ('email_2_body', 'TEXT'),
+        ('email_3_subject', 'TEXT'),
+        ('email_3_body', 'TEXT'),
+        ('call_script_1', 'TEXT'),
+        ('call_script_2', 'TEXT'),
+        ('call_script_3', 'TEXT'),
+        ('linkedin_connect', 'TEXT'),
+        ('linkedin_followup', 'TEXT'),
+        ('linkedin_inmail', 'TEXT'),
+        ('linkedin_warmup', 'TEXT'),
+        ('content_generated_at', 'TEXT' if not IS_PRODUCTION else 'TIMESTAMP'),
+        # Phase 2
+        ('last_contact_date', 'TEXT' if not IS_PRODUCTION else 'DATE'),
+        ('linkedin_activity_detected', 'INTEGER' if not IS_PRODUCTION else 'BOOLEAN DEFAULT FALSE'),
+        ('company_news_detected', 'INTEGER' if not IS_PRODUCTION else 'BOOLEAN DEFAULT FALSE'),
+        ('last_signal_date', 'TEXT' if not IS_PRODUCTION else 'TIMESTAMP'),
+        ('signal_count', 'INTEGER DEFAULT 0'),
     ]
-    
-    for column_name, column_type in migrations:
-        if not column_exists(cursor, 'contacts', column_name):
-            try:
-                cursor.execute(f'ALTER TABLE contacts ADD COLUMN {column_name} {column_type}')
-                logger.info(f"✅ Added column: {column_name}")
-            except sqlite3.OperationalError as e:
-                logger.warning(f"⚠️ Column {column_name} migration issue: {e}")
-    
+
+    for col_name, col_type in columns_to_add:
+        try:
+            if IS_PRODUCTION:
+                cursor.execute(f'ALTER TABLE contacts ADD COLUMN {col_name} {col_type}')
+            else:
+                cursor.execute(f'ALTER TABLE contacts ADD COLUMN {col_name} {col_type}')
+            logger.info(f"  ✅ Added column: {col_name}")
+        except Exception:
+            pass  # Column already exists
+
+    # Create Phase 2 tables
+    conn.rollback()  # Clear any failed transaction state
+    if IS_PRODUCTION:
+        # PostgreSQL syntax
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contact_activities (
+                id SERIAL PRIMARY KEY,
+                contact_id INTEGER NOT NULL,
+                activity_type VARCHAR(50) NOT NULL,
+                activity_date TIMESTAMP NOT NULL,
+                direction VARCHAR(20),
+                subject TEXT,
+                notes TEXT,
+                outcome VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contact_id) REFERENCES contacts(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS opportunity_signals (
+                id SERIAL PRIMARY KEY,
+                contact_id INTEGER NOT NULL,
+                signal_type VARCHAR(50) NOT NULL,
+                signal_date TIMESTAMP NOT NULL,
+                signal_data TEXT,
+                urgency_boost INTEGER DEFAULT 0,
+                viewed BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contact_id) REFERENCES contacts(id)
+            )
+        """)
+    else:
+        # SQLite syntax
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS contact_activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL,
+                activity_type TEXT NOT NULL,
+                activity_date TEXT NOT NULL,
+                direction TEXT,
+                subject TEXT,
+                notes TEXT,
+                outcome TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contact_id) REFERENCES contacts(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS opportunity_signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL,
+                signal_type TEXT NOT NULL,
+                signal_date TEXT NOT NULL,
+                signal_data TEXT,
+                urgency_boost INTEGER DEFAULT 0,
+                viewed INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (contact_id) REFERENCES contacts(id)
+            )
+        """)
+
+    # Create indexes
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_activities_contact ON contact_activities(contact_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_contact ON opportunity_signals(contact_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_viewed ON opportunity_signals(viewed)")
+    except Exception:
+        pass
+
     conn.commit()
     conn.close()
+    logger.info("✅ Database schema verified")
 
-def _extract_section(text, start_marker, end_marker):
-    """Helper to extract text sections from the profile"""
-    if not text or not start_marker:
-        return ""
-    
-    start_idx = text.find(start_marker)
-    if start_idx == -1:
-        return ""
-    
-    if end_marker:
-        end_idx = text.find(end_marker, start_idx)
-        if end_idx == -1:
-            return text[start_idx:]
-        return text[start_idx:end_idx].strip()
-    
-    return text[start_idx:].strip()
-
-# ============= ROUTES =============
-
-@app.route('/')
-def home():
-    """API homepage"""
-    return jsonify({
-        'name': 'Apex API',
-        'version': '2.5.0',
-        'status': 'online',
-        'hubspot_configured': bool(HUBSPOT_TOKEN),
-        'enrichment_available': ENRICHMENT_AVAILABLE,
-        'endpoints': {
-            'health': '/health',
-            'contacts': '/api/contacts',
-            'analytics': '/api/analytics/dashboard',
-            'enrich': '/api/contacts/<id>/deep-enrich',
-            'intelligence': '/api/contacts/<id>/intelligence',
-            'hubspot_import': '/api/hubspot/import'
-        }
-    })
-
-@app.route('/health')
-def health():
-    """Health check"""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM contacts")
-    count = cursor.fetchone()[0]
-    conn.close()
-    
+# ================================================================
+# API ENDPOINTS - HEALTH & SYSTEM
+# ================================================================
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'contacts_count': count,
-        'hubspot_configured': bool(HUBSPOT_TOKEN),
-        'perplexity_configured': bool(PERPLEXITY_API_KEY),
-        'enrichment_available': ENRICHMENT_AVAILABLE,
-        'timestamp': datetime.now().isoformat()
+        'environment': ENVIRONMENT,
+        'timestamp': datetime.now().isoformat(),
+        'services': {
+            'enrichment': enrichment_engine is not None,
+            'scoring': scoring_engine is not None,
+            'cadence': auto_sequence_engine is not None,
+            'database': 'PostgreSQL' if IS_PRODUCTION else 'SQLite'
+        }
     })
 
-# ============= CONTACTS ENDPOINTS =============
-
-
-@app.route('/api/db-test')
-def db_test():
-    """Test database connection"""
+# ================================================================
+# API ENDPOINTS - CONTACTS
+# ================================================================
+@app.route('/api/contacts', methods=['GET'])
+def get_contacts():
+    """Get all contacts with optional filtering"""
     try:
         conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get table info
-        cursor.execute("SELECT sql FROM sqlite_master WHERE name='contacts'")
-        schema = cursor.fetchone()
-        
-        # Count records
-        cursor.execute("SELECT COUNT(*) FROM contacts")
-        count = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        return jsonify({
-            'database': DATABASE,
-            'connected': True,
-            'record_count': count,
-            'has_schema': bool(schema)
-        })
-    except Exception as e:
-        return jsonify({
-            'database': DATABASE,
-            'connected': False,
-            'error': str(e)
-        })
+        cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
 
-@app.route('/api/contacts', methods=['GET', 'POST'])
-def contacts():
-    """List contacts or create new one"""
-    conn = get_db()
-    
-    if request.method == 'GET':
+        status = request.args.get('status')
         limit = request.args.get('limit', 100, type=int)
-        offset = request.args.get('offset', 0, type=int)
-        
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, name, firstname, lastname, email, phone, company, title, 
-                   lead_status, lifecycle_stage, enrichment_status, enriched, 
-                   priority_score, mdcp_score, urgency_level, created_at
-            FROM contacts 
-            ORDER BY priority_score DESC NULLS LAST, created_at DESC 
-            LIMIT ? OFFSET ?
-        ''', (limit, offset))
-        
-        contacts_list = []
-        for row in cursor.fetchall():
-            contact = dict(row)
-            contact['status_badge'] = '✅ Enriched' if contact.get('enriched') == 1 else '⏳ Pending'
-            contacts_list.append(contact)
-            
-        conn.close()
-        return jsonify(contacts_list)
-    
-    elif request.method == 'POST':
-        data = request.get_json()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            INSERT INTO contacts (name, firstname, lastname, email, phone, company, title, lead_status, lifecycle_stage)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            data.get('name'),
-            data.get('firstname'),
-            data.get('lastname'),
-            data.get('email'),
-            data.get('phone'),
-            data.get('company'),
-            data.get('title'),
-            data.get('lead_status'),
-            data.get('lifecycle_stage')
-        ))
-        
-        conn.commit()
-        contact_id = cursor.lastrowid
-        conn.close()
-        
-        return jsonify({
-            'success': True,
-            'id': contact_id,
-            'message': 'Contact created successfully'
-        }), 201
 
-@app.route('/api/contacts/<int:contact_id>')
-def get_contact(contact_id):
-    """Get single contact"""
-    conn = get_db()
-    contact = conn.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,)).fetchone()
-    conn.close()
-    
-    if not contact:
-        return jsonify({'error': 'Contact not found'}), 404
-    
-    return jsonify(dict(contact))
+        query = 'SELECT * FROM contacts'
+        params = []
 
-@app.route('/api/contacts/<int:contact_id>/intelligence')
-def get_contact_intelligence(contact_id):
-    """Get full intelligence report for display in dashboard"""
-    conn = get_db()
-    
-    contact = conn.execute('''
-        SELECT id, name, firstname, lastname, email, phone, company, 
-               linkedin_url, enrichment_data, mdcp_score, rss_score, 
-               priority_score, urgency_level, enrichment_status, 
-               enrichment_date, last_scored, lead_status, lifecycle_stage
-        FROM contacts 
-        WHERE id = ?
-    ''', (contact_id,)).fetchone()
-    
-    conn.close()
-    
-    if not contact:
-        return jsonify({'error': 'Contact not found'}), 404
-    
-    contact_dict = dict(contact)
-    
-    # Parse the enrichment data
-    enrichment_data = {}
-    if contact_dict.get('enrichment_data'):
-        try:
-            enrichment_data = json.loads(contact_dict['enrichment_data'])
-        except Exception as e:
-            logger.error(f"❌ Error parsing enrichment data: {e}")
-            enrichment_data = {}
-    
-    # Build the response
-    response = {
-        'contact': {
-            'id': contact_dict['id'],
-            'name': contact_dict['name'],
-            'firstname': contact_dict.get('firstname'),
-            'lastname': contact_dict.get('lastname'),
-            'email': contact_dict['email'],
-            'phone': contact_dict['phone'],
-            'company': contact_dict['company'],
-            'linkedin_url': contact_dict['linkedin_url'],
-            'lead_status': contact_dict.get('lead_status'),
-            'lifecycle_stage': contact_dict.get('lifecycle_stage'),
-            'mdcp_score': contact_dict['mdcp_score'],
-            'rss_score': contact_dict['rss_score'],
-            'priority_score': contact_dict['priority_score'],
-            'urgency_level': contact_dict['urgency_level'],
-            'enrichment_status': contact_dict['enrichment_status'],
-            'enrichment_date': contact_dict['enrichment_date']
-        },
-        'enrichment_data': enrichment_data,
-        'dashboard': {
-            'full_profile_text': enrichment_data.get('full_profile_text', ''),
-            'perplexity_insights': enrichment_data.get('perplexity_insights', ''),
-            'metadata': enrichment_data.get('metadata', {})
-        }
-    }
-    
-    return jsonify(response)
+        if status:
+            query += ' WHERE enrichment_status = %s' if IS_PRODUCTION else ' WHERE enrichment_status = ?'
+            params.append(status)
 
-@app.route('/api/contacts/<int:contact_id>/deep-enrich', methods=['POST'])
-def enrich_contact_endpoint(contact_id):
-    """Deep enrichment pipeline: Perplexity → Intelligence Compilation → Scoring"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
-        contact_row = cursor.fetchone()
-        
-        if not contact_row:
-            conn.close()
-            return jsonify({'success': False, 'message': 'Contact not found'}), 404
-        
-        contact_dict = dict(contact_row)
-        conn.close()
-        
-        logger.info(f"\n{'='*70}")
-        logger.info(f"🚀 APEX DEEP INTELLIGENCE PIPELINE")
-        logger.info(f"{'='*70}")
-        logger.info(f"Contact: {contact_dict.get('name')} @ {contact_dict.get('company')}")
-        
-        # STEP 1: Perplexity Web Search
-        logger.info(f"\n📡 STEP 1: Perplexity Web Search (Raw Data Collection)...")
-        
-        if not ENRICHMENT_AVAILABLE or not PERPLEXITY_API_KEY:
-            return jsonify({'success': False, 'message': 'Enrichment not available'}), 500
-        
-        try:
-            enricher = PerplexityEnrichment(api_key=PERPLEXITY_API_KEY)
-            enrichment_result = enricher.enrich_contact(contact_dict)
-            
-            if enrichment_result.get('status') != 'success':
-                raise Exception(enrichment_result.get('message', 'Enrichment failed'))
-                
-            logger.info("✅ Raw web search complete")
-            
-        except Exception as e:
-            logger.error(f"❌ Enrichment failed: {e}")
-            return jsonify({'success': False, 'message': f'Enrichment error: {str(e)}'}), 500
-        
-        # STEP 2: Intelligence Compilation
-        logger.info(f"\n🧠 STEP 2: GPT-4 Intelligence Compilation...")
-        
-        try:
-            from intelligence.engines.enrichment.intelligence_compiler import IntelligenceCompiler
-            
-            compiler = IntelligenceCompiler()
-            enrichment_data_only = enrichment_result.get('enrichment_data', {})
-            raw_results = enrichment_data_only.get('raw_responses', [])
-            
-            logger.info(f"   📊 Raw results count: {len(raw_results)}")
-            
-            # Fallback to file if needed
-            if len(raw_results) == 0:
-                raw_file_path = enrichment_result.get('raw_file', f"profile_{contact_id}.txt")
-                
-                if os.path.exists(raw_file_path):
-                    with open(raw_file_path, 'r', encoding='utf-8') as f:
-                        file_content = f.read()
-                    raw_results = [{'content': file_content, 'model': 'file_fallback'}]
-                    logger.info(f"   ✅ Loaded {len(file_content)} chars from {raw_file_path}")
-            
-            if len(raw_results) > 0:
-                intelligence_dossier = compiler.compile_dossier(contact_dict, raw_results)
-                logger.info(f"✅ Intelligence dossier compiled")
-                logger.info(f"   Data Quality: {intelligence_dossier.get('metadata', {}).get('data_quality')}")
-                logger.info(f"   Completeness: {intelligence_dossier.get('metadata', {}).get('completeness_score')}%")
-            else:
-                intelligence_dossier = {
-                    "error": "No search results available",
-                    "metadata": {"data_quality": "NONE", "completeness_score": 0}
-                }
-                
-        except Exception as e:
-            logger.error(f"❌ Intelligence compilation failed: {e}", exc_info=True)
-            intelligence_dossier = {
-                "error": str(e),
-                "metadata": {"data_quality": "ERROR", "completeness_score": 0}
-            }
-            
-        # STEP 3: Save to Database
-        logger.info(f"\n💾 STEP 3: Saving intelligence to database...")
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            UPDATE contacts
-            SET enrichment_status = 'complete',
-                enriched = 1,
-                enrichment_data = ?,
-                enrichment_date = ?,
-                title = COALESCE(?, title),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        ''', (
-            json.dumps(intelligence_dossier),
-            datetime.now().isoformat(),
-            intelligence_dossier.get('overview', {}).get('current_title'),
-            contact_id
-        ))
-        
-        conn.commit()
-        conn.close()
-        
-        logger.info("✅ Intelligence saved to database")
-        
-        # STEP 4: MDCP/RSS Scoring
-        logger.info(f"\n📊 STEP 4: MDCP/RSS Scoring...")
-        
-        if SCORING_AVAILABLE and score_contact_func:
-            try:
-                scoring_result = score_contact_func(contact_id, db_path=DATABASE)
-                logger.info(f"✅ Scoring complete - Priority: {scoring_result.get('priority_score')}")
-            except Exception as e:
-                logger.error(f"❌ Scoring failed: {e}")
-                scoring_result = {'priority_score': 50, 'mdcp_score': 50, 'rss_score': 0}
+        query += ' ORDER BY created_at DESC LIMIT %s' if IS_PRODUCTION else ' ORDER BY created_at DESC LIMIT ?'
+        params.append(limit)
+
+        cursor.execute(query, params)
+
+        if IS_PRODUCTION:
+            contacts = cursor.fetchall()
         else:
-            scoring_result = {'priority_score': 50, 'mdcp_score': 50, 'rss_score': 0}
-            
-        # Final Result
-        logger.info(f"\n{'='*70}")
-        logger.info(f"✅ APEX DEEP INTELLIGENCE PIPELINE COMPLETE")
-        logger.info(f"   Intelligence Quality: {intelligence_dossier.get('metadata', {}).get('data_quality')}")
-        logger.info(f"   Priority Score: {scoring_result.get('priority_score')}")
-        logger.info(f"{'='*70}\n")
-        
-        return jsonify({
-            'success': True,
-            'contact_id': contact_id,
-            'message': 'Deep intelligence compilation complete',
-            'intelligence': intelligence_dossier,
-            'scoring': scoring_result,
-            'pipeline': {
-                'steps_completed': ['perplexity_search', 'intelligence_compilation', 'scoring'],
-                'data_quality': intelligence_dossier.get('metadata', {}).get('data_quality'),
-                'completeness': intelligence_dossier.get('metadata', {}).get('completeness_score')
-            }
-        })
-    
-    except Exception as e:
-        logger.error(f"❌ PIPELINE FAILED: {str(e)}", exc_info=True)
-        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
-    
-@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
-def score_single_contact(contact_id):
-    """Score a single contact using Apex Intelligence Engine"""
-    
-    if not SCORING_AVAILABLE:
-        return jsonify({'error': 'Scoring engine not available'}), 500
-    
-    try:
-        logger.info(f"🎯 Scoring contact {contact_id}...")
-        
-        # Initialize orchestrator
-        conn = get_db()
-        orchestrator = ScoringOrchestrator(conn)
-        
-        # Score the contact
-        result = orchestrator.score_contact(contact_id, trigger='manual')
-        conn.close()
-        
-        if 'error' in result:
-            return jsonify(result), 500
-        
-        logger.info(f"✅ Scored contact {contact_id}: Priority={result.get('priority_score')}")
-        
-        return jsonify({
-            'success': True,
-            'contact_id': contact_id,
-            'scores': {
-                'mdcp_score': result.get('mdcp_score', 0),
-                'rss_score': result.get('rss_score', 0),
-                'priority_score': result.get('priority_score', 0)
-            },
-            'tiers': {
-                'mdcp_tier': result.get('mdcp_tier', ''),
-                'rss_tier': result.get('rss_tier', ''),
-                'urgency_level': result.get('urgency_level', '')
-            },
-            'persona': result.get('persona', {}),
-            'recommended_action': result.get('recommended_action', ''),
-            'timestamp': result.get('timestamp')
-        })
-    
-    except Exception as e:
-        logger.error(f"❌ Error scoring contact {contact_id}: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
-    
-    
-@app.route('/api/contacts/score-batch', methods=['POST'])
-def score_batch_contacts():
-    """Score multiple contacts in batch"""
-    
-    if not SCORING_AVAILABLE:
-        return jsonify({'error': 'Scoring engine not available'}), 500
-    
-    try:
-        data = request.get_json() or {}
-        limit = data.get('limit', 50)
-        
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # Get unscored contacts
-        cursor.execute('''
-            SELECT id FROM contacts 
-            WHERE mdcp_score IS NULL OR last_scored IS NULL
-            ORDER BY created_at DESC
-            LIMIT ?
-        ''', (limit,))
-        
-        contact_ids = [row[0] for row in cursor.fetchall()]
-        
-        if not contact_ids:
-            conn.close()
-            return jsonify({
-                'success': True,
-                'scored': 0,
-                'message': 'No contacts need scoring'
-            })
-        
-        logger.info(f"🎯 Starting batch scoring for {len(contact_ids)} contacts...")
-        
-        orchestrator = ScoringOrchestrator(conn)
-        results = orchestrator.bulk_score(contact_ids, trigger='batch')
-        
-        scored = sum(1 for r in results if 'error' not in r)
-        failed = len(results) - scored
-        
-        conn.close()
-        
-        logger.info(f"✅ Batch scoring complete: {scored} scored, {failed} failed")
-        
-        return jsonify({
-            'success': True,
-            'scored': scored,
-            'failed': failed,
-            'total': len(contact_ids),
-            'results': results
-        })
-    
-    except Exception as e:
-        logger.error(f"❌ Error in batch scoring: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        if 'conn' in locals():
-            conn.close()
-        return jsonify({'error': str(e)}), 500
-    
-    
-@app.route('/api/contacts/<int:contact_id>/scores', methods=['GET'])
-def get_contact_scores(contact_id):
-    """Get scoring details for a contact"""
-    
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT mdcp_score, mdcp_tier, rss_score, rss_tier, 
-                   priority_score, urgency_level, recommended_action,
-                   persona_tier, persona_type, persona_confidence,
-                   last_scored, calculation_version
-            FROM contacts 
-            WHERE id = ?
-        ''', (contact_id,))
-        
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row:
-            return jsonify({'error': 'Contact not found'}), 404
-        
-        columns = [desc[0] for desc in cursor.description]
-        scores = dict(zip(columns, row))
-        
-        return jsonify({
-            'success': True,
-            'contact_id': contact_id,
-            'scores': scores
-        })
-    
-    except Exception as e:
-        logger.error(f"❌ Error getting scores: {e}")
-        return jsonify({'error': str(e)}), 500
-    
+            contacts = [dict(row) for row in cursor.fetchall()]
 
-@app.route('/api/analytics/dashboard')
-def analytics():
-    """Dashboard analytics"""
+        conn.close()
+        return jsonify(contacts)
+
+    except Exception as e:
+        logger.error(f"Get contacts error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>', methods=['GET'])
+def get_contact(contact_id):
+    """Get a single contact by ID"""
+    try:
+        conn = get_db()
+        cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
+
+        param_style = '%s' if IS_PRODUCTION else '?'
+        cursor.execute(f'SELECT * FROM contacts WHERE id = {param_style}', (contact_id,))
+
+        if IS_PRODUCTION:
+            contact = cursor.fetchone()
+        else:
+            row = cursor.fetchone()
+            contact = dict(row) if row else None
+
+        conn.close()
+
+        if contact:
+            return jsonify(contact)
+        else:
+            return jsonify({'error': 'Contact not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Get contact error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+  ## ================================================================
+  # API ENDPOINTS - ENRICHMENT (STAGE 2 + SCORING STAGE 3)
+  # ================================================================
+@app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
+def enrich_contact(contact_id):
+  """
+  3-Stage Enrichment Pipeline:
+  STAGE 1: Perplexity raw research
+  STAGE 2: GPT-4 structuring + intelligence layers
+  STAGE 3: Database save + MDCP scoring
+  """
+  try:
+    if not enrichment_engine:
+      return jsonify({'success': False, 'error': 'Enrichment engine unavailable'}), 503
+    
     conn = get_db()
-    cursor = conn.cursor()
+    cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM contacts")
-    total = cursor.fetchone()[0]
+    param_style = '%s' if IS_PRODUCTION else '?'
+    cursor.execute(f"SELECT * FROM contacts WHERE id = {param_style}", (contact_id,))
     
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'complete'")
-    enriched = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'pending'")
-    pending = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT AVG(COALESCE(opportunity_score, 0)) FROM contacts")
-    avg_score_row = cursor.fetchone()
-    avg_score = avg_score_row[0] if avg_score_row[0] else 0
-    
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at >= datetime('now', '-30 days')")
-    last_30_days = cursor.fetchone()[0]
-    
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE urgency_level = 'HIGH'")
-    high_priority = cursor.fetchone()[0]
+    if IS_PRODUCTION:
+      row = cursor.fetchone()
+      contact = row if row else None
+    else:
+      row = cursor.fetchone()
+      contact = dict(row) if row else None
+      
+    if not contact:
+      conn.close()
+      return jsonify({"success": False, "error": "Contact not found"}), 404
     
     conn.close()
+    
+    # ===== STAGE 1: Run enrichment engine =====
+    logger.info(f"🔍 STAGE 1: Enriching contact {contact_id}: {contact.get('name')}")
+    enricher = enrichment_engine()
+    result = enricher.enrich_contact(contact)
+    
+    # Check for 'status' instead of 'success'
+    if result and result.get('status') == 'success':
+      # Get raw Perplexity output
+      raw_profile = result.get('enrichment_data', result.get('overview', ''))
+      
+      if isinstance(raw_profile, dict):
+        raw_profile = str(raw_profile)
+        
+        # ===== STAGE 2: Polish with GPT-4 =====
+      logger.info(f"✨ STAGE 2: GPT-4 polishing {len(raw_profile)} chars...")
+      profile_text = raw_profile  # fallback if GPT-4 fails
+      
+      try:
+        polish_response = openai.ChatCompletion.create(
+          model='gpt-4',
+          messages=[{
+            'role': 'user',
+            'content': f"""
+Transform this sales research into a structured dossier with clear sections.
+
+CONTACT: {contact.get('name')}
+
+RAW RESEARCH:
+{raw_profile}
+
+Add these sections at the end:
+
+## 9. Pain Points & Challenges
+[3-5 bullet points of likely frustrations in their role]
+
+## 10. Product Fit Analysis
+[How sales intelligence/CRM tools align with their needs]
+
+## 11. Outreach Strategy
+[Best channels, timing, messaging angles]
+
+## 12. Key Talking Points
+[3-5 specific conversation starters based on their background]
+
+Include all the original research, then add these structured sections.
+            """.strip()
+          }],
+          temperature=0.3,
+          max_tokens=3500
+        )
+        profile_text = polish_response.choices[0].message.content
+        logger.info(f"✅ STAGE 2 COMPLETE: {len(profile_text)} chars")
+      except Exception as e:
+        logger.warning(f"⚠️  Stage 2 GPT-4 polish failed, using raw profile: {e}")
+        # profile_text already set to raw_profile above
+        
+        # ===== STAGE 3A: Save to database =====
+      conn = get_db()
+      cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
+      
+      if IS_PRODUCTION:
+        cursor.execute("""
+          UPDATE contacts SET
+          profile_content = %s,
+          enrichment_status = 'completed',
+          enrichment_date = %s,
+          updated_at = %s
+          WHERE id = %s
+        """, (profile_text, datetime.now(), datetime.now(), contact_id))
+      else:
+        cursor.execute("""
+          UPDATE contacts SET
+          profile_content = ?,
+          enrichment_status = 'completed',
+          enrichment_date = ?,
+          updated_at = ?
+          WHERE id = ?
+        """, (profile_text, datetime.now().isoformat(), datetime.now().isoformat(), contact_id))
+        
+      conn.commit()
+      logger.info(f"💾 STAGE 3A: Profile saved to database")
+      
+      # ===== STAGE 3B: Calculate MDCP Scoring =====
+      scores = None
+      if scoring_engine:
+        logger.info(f"🎯 STAGE 3B: Running MDCP scoring...")
+        
+        # Re-fetch contact with enriched profile
+        param_style = '%s' if IS_PRODUCTION else '?'
+        cursor.execute(f"SELECT * FROM contacts WHERE id = {param_style}", (contact_id,))
+        
+        if IS_PRODUCTION:
+          enriched_contact = cursor.fetchone()
+        else:
+          row = cursor.fetchone()
+          enriched_contact = dict(row) if row else None
+          
+        if enriched_contact:
+          try:
+            scores = scoring_engine.score_contact(enriched_contact)
+            
+            if scores:
+              if IS_PRODUCTION:
+                cursor.execute("""
+                  UPDATE contacts SET
+                  mdcp_score = %s,
+                  priority_score = %s,
+                  rss_score = %s,
+                  mdcp_tier = %s,
+                  urgency_level = %s,
+                  last_scored = %s,
+                  updated_at = %s
+                  WHERE id = %s
+                """, (
+                    scores.get('mdcp_score'),
+                    scores.get('priority_score'),
+                    scores.get('rss_score'),
+                    scores.get('mdcp_tier'),
+                    scores.get('urgency_level'),
+                    datetime.now(),
+                    datetime.now(),
+                    contact_id
+                  ))
+              else:
+                cursor.execute("""
+                  UPDATE contacts SET
+                  mdcp_score = ?,
+                  priority_score = ?,
+                  rss_score = ?,
+                  mdcp_tier = ?,
+                  urgency_level = ?,
+                  last_scored = ?,
+                  updated_at = ?
+                  WHERE id = ?
+                """, (
+                    scores.get('mdcp_score'),
+                    scores.get('priority_score'),
+                    scores.get('rss_score'),
+                    scores.get('mdcp_tier'),
+                    scores.get('urgency_level'),
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                    contact_id
+                  ))
+                
+              conn.commit()
+              logger.info(f"✅ STAGE 3B COMPLETE: MDCP={scores.get('mdcp_score'):.1f}, Priority={scores.get('priority_score'):.1f}")
+              
+          except Exception as score_error:
+            logger.warning(f"⚠️  Scoring failed (enrichment still saved): {score_error}")
+            # Don't fail the whole enrichment if scoring errors
+            
+      conn.close()
+      
+      logger.info(f"✅ ✅ ✅ ENRICHMENT COMPLETE for contact {contact_id}")
+      
+      return jsonify({
+    'success': True,
+    'contact_id': contact_id,
+    'profile_length': len(profile_text),
+    'enrichment_status': 'completed',
+    'scoring': {
+      'mdcp_score': scores.get('mdcp_score') if scores else None,
+      'priority_score': scores.get('priority_score') if scores else None,
+      'tier': scores.get('mdcp_tier') if scores else None
+    } if scores else None
+    }), 200
+    
+    else:
+      error_msg = result.get('error', 'Enrichment failed') if result else 'No result returned'
+      logger.error(f"❌ Enrichment failed: {error_msg}")
+      return jsonify({'success': False, 'error': error_msg}), 500
+    
+  except Exception as e:
+    logger.error(f"❌ Enrichment error: {e}")
+    logger.error(traceback.format_exc())
+    return jsonify({'success': False, 'error': str(e)}), 500
+  
+
+
+# ============================================================================
+# HUBSPOT IMPORT ENDPOINT — WITH FILTERS INSTALLED
+# ============================================================================
+
+@app.route("/api/hubspot/import", methods=["POST"])
+def hubspot_import():
+    """
+    Paginated HubSpot import with quality filters.
+    EXCLUDES: unqualified, do not contact, unsubscribed, personal emails, missing required fields
+    REQUIRED: email, name, company
+    """
+    PERSONAL_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'aol.com', 'icloud.com', 
+                        'outlook.com', 'live.com', 'msn.com', 'me.com', 'comcast.net',
+                        'sbcglobal.net', 'att.net', 'verizon.net', 'cox.net']
+    
+    EXCLUDED_LEAD_STATUSES = ['unqualified', 'do not contact', 'unsubscribed', 'bad timing']
+    EXCLUDED_LIFECYCLES = ['unqualified', 'subscriber']
+    
+    hubspot_api_key = os.getenv("HUBSPOT_API_KEY")
+    if not hubspot_api_key:
+        return {"success": False, "error": "HUBSPOT_API_KEY not set"}, 401
+
+    try:
+        conn = get_db()
+        if IS_PRODUCTION:
+            conn.autocommit = True  # Each INSERT is independent
+        cursor = conn.cursor()
+
+        imported = 0
+        updated = 0
+        skipped = 0
+        filtered_out = 0
+        filter_reasons = {"no_email": 0, "no_name": 0, "no_company": 0, "personal_email": 0,
+                         "lead_status": 0, "lifecycle": 0, "dnc": 0}
+
+        after = None
+        headers = {"Authorization": f"Bearer {hubspot_api_key}"}
+
+        logger.info("🔄 Starting HubSpot import with filters...")
+
+        batch_num = 0
+        while True:
+            batch_num += 1
+            url = "https://api.hubapi.com/crm/v3/objects/contacts"
+            params = {
+                "limit": 100,
+                "properties": [
+                    "firstname", "lastname", "email", "phone", "mobilephone",
+                    "company", "jobtitle", "lifecyclestage", "hs_lead_status",
+                    "do_not_contact", "linkedin_url"
+                ]
+            }
+            if after:
+                params["after"] = after
+
+            logger.info(f"📦 Batch {batch_num}: Fetching from HubSpot...")
+
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("results"):
+                logger.info("✅ No more contacts to fetch")
+                break
+
+            results = data.get("results", [])
+            logger.info(f"   Processing {len(results)} contacts...")
+
+            for idx, hs_contact in enumerate(results):
+                try:
+                    if not isinstance(hs_contact, dict):
+                        skipped += 1
+                        continue
+
+                    props = hs_contact.get("properties", {})
+                    if not isinstance(props, dict):
+                        skipped += 1
+                        continue
+
+                    # === EXTRACT FIELDS (HubSpot v3 = direct strings) ===
+                    email = str(props.get("email") or "").strip().lower()
+                    first_name = str(props.get("firstname") or "").strip()
+                    last_name = str(props.get("lastname") or "").strip()
+                    name = f"{first_name} {last_name}".strip()
+                    company = str(props.get("company") or "").strip()
+                    phone = str(props.get("phone") or "").strip()
+                    mobile = str(props.get("mobilephone") or "").strip()
+                    title = str(props.get("jobtitle") or "").strip()
+                    linkedin_url = str(props.get("linkedin_url") or "").strip()
+                    lifecycle = str(props.get("lifecyclestage") or "").lower()
+                    lead_status = str(props.get("hs_lead_status") or "").lower()
+                    dnc = str(props.get("do_not_contact") or "").lower()
+                    hubspot_id = hs_contact.get("id", "")
+
+                    # === FILTER 1: REQUIRED FIELDS ===
+                    if not email:
+                        filter_reasons["no_email"] += 1
+                        filtered_out += 1
+                        continue
+
+                    if not name or name == "":
+                        filter_reasons["no_name"] += 1
+                        filtered_out += 1
+                        continue
+
+                    if not company:
+                        filter_reasons["no_company"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 2: PERSONAL EMAIL DOMAINS ===
+                    email_domain = email.split("@")[-1] if "@" in email else ""
+                    if email_domain in PERSONAL_DOMAINS:
+                        filter_reasons["personal_email"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 3: LEAD STATUS ===
+                    if lead_status in EXCLUDED_LEAD_STATUSES:
+                        filter_reasons["lead_status"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 4: LIFECYCLE STAGE ===
+                    if lifecycle in EXCLUDED_LIFECYCLES:
+                        filter_reasons["lifecycle"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === FILTER 5: DO NOT CONTACT FLAG ===
+                    if dnc in ["yes", "true", "1"]:
+                        filter_reasons["dnc"] += 1
+                        filtered_out += 1
+                        continue
+
+                    # === PASSED ALL FILTERS - UPSERT ===
+                    # Database-agnostic INSERT (PostgreSQL vs SQLite)
+                    if IS_PRODUCTION:
+                        cursor.execute("""
+                            INSERT INTO contacts 
+                            (name, email, phone, phone_mobile, company, title, linkedin_url, 
+                             hubspot_id, data_source, sync_date, firstname, lastname, 
+                             lifecycle_stage, lead_status)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'hubspot', NOW(), %s, %s, %s, %s)
+                            ON CONFLICT(hubspot_id) DO UPDATE SET
+                                name = EXCLUDED.name,
+                                email = EXCLUDED.email,
+                                phone = COALESCE(EXCLUDED.phone, contacts.phone),
+                                phone_mobile = COALESCE(EXCLUDED.phone_mobile, contacts.phone_mobile),
+                                company = COALESCE(EXCLUDED.company, contacts.company),
+                                title = COALESCE(EXCLUDED.title, contacts.title),
+                                linkedin_url = COALESCE(EXCLUDED.linkedin_url, contacts.linkedin_url),
+                                sync_date = NOW(),
+                                firstname = EXCLUDED.firstname,
+                                lastname = EXCLUDED.lastname,
+                                lifecycle_stage = EXCLUDED.lifecycle_stage,
+                                lead_status = EXCLUDED.lead_status
+                        """, (name, email, phone, mobile, company, title, linkedin_url,
+                              hubspot_id, first_name, last_name, lifecycle, lead_status))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO contacts 
+                            (name, email, phone, phone_mobile, company, title, linkedin_url, 
+                             hubspot_id, data_source, sync_date, firstname, lastname, 
+                             lifecycle_stage, lead_status)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'hubspot', datetime('now'), ?, ?, ?, ?)
+                            ON CONFLICT(hubspot_id) DO UPDATE SET
+                                name = excluded.name,
+                                email = excluded.email,
+                                phone = COALESCE(excluded.phone, phone),
+                                phone_mobile = COALESCE(excluded.phone_mobile, phone_mobile),
+                                company = COALESCE(excluded.company, company),
+                                title = COALESCE(excluded.title, title),
+                                linkedin_url = COALESCE(excluded.linkedin_url, linkedin_url),
+                                sync_date = datetime('now'),
+                                firstname = excluded.firstname,
+                                lastname = excluded.lastname,
+                                lifecycle_stage = excluded.lifecycle_stage,
+                                lead_status = excluded.lead_status
+                        """, (name, email, phone, mobile, company, title, linkedin_url,
+                              hubspot_id, first_name, last_name, lifecycle, lead_status))
+
+                    if cursor.rowcount > 0:
+                        updated += 1
+                    else:
+                        imported += 1
+
+                    if IS_PRODUCTION:
+                        conn.commit()
+
+                except Exception as e:
+                    logger.error(f"   ❌ Error processing contact {idx}: {e}")
+                    try:
+                        conn.rollback()
+                    except:
+                        pass
+                    skipped += 1
+                    continue
+
+            conn.commit()
+
+            paging = data.get("paging", {})
+            after = paging.get("next", {}).get("after")
+            if not after:
+                logger.info("✅ Pagination complete")
+                break
+
+        conn.close()
+
+        total = imported + updated + skipped + filtered_out
+        
+        logger.info(f"""
+✅ IMPORT COMPLETE
+   Total processed: {total}
+   ✅ Imported (new): {imported}
+   ♻️  Updated (existing): {updated}
+   🚫 Filtered out: {filtered_out}
+      - No email: {filter_reasons['no_email']}
+      - No name: {filter_reasons['no_name']}
+      - No company: {filter_reasons['no_company']}
+      - Personal email: {filter_reasons['personal_email']}
+      - Lead status (unqualified/DNC): {filter_reasons['lead_status']}
+      - Lifecycle (unqualified): {filter_reasons['lifecycle']}
+      - Do not contact flag: {filter_reasons['dnc']}
+   ⚠️  Skipped (errors): {skipped}
+   📊 Qualified contacts: {imported + updated}
+        """)
+
+        return {
+            "success": True,
+            "message": f"Import complete: {imported} new, {updated} updated, {filtered_out} filtered, {skipped} skipped",
+            "imported": imported,
+            "updated": updated,
+            "filtered": filtered_out,
+            "filter_breakdown": filter_reasons,
+            "skipped": skipped,
+            "total": total,
+            "qualified_count": imported + updated
+        }, 200
+
+    except requests.RequestException as e:
+        logger.error(f"❌ HubSpot API error: {e}")
+        return {"success": False, "error": str(e)}, 500
+    except Exception as e:
+        logger.error(f"❌ Import failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}, 500
+
+# ============================================================================
+# HUBSPOT BACKFILL LAST CONTACT DATE
+# ============================================================================
+
+@app.route("/api/hubspot/backfill-activity", methods=["POST"])
+def hubspot_backfill_activity():
+    """
+    Backfill last_contact_date from HubSpot engagement history.
+    Updates contacts with their most recent email/call/meeting date.
+    """
+    hubspot_api_key = os.getenv("HUBSPOT_API_KEY")
+    if not hubspot_api_key:
+        return {"success": False, "error": "HUBSPOT_API_KEY not set"}, 401
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        headers = {"Authorization": f"Bearer {hubspot_api_key}"}
+        
+        # Get all contacts with hubspot_id
+        if IS_PRODUCTION:
+            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != '' LIMIT 50")
+            contacts = cursor.fetchall()
+        else:
+            cursor.execute("SELECT id, hubspot_id, name FROM contacts WHERE hubspot_id IS NOT NULL AND hubspot_id != '' LIMIT 50")
+            contacts = cursor.fetchall()
+        
+        updated = 0
+        skipped = 0
+        
+        logger.info(f"🔄 Backfilling activity for {len(contacts)} contacts...")
+        
+        for contact in contacts:
+            contact_id = contact[0]
+            hubspot_id = contact[1]
+            name = contact[2]
+            
+            try:
+                # Get engagements for this contact
+                url = f"https://api.hubapi.com/crm/v3/objects/contacts/{hubspot_id}/associations/engagements"
+                response = requests.get(url, headers=headers)
+                
+                if response.status_code != 200:
+                    skipped += 1
+                    continue
+                
+                engagements = response.json().get("results", [])
+                
+                if not engagements:
+                    # Try getting notes/emails directly
+                    url = f"https://api.hubapi.com/crm/v3/objects/contacts/{hubspot_id}?properties=notes_last_updated,hs_last_sales_activity_timestamp,lastmodifieddate"
+                    response = requests.get(url, headers=headers)
+                    
+                    if response.status_code == 200:
+                        props = response.json().get("properties", {})
+                        last_activity = props.get("hs_last_sales_activity_timestamp") or props.get("lastmodifieddate")
+                        
+                        if last_activity:
+                            # Update contact
+                            if IS_PRODUCTION:
+                                cursor.execute("UPDATE contacts SET last_contact_date = %s WHERE id = %s", (last_activity, contact_id))
+                            else:
+                                cursor.execute("UPDATE contacts SET last_contact_date = ? WHERE id = ?", (last_activity, contact_id))
+                            updated += 1
+                            if IS_PRODUCTION:
+                                conn.commit()
+                    continue
+                
+                skipped += 1
+                
+            except Exception as e:
+                logger.error(f"Error backfilling {name}: {e}")
+                if IS_PRODUCTION:
+                    conn.rollback()
+                skipped += 1
+                continue
+        
+        if not IS_PRODUCTION:
+            conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Backfill complete: {updated} updated, {skipped} skipped")
+        
+        return {
+            "success": True,
+            "updated": updated,
+            "skipped": skipped,
+            "total": len(contacts)
+        }, 200
+        
+    except Exception as e:
+        logger.error(f"❌ Backfill failed: {e}")
+        return {"success": False, "error": str(e)}, 500
+
+
+# ============================================================================
+# BULK SCORING ENDPOINT
+# ============================================================================
+
+@app.route("/api/contacts/score-all", methods=["POST"])
+def score_all_contacts():
+    """
+    Run MDCP scoring on all contacts (or those missing scores).
+    """
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get contacts needing scoring
+        if IS_PRODUCTION:
+            cursor.execute("""
+                SELECT id, name, title, company, email, enrichment_status, last_contact_date, linkedin_url
+                FROM contacts 
+                WHERE mdcp_score IS NULL OR priority_score IS NULL
+                LIMIT 500
+            """)
+        else:
+            cursor.execute("""
+                SELECT id, name, title, company, email, enrichment_status, last_contact_date, linkedin_url
+                FROM contacts 
+                WHERE mdcp_score IS NULL OR priority_score IS NULL
+                LIMIT 500
+            """)
+        
+        contacts = cursor.fetchall()
+        scored = 0
+        
+        logger.info(f"🎯 Scoring {len(contacts)} contacts...")
+        
+        for contact in contacts:
+            contact_id = contact[0]
+            name = contact[1]
+            title = contact[2] or ""
+            company = contact[3] or ""
+            enrichment_status = contact[5] or "pending"
+            last_contact_date = contact[6]
+            linkedin_url = contact[7]
+            
+            # Calculate MDCP score based on title/seniority
+            mdcp_score = 50  # Base score
+            
+            # Title scoring
+            title_lower = title.lower()
+            if any(t in title_lower for t in ['ceo', 'cfo', 'coo', 'president', 'owner', 'founder', 'principal']):
+                mdcp_score += 40
+            elif any(t in title_lower for t in ['vp', 'vice president', 'director', 'head of', 'chief']):
+                mdcp_score += 30
+            elif any(t in title_lower for t in ['senior', 'manager', 'lead']):
+                mdcp_score += 20
+            elif any(t in title_lower for t in ['associate', 'analyst', 'coordinator']):
+                mdcp_score += 10
+            
+            # Company presence bonus
+            if company:
+                mdcp_score += 5
+            
+            # LinkedIn bonus
+            if linkedin_url:
+                mdcp_score += 5
+            
+            # Enrichment bonus
+            if enrichment_status == 'enriched':
+                mdcp_score += 10
+            
+            # Cap at 100
+            mdcp_score = min(mdcp_score, 100)
+            
+            # Priority score (MDCP weighted + recency)
+            priority_score = mdcp_score
+            
+            # Recency boost
+            if last_contact_date:
+                try:
+                    from datetime import datetime, timedelta
+                    if isinstance(last_contact_date, str):
+                        # Parse various date formats
+                        for fmt in ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%d', '%Y-%m-%dT%H:%M:%SZ']:
+                            try:
+                                last_date = datetime.strptime(last_contact_date[:26], fmt)
+                                break
+                            except:
+                                continue
+                        else:
+                            last_date = None
+                        
+                        if last_date:
+                            days_since = (datetime.now() - last_date).days
+                            if days_since < 7:
+                                priority_score += 10
+                            elif days_since < 30:
+                                priority_score += 5
+                            elif days_since > 90:
+                                priority_score -= 10
+                except:
+                    pass
+            
+            priority_score = max(0, min(priority_score, 100))
+            
+            # Determine tier
+            if priority_score >= 90:
+                mdcp_tier = 'hot'
+            elif priority_score >= 75:
+                mdcp_tier = 'warm'
+            elif priority_score >= 60:
+                mdcp_tier = 'qualified'
+            else:
+                mdcp_tier = 'nurture'
+            
+            # Update contact
+            if IS_PRODUCTION:
+                cursor.execute("""
+                    UPDATE contacts 
+                    SET mdcp_score = %s, priority_score = %s, mdcp_tier = %s, last_scored = NOW()
+                    WHERE id = %s
+                """, (mdcp_score, priority_score, mdcp_tier, contact_id))
+                conn.commit()
+            else:
+                cursor.execute("""
+                    UPDATE contacts 
+                    SET mdcp_score = ?, priority_score = ?, mdcp_tier = ?, last_scored = datetime('now')
+                    WHERE id = ?
+                """, (mdcp_score, priority_score, mdcp_tier, contact_id))
+            
+            scored += 1
+        
+        if not IS_PRODUCTION:
+            conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Scoring complete: {scored} contacts scored")
+        
+        return {
+            "success": True,
+            "scored": scored,
+            "message": f"Scored {scored} contacts"
+        }, 200
+        
+    except Exception as e:
+        logger.error(f"❌ Scoring failed: {e}")
+        return {"success": False, "error": str(e)}, 500
+    
+# ============================================================================
+# SCORING ENDPOINTS
+# ============================================================================
+  
+@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
+def score_contact_endpoint(contact_id):
+  """Score a contact with unified MDCP + CRE intelligence"""
+  
+  if not SCORING_AVAILABLE:
+    return jsonify({'error': 'Scoring engine not available'}), 503
+  
+  try:
+    # Use environment-aware database path
+    unified_scorer = UnifiedApexScorer(db_path=SCORING_DB_PATH)
+    result = unified_scorer.score_contact_unified(contact_id, save_to_db=True)
+    # ... rest of endpoint
+    
     
     return jsonify({
-        'total_contacts': total,
-        'enriched_contacts': enriched,
-        'pending_enrichment': pending,
-        'avg_opportunity_score': round(avg_score, 2),
-        'contacts_last_30_days': last_30_days,
-        'high_priority_contacts': high_priority
-    })
-
-@app.route('/api/hubspot/import', methods=['POST'])
-def hubspot_import():
-    """Import contacts from HubSpot with filtering and pagination"""
+      'success': True,
+      'contact_id': contact_id,
+      'contact_name': result['contact_name'],
+      'company': result['company'],
+      'scores': {
+        'mdcp': result['mdcp_score'],
+        'mdcp_tier': result['mdcp_tier'],
+        'rss': result['rss_score'],
+        'rss_tier': result['rss_tier'],
+        'priority': result['priority_score'],
+        'urgency': result['urgency_level']
+      },
+      'action': result['recommended_action'],
+      'cre_applied': result.get('cre_vertical_applied', False),
+      'lifecycle_stage': result['lifecycle_stage'],
+      'lead_type': result['lead_type'],
+      'timestamp': result['calculated_at']
+    }), 200
+  
+  except Exception as e:
+    import traceback
+    return jsonify({
+      'error': str(e),
+      'traceback': traceback.format_exc()
+    }), 500
+  
+  
+@app.route('/api/contacts/score/bulk', methods=['POST'])
+def bulk_score_endpoint():
+  """Score multiple contacts"""
+  
+  if not SCORING_AVAILABLE:
+    return jsonify({'error': 'Scoring engine not available'}), 503
+  
+  data = request.json
+  contact_ids = data.get('contact_ids', [])
+  
+  if not contact_ids:
+    return jsonify({'error': 'No contact_ids provided'}), 400
+  
+  try:
+    # Use correct database for environment
+    scoring_db = DATABASE_URL if IS_PRODUCTION else DB_PATH
+    unified_scorer = UnifiedApexScorer(db_path=scoring_db)
+    results = unified_scorer.bulk_score_unified(contact_ids)
     
-    if not HUBSPOT_TOKEN:
-        logger.error("❌ HubSpot token not found in environment")
-        return jsonify({
-            'error': 'HubSpot API key not configured',
-            'message': 'Please add HUBSPOT_ACCESS_TOKEN to your .env file',
-            'imported': 0,
-            'existing': 0,
-            'filtered': 0,
-            'total_in_hubspot': 0
-        }), 400
+    return jsonify({
+      'success': True,
+      'count': len(results),
+      'results': results
+    }), 200
+  
+  except Exception as e:
+    import traceback
+    return jsonify({
+      'error': str(e),
+      'traceback': traceback.format_exc()
+    }), 500
+  
+  
+@app.route('/api/todays-board', methods=['GET'])
+def todays_board():
+  """Get today's prioritized contacts based on unified scoring"""
+  try:
+    conn = get_db()
+    cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
     
-    url = 'https://api.hubapi.com/crm/v3/objects/contacts'
+    # Get top-priority scored contacts
+    query = """
+      SELECT
+        id, name, email, company, title,
+        mdcp_score, mdcp_tier,
+        rss_score, rss_tier,
+        priority_score, urgency_level,
+        recommended_action, last_scored,
+        last_contact_date, lead_type
+      FROM contacts
+      WHERE priority_score IS NOT NULL
+      ORDER BY priority_score DESC, last_scored DESC
+      LIMIT 50
+    """
+    cursor.execute(query)
     
-    headers = {
-        "Authorization": f"Bearer {HUBSPOT_TOKEN}",
-        "Content-Type": "application/json"
+    # Handle both PostgreSQL (already dicts) and SQLite (Row objects)
+    rows = cursor.fetchall()
+    if IS_PRODUCTION:
+      contacts = list(rows)  # PostgreSQL RealDictCursor returns dicts
+    else:
+      contacts = [dict(row) for row in rows]  # SQLite needs conversion
+      
+    conn.close()
+    
+    # Group by urgency
+    board = {
+      'IMMEDIATE': [],
+      'HIGH': [],
+      'MEDIUM': [],
+      'LOW': []
     }
     
-    logger.info(f"Request URL: {url}")
-    logger.info(f"Auth header: Bearer {HUBSPOT_TOKEN[:20]}...{HUBSPOT_TOKEN[-4:]}")
-    
-    base_params = {
-        'limit': 100,
-        'properties': [
-            'firstname', 'lastname', 'email', 'phone', 'company',
-            'jobtitle', 'industry', 'linkedin_url', 'hs_object_id',
-            'hs_lead_status', 'lifecyclestage', 'numemployees',
-            'annualrevenue', 'city', 'state', 'website', 'personal_contact'
-        ]
-    }
-    
-    EXCLUDED_LEAD_STATUSES = ['unqualified', 'do not contact', 'unsubscribe']
-    EXCLUDED_LIFECYCLE_STAGES = ['unqualified']
-    MAX_IMPORTS_PER_RUN = 100  # Limit to 100 new contacts per import
-    
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
+    for contact in contacts:
+      urgency = contact.get('urgency_level') or 'LOW'
+      if urgency in board:
+        board[urgency].append(contact)
+      else:
+        board['LOW'].append(contact)
         
-        imported = 0
-        skipped = 0
-        filtered = 0
-        total_processed = 0
-        
-        after = None
-        has_more = True
-        page = 1
-        limit_reached = False  # FLAG TO BREAK OUTER LOOP
-        
-        # Loop through all pages
-        while has_more and not limit_reached:
-            params = base_params.copy()
-            if after:
-                params['after'] = after
-                
-            logger.info(f"📡 Requesting page {page} from HubSpot (imported so far: {imported}/{MAX_IMPORTS_PER_RUN})...")
-            response = requests.get(url, headers=headers, params=params)
-            
-            if response.status_code == 401:
-                logger.error("❌ HubSpot authentication failed - 401 Unauthorized")
-                conn.close()
-                return jsonify({
-                    'error': 'HubSpot authentication failed',
-                    'message': 'Your HubSpot token is invalid or expired',
-                    'imported': imported,
-                    'existing': skipped,
-                    'filtered': filtered,
-                    'total_in_hubspot': total_processed
-                }), 401
-            
-            if response.status_code != 200:
-                logger.error(f"❌ HubSpot API error: {response.status_code}")
-                conn.close()
-                return jsonify({
-                    'error': f'HubSpot API error {response.status_code}',
-                    'message': response.text,
-                    'imported': imported,
-                    'existing': skipped,
-                    'filtered': filtered,
-                    'total_in_hubspot': total_processed
-                }), response.status_code
-            
-            hubspot_data = response.json()
-            contacts = hubspot_data.get('results', [])
-            paging = hubspot_data.get('paging', {})
-            
-            logger.info(f"✅ Retrieved {len(contacts)} contacts from HubSpot (page {page})")
-            total_processed += len(contacts)
-            
-            # Process contacts
-            for contact in contacts:
-                # Check limit before processing each contact
-                if imported >= MAX_IMPORTS_PER_RUN:
-                    logger.info(f"🛑 Hit import limit of {MAX_IMPORTS_PER_RUN} contacts")
-                    limit_reached = True  # SET FLAG
-                    break  # Break inner loop
-                
-                props = contact.get('properties', {})
-                hubspot_id = contact.get('id')
-                
-                # SAFE EXTRACTION - Handles None values properly
-                def safe_get(key, default=''):
-                    """Safely get and strip a property value"""
-                    value = props.get(key)
-                    if value is None:
-                        return default
-                    return str(value).strip()
-                
-                # Extract contact info using safe getter
-                first = safe_get('firstname')
-                last = safe_get('lastname')
-                email = safe_get('email')
-                phone = safe_get('phone')
-                company = safe_get('company')
-                lead_status = safe_get('hs_lead_status').lower()
-                lifecycle_stage = safe_get('lifecyclestage').lower()
-                personal_contact = safe_get('personal_contact').lower()
-                
-                # Build name
-                name = f"{first} {last}".strip()
-                if not name and email:
-                    name = email.split('@')[0]
-                if not name:
-                    name = f"HubSpot-{hubspot_id}"
-                    
-                # Filter out personal contacts
-                if personal_contact == 'true':
-                    filtered += 1
-                    logger.warning(f"⚠️ Filtered (personal contact): {name}")
-                    continue
-                
-                # Check required fields - must have email, company, name, and phone
-                if not email or not company or not name or not phone:
-                    filtered += 1
-                    logger.warning(f"⚠️ Filtered (missing required fields): {name}")
-                    continue
-                
-                # Check lead status exclusions
-                if lead_status in EXCLUDED_LEAD_STATUSES:
-                    filtered += 1
-                    logger.warning(f"⚠️ Filtered (lead status: {lead_status}): {name}")
-                    continue
-                
-                # Check lifecycle stage exclusions
-                if lifecycle_stage in EXCLUDED_LIFECYCLE_STAGES:
-                    filtered += 1
-                    logger.warning(f"⚠️ Filtered (lifecycle: {lifecycle_stage}): {name}")
-                    continue
-                
-                # Check if contact already exists by email or hubspot_id
-                cursor.execute('SELECT id FROM contacts WHERE email = ? OR hubspot_id = ?', (email, hubspot_id))
-                if cursor.fetchone():
-                    skipped += 1
-                    logger.info(f"⏭️  Skipped (exists): {name}")
-                    continue
-                
-                # Insert new contact
-                cursor.execute('''
-                    INSERT INTO contacts 
-                    (name, firstname, lastname, email, phone, company, title, 
-                     hubspot_id, linkedin_url, lead_status, lifecycle_stage, enrichment_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-                ''', (
-                    name,
-                    first,
-                    last,
-                    email,
-                    phone,
-                    company,
-                    safe_get('jobtitle'),
-                    hubspot_id,
-                    safe_get('linkedin_url'),
-                    safe_get('hs_lead_status'),
-                    safe_get('lifecyclestage')
-                ))
-                
-                imported += 1
-                logger.info(f"✅ Imported ({imported}/{MAX_IMPORTS_PER_RUN}): {name} - {company}")
-                
-            # Check for next page (only if we haven't hit the limit)
-            if not limit_reached:
-                after = paging.get('next', {}).get('after')
-                has_more = after is not None
-                
-                if has_more:
-                    logger.info(f"🔄 More contacts available, fetching next page...")
-                    page += 1
-                else:
-                    logger.info(f"🏁 Reached end of contacts")
-                    
-        conn.commit()
-        conn.close()
-        
-        logger.info(f"✅ Import complete: {imported} new, {skipped} existing, {filtered} filtered from {total_processed} total")
-        
-        return jsonify({
-            'success': True,
-            'imported': imported,
-            'existing': skipped,
-            'filtered': filtered,
-            'total_in_hubspot': total_processed,
-            'message': f'Successfully imported {imported} new contacts from {total_processed} total in HubSpot ({filtered} filtered out)'
-        })
+    # Separate relationships vs new prospects
+    relationships = [c for c in contacts if c.get('last_contact_date')]
+    prospects = [c for c in contacts if not c.get('last_contact_date')]
     
-    except Exception as e:
-        logger.error(f"❌ Error importing from HubSpot: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        if 'conn' in locals():
-            conn.close()
-        return jsonify({
-            'error': 'Import failed',
-            'message': str(e),
-            'imported': 0,
-            'existing': 0,
-            'filtered': 0,
-            'total_in_hubspot': 0
-        }), 500
-    
-# ============= ERROR HANDLERS =============
-
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    logger.error(f"Internal error: {error}")
-    return jsonify({'error': 'Internal server error', 'message': str(error)}), 500
-
-# ============= MAIN =============
+    return jsonify({
+      'success': True,
+      'timestamp': datetime.now().isoformat(),
+      'date': datetime.now().strftime('%Y-%m-%d'),
+      'time': datetime.now().strftime('%I:%M %p'),
+      'environment': 'PRODUCTION' if IS_PRODUCTION else 'LOCAL',
+  
+      # NEW FORMAT (unified scoring)
+      'board': board,
+      'total_contacts': len(contacts),
+      'breakdown': {
+        'IMMEDIATE': len(board['IMMEDIATE']),
+        'HIGH': len(board['HIGH']),
+        'MEDIUM': len(board['MEDIUM']),
+        'LOW': len(board['LOW'])
+      },
+  
+      # OLD FORMAT (backward compatible with Dashboard)
+      'relationships': {
+        'total': len(relationships),
+        'tiers': {
+          'urgent': [c for c in relationships if c.get('urgency_level') == 'IMMEDIATE'][:5],
+          'warm': [c for c in relationships if c.get('urgency_level') == 'HIGH'][:5]
+        }
+      },
+      'new_prospects': {
+        'total': len(prospects),
+        'tiers': {
+          'hot': [c for c in prospects if c.get('urgency_level') == 'IMMEDIATE'][:5],
+          'qualified': [c for c in prospects if c.get('urgency_level') == 'HIGH'][:5]
+        }
+      }
+    }), 200
+  
+  except Exception as e:
+    import traceback
+    return jsonify({
+      'error': str(e),
+      'traceback': traceback.format_exc()
+    }), 500
+  
+  
 
 if __name__ == '__main__':
-    print("=" * 70)
-    print("🚀 APEX FLASK API SERVER")
-    print("=" * 70)
-    print(f"Server: http://localhost:{PORT}")
-    print(f"Health: http://localhost:{PORT}/health")
-    print(f"Docs: http://localhost:{PORT}/")
-    print(f"HubSpot: {'✅ Configured' if HUBSPOT_TOKEN else '❌ Not Configured'}")
-    if HUBSPOT_TOKEN:
-        print(f"Token: {HUBSPOT_TOKEN[:15]}...")
-    print(f"Enrichment: {'✅ Available' if ENRICHMENT_AVAILABLE else '❌ Not Available'}")
-    print("=" * 70)
-    print("\n📋 HubSpot Import Filters:")
-    print("  ✓ Required: Email, Company, Name, Phone")
-    print("  ✗ Excluded Lead Status: unqualified, do not contact, unsubscribe")
-    print("  ✗ Excluded Lifecycle: unqualified")
-    print("=" * 70)
-    
-    init_db()
-    
-    app.run(debug=True, host='0.0.0.0', port=PORT)
-    
+    port = int(os.getenv('PORT', 8000))
+    logger.info(f'🚀 Server Port: {port}')
+    app.run(host='0.0.0.0', port=port, debug=True)
+  # Force deploy Mon Dec  1 12:23:48 PST 2025
+  

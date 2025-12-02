@@ -1,0 +1,617 @@
+import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
+import { 
+  Play, 
+  Pause, 
+  SkipForward, 
+  Mail, 
+  Phone, 
+  Linkedin, 
+  Clock, 
+  CheckCircle,
+  Users,
+  Calendar,
+  TrendingUp,
+  AlertCircle,
+  Plus,
+  MoreVertical,
+  RefreshCw,
+  Loader
+} from 'lucide-react';
+
+interface CadenceStep {
+  id: number;
+  day: number;
+  type: 'email' | 'call' | 'linkedin';
+  subject?: string;
+  content: string;
+  completed: boolean;
+}
+
+interface ContactCadence {
+  id: number;
+  name: string;
+  company: string;
+  email: string;
+  currentStep: number;
+  totalSteps: number;
+  status: 'active' | 'paused' | 'completed';
+  lastActivity?: string;
+  nextAction?: string;
+  score?: number;
+}
+
+export default function CadenceDashboard() {
+  const [cadences, setCadences] = useState<ContactCadence[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  useEffect(() => {
+    fetchCadences();
+  }, []);
+  
+  const fetchCadences = async () => {
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+      const res = await fetch(`${API_BASE}/api/cadences/active`);
+      
+      if (data.success) {
+        // Transform API data to component format
+        const transformed = data.cadences.map((c: any) => ({
+          id: c.id,
+          name: `${c.firstname || ''} ${c.lastname || ''}`.trim() || 'Unknown',
+          company: c.company || 'No company',
+          email: c.email || '',
+          currentStep: c.completed_touches || 0,
+          totalSteps: c.total_touches || 0,
+          status: c.status as 'active' | 'paused' | 'completed',
+          lastActivity: c.last_touch_at 
+            ? new Date(c.last_touch_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            : 'Not started',
+          nextAction: `Touch #${(c.completed_touches || 0) + 1}`,
+          score: c.priority_score || 0,
+        }));
+        
+        setCadences(transformed);
+      }
+    } catch (err) {
+      console.error('Failed to fetch cadences:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+  
+  const handlePauseSequence = async (sequenceId: number) => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/cadences/${sequenceId}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'manual_pause' })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        fetchCadences(); // Refresh
+      }
+    } catch (err) {
+      console.error('Failed to pause sequence:', err);
+    }
+  };
+  
+  const handleStopSequence = async (sequenceId: number) => {
+    if (!window.confirm('Stop this cadence permanently?')) return;
+    
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE || "http://localhost:8000"}/api/cadences/${sequenceId}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'manual_stop' })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        fetchCadences(); // Refresh
+      }
+    } catch (err) {
+      console.error('Failed to stop sequence:', err);
+    }
+  };
+  
+  const stats = [
+    { 
+      label: 'Active Sequences', 
+      value: cadences.filter(c => c.status === 'active').length,
+      icon: Play,
+      color: '#22c55e'
+    },
+    { 
+      label: 'Completed Steps', 
+      value: cadences.reduce((sum, c) => sum + c.currentStep, 0),
+      icon: CheckCircle,
+      color: '#6366f1'
+    },
+    { 
+      label: 'Total Touches', 
+      value: cadences.reduce((sum, c) => sum + c.totalSteps, 0),
+      icon: TrendingUp,
+      color: '#f97316'
+    },
+    { 
+      label: 'Avg Completion', 
+      value: cadences.length > 0 
+        ? `${Math.round((cadences.reduce((sum, c) => sum + (c.currentStep / c.totalSteps), 0) / cadences.length) * 100)}%`
+        : '0%',
+      icon: Clock,
+      color: '#a855f7'
+    }
+  ];
+  
+  const cadenceTemplates = [
+    { id: 'aggressive', name: 'Aggressive Outreach', days: 7, steps: 5, color: '#ef4444' },
+    { id: 'standard', name: 'Standard Follow-Up', days: 14, steps: 5, color: '#6366f1' },
+    { id: 'nurture', name: 'Long-Term Nurture', days: 30, steps: 5, color: '#22c55e' }
+  ];
+  
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+      }}>
+        <Loader size={48} style={{ color: '#6366f1', animation: 'spin 1s linear infinite' }} />
+      </div>
+    );
+  }
+  
+  return (
+    <div style={{ 
+      padding: 32,
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+    }}>
+      {/* Header */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ 
+              fontSize: 32, 
+              fontWeight: 800, 
+              color: '#e5e7eb',
+              marginBottom: 8,
+              letterSpacing: -0.5,
+            }}>
+              Cadence Management
+            </h1>
+            <p style={{ fontSize: 14, color: '#9ca3af' }}>
+              Manage outreach sequences and track engagement
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setRefreshing(true);
+              fetchCadences();
+            }}
+            disabled={refreshing}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 8,
+              border: '1px solid rgba(99,102,241,0.5)',
+              background: 'rgba(79,70,229,0.2)',
+              color: '#e5e7eb',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: refreshing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <RefreshCw 
+              size={16} 
+              style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} 
+            />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+    
+      {/* Stats Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: 20,
+        marginBottom: 32,
+      }}>
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <div
+              key={stat.label}
+              style={{
+                background: 'rgba(15,23,42,0.9)',
+                borderRadius: 12,
+                padding: 20,
+                border: '1px solid rgba(148,163,184,0.3)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                marginBottom: 12 
+              }}>
+                <Icon size={20} style={{ color: stat.color }} />
+              </div>
+              <div style={{ 
+                fontSize: 28, 
+                fontWeight: 700, 
+                color: '#e5e7eb',
+                marginBottom: 4 
+              }}>
+                {stat.value}
+              </div>
+              <div style={{ fontSize: 12, color: '#9ca3af' }}>
+                {stat.label}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    
+      {/* Main Content Grid */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: cadences.length > 0 ? '1fr 350px' : '1fr', 
+        gap: 24 
+      }}>
+        {/* Active Cadences */}
+        <div style={{
+          background: 'rgba(15,23,42,0.95)',
+          borderRadius: 16,
+          border: '1px solid rgba(148,163,184,0.3)',
+          overflow: 'hidden',
+        }}>
+          {/* Table Header */}
+          <div style={{
+            padding: '20px 24px',
+            borderBottom: '1px solid rgba(148,163,184,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
+            <h2 style={{ 
+              fontSize: 18, 
+              fontWeight: 600, 
+              color: '#e5e7eb' 
+            }}>
+              Active Sequences ({cadences.length})
+            </h2>
+          </div>
+    
+          {/* Table or Empty State */}
+          {cadences.length === 0 ? (
+            <div style={{
+              padding: 60,
+              textAlign: 'center',
+              color: '#9ca3af',
+            }}>
+              <Calendar size={56} style={{ marginBottom: 20, color: '#64748b' }} />
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#e5e7eb', marginBottom: 8 }}>
+                No Active Cadences
+              </div>
+              <div style={{ fontSize: 14, marginBottom: 24 }}>
+                Add contacts to cadences from the Apex Intelligence or Contacts view
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: 0 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{
+                    borderBottom: '1px solid rgba(148,163,184,0.2)',
+                    background: 'rgba(15,23,42,0.5)',
+                  }}>
+                    <th style={thStyle}>Contact</th>
+                    <th style={thStyle}>Progress</th>
+                    <th style={thStyle}>Next Action</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cadences.map((cadence) => (
+                    <tr
+                      key={cadence.id}
+                      style={{
+                        borderBottom: '1px solid rgba(148,163,184,0.1)',
+                        transition: 'background 0.2s',
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(79,70,229,0.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      <td style={cellStyle}>
+                        <div>
+                          <div style={{ 
+                            fontWeight: 500, 
+                            color: '#e5e7eb',
+                            marginBottom: 2 
+                          }}>
+                            {cadence.name}
+                          </div>
+                          <div style={{ 
+                            fontSize: 12, 
+                            color: '#9ca3af' 
+                          }}>
+                            {cadence.company}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={cellStyle}>
+                        <div>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginBottom: 4,
+                          }}>
+                            <div style={{
+                              flex: 1,
+                              height: 6,
+                              background: 'rgba(148,163,184,0.2)',
+                              borderRadius: 3,
+                              overflow: 'hidden',
+                            }}>
+                              <div style={{
+                                width: `${(cadence.currentStep / cadence.totalSteps) * 100}%`,
+                                height: '100%',
+                                background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                                borderRadius: 3,
+                                transition: 'width 0.3s',
+                              }} />
+                            </div>
+                            <span style={{ 
+                              fontSize: 12, 
+                              color: '#9ca3af',
+                              minWidth: 40 
+                            }}>
+                              {cadence.currentStep}/{cadence.totalSteps}
+                            </span>
+                          </div>
+                          <div style={{ 
+                            fontSize: 11, 
+                            color: '#64748b' 
+                          }}>
+                            Last: {cadence.lastActivity}
+                          </div>
+                        </div>
+                      </td>
+                      <td style={cellStyle}>
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}>
+                          <Mail size={14} style={{ color: '#6366f1' }} />
+                          <span style={{ fontSize: 13, color: '#e5e7eb' }}>
+                            {cadence.nextAction}
+                          </span>
+                        </div>
+                      </td>
+                      <td style={cellStyle}>
+                        <span style={{
+                          padding: '4px 10px',
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: cadence.status === 'active' 
+                            ? 'rgba(34,197,94,0.15)'
+                            : cadence.status === 'completed'
+                            ? 'rgba(99,102,241,0.15)'
+                            : 'rgba(148,163,184,0.15)',
+                          color: cadence.status === 'active'
+                            ? '#22c55e'
+                            : cadence.status === 'completed'
+                            ? '#6366f1'
+                            : '#9ca3af',
+                          textTransform: 'uppercase',
+                        }}>
+                          {cadence.status}
+                        </span>
+                      </td>
+                      <td style={cellStyle}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {cadence.status === 'active' ? (
+                            <button
+                              onClick={() => handlePauseSequence(cadence.id)}
+                              style={{
+                                padding: 6,
+                                borderRadius: 6,
+                                border: '1px solid rgba(245,158,11,0.5)',
+                                background: 'rgba(245,158,11,0.15)',
+                                color: '#fbbf24',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                              }}
+                              title="Pause"
+                            >
+                              <Pause size={14} />
+                            </button>
+                          ) : null}
+                          <button
+                            onClick={() => handleStopSequence(cadence.id)}
+                            style={{
+                              padding: 6,
+                              borderRadius: 6,
+                              border: '1px solid rgba(239,68,68,0.5)',
+                              background: 'rgba(239,68,68,0.15)',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                            title="Stop"
+                          >
+                            <SkipForward size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+    
+        {/* Sidebar - Cadence Templates (only show if we have cadences) */}
+        {cadences.length > 0 && (
+          <div style={{
+            background: 'rgba(15,23,42,0.95)',
+            borderRadius: 16,
+            border: '1px solid rgba(148,163,184,0.3)',
+            padding: 24,
+            height: 'fit-content',
+          }}>
+            <h3 style={{ 
+              fontSize: 16, 
+              fontWeight: 600, 
+              color: '#e5e7eb',
+              marginBottom: 20 
+            }}>
+              Cadence Templates
+            </h3>
+          
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {cadenceTemplates.map((template) => (
+                <div
+                  key={template.id}
+                  style={{
+                    padding: 16,
+                    background: 'rgba(30,41,59,0.5)',
+                    borderRadius: 10,
+                    border: `1px solid ${template.color}40`,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = `${template.color}15`;
+                    e.currentTarget.style.borderColor = `${template.color}60`;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(30,41,59,0.5)';
+                    e.currentTarget.style.borderColor = `${template.color}40`;
+                  }}
+                >
+                  <div style={{ 
+                    fontWeight: 600, 
+                    color: '#e5e7eb',
+                    marginBottom: 8,
+                    fontSize: 14,
+                  }}>
+                    {template.name}
+                  </div>
+                  <div style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between',
+                    fontSize: 12,
+                    color: '#9ca3af' 
+                  }}>
+                    <span>{template.days} days</span>
+                    <span>{template.steps} touches</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          
+            {/* Quick Stats */}
+            <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid rgba(148,163,184,0.2)' }}>
+              <h3 style={{ 
+                fontSize: 14, 
+                fontWeight: 600, 
+                color: '#e5e7eb',
+                marginBottom: 16 
+              }}>
+                Quick Stats
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: '#9ca3af' }}>Active:</span>
+                  <span style={{ color: '#22c55e', fontWeight: 600 }}>
+                    {cadences.filter(c => c.status === 'active').length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: '#9ca3af' }}>Paused:</span>
+                  <span style={{ color: '#fbbf24', fontWeight: 600 }}>
+                    {cadences.filter(c => c.status === 'paused').length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                  <span style={{ color: '#9ca3af' }}>Completed:</span>
+                  <span style={{ color: '#6366f1', fontWeight: 600 }}>
+                    {cadences.filter(c => c.status === 'completed').length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    
+      {/* CSS */}
+      <style>
+        {`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+    </div>
+  );
+}
+
+const thStyle: React.CSSProperties = {
+  padding: '16px 20px',
+  textAlign: 'left',
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+  color: '#9ca3af',
+};
+
+const cellStyle: React.CSSProperties = {
+  padding: '20px',
+  fontSize: 13,
+  color: '#e5e7eb',
+  background: 'transparent',
+  verticalAlign: 'middle',
+};
+
+
+const actionButtonStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '10px 14px',
+  borderRadius: 8,
+  border: '1px solid rgba(148,163,184,0.3)',
+  background: 'rgba(30,41,59,0.4)',
+  color: '#e5e7eb',
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+};
