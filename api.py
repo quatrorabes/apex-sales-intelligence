@@ -95,15 +95,21 @@ sys.path.insert(0, scoring_path)
 try:
   from unified_apex_scorer import UnifiedApexScorer
   SCORING_AVAILABLE = True
-  # DON'T create scorer at startup - create fresh instance per request
-  print("✅ Unified Apex Scoring Engine loaded")
+  
+  # Pass correct database path based on environment
+  if IS_PRODUCTION:
+    # Railway uses PostgreSQL - pass DATABASE_URL
+    SCORING_DB_PATH = DATABASE_URL
+  else:
+    # Local uses SQLite
+    SCORING_DB_PATH = DB_PATH
+    
+  print(f"✅ Unified Apex Scoring Engine loaded (DB: {'PostgreSQL' if IS_PRODUCTION else 'SQLite'})")
 except ImportError as e:
   print(f"⚠️  Scoring engine not available: {e}")
   SCORING_AVAILABLE = False
+  SCORING_DB_PATH = None
   
-# ═══════════════════════════════════════════════════════════════════════════
-# INLINE PROFILE BUILDER ENRICHMENT ENGINE (3-Stage Intelligence)
-
 # ═══════════════════════════════════════════════════════════════════════════
 # INLINE PROFILE BUILDER ENRICHMENT ENGINE (3-Stage Intelligence)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1408,8 +1414,9 @@ def score_contact_endpoint(contact_id):
     return jsonify({'error': 'Scoring engine not available'}), 503
   
   try:
-    # Create fresh scorer instance for this request (thread-safe)
-    unified_scorer = UnifiedApexScorer(db_path=DB_PATH)
+    # Use correct database for environment
+    scoring_db = DATABASE_URL if IS_PRODUCTION else DB_PATH
+    unified_scorer = UnifiedApexScorer(db_path=scoring_db)
     result = unified_scorer.score_contact_unified(contact_id, save_to_db=True)
     
     return jsonify({
@@ -1454,8 +1461,9 @@ def bulk_score_endpoint():
     return jsonify({'error': 'No contact_ids provided'}), 400
   
   try:
-    # Create fresh scorer instance for this request (thread-safe)
-    unified_scorer = UnifiedApexScorer(db_path=DB_PATH)
+    # Use correct database for environment
+    scoring_db = DATABASE_URL if IS_PRODUCTION else DB_PATH
+    unified_scorer = UnifiedApexScorer(db_path=scoring_db)
     results = unified_scorer.bulk_score_unified(contact_ids)
     
     return jsonify({
