@@ -68,8 +68,9 @@ class LeadTypeProfile:
     @classmethod
     def get_profile(cls, lead_type: str) -> Dict:
         """Get profile for lead type"""
+        if not lead_type:
+            lead_type = 'BORROWER'
         return cls.PROFILES.get(lead_type.upper(), cls.PROFILES['BORROWER'])
-
 # ============================================================================
 # MAIN SCORING ENGINE
 # ============================================================================
@@ -79,7 +80,7 @@ class ApexScoringEngine:
     
     VERSION = "1.0.0"
     
-    def __init__(self, db_path: str = "./apex.db"):
+    def __init__(self, db_path: str = "/Users/chrisrabenold/projects/apex/apex.db"):
         """Initialize scoring engine"""
         self.db_path = db_path
         self.db = sqlite3.connect(db_path)
@@ -102,7 +103,7 @@ class ApexScoringEngine:
         
         # Determine lifecycle stage
         lifecycle_stage = self.determine_lifecycle_stage(contact)
-        lead_type = contact.get('lead_type', 'BORROWER')
+        lead_type = contact.get('lead_type') or 'BORROWER'
         
         # Calculate scores
         mdcp_result = self.calculate_mdcp_score(contact, lead_type, lifecycle_stage)

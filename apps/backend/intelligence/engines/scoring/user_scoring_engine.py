@@ -11,7 +11,7 @@ class UserSpecificScoringEngine:
     
     def __init__(self, user_id: str = None, db_path: str = None):
         self.user_id = user_id or os.getenv('CURRENT_USER_ID', 'default')
-        self.db_path = db_path or '/Users/chrisrabenold/projects/apex/apex.db'
+        self.db_path = db_path or '/Users/chrisrabenold/projects/apex.db'
         self.preferences = self._load_user_preferences()
         
     def _load_user_preferences(self) -> Dict:

@@ -22,6 +22,9 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 import requests
+import sqlite3
+
+
 
 # ================================================================
 # ENVIRONMENT SETUP
@@ -75,7 +78,29 @@ scoring_engine = None
 auto_sequence_engine = None
 cadence_router = None
 
+# ============================================================================
+# ENVIRONMENT & DATABASE SETUP
+# ============================================================================
 
+# Database path
+DB_PATH = os.path.join(os.path.dirname(__file__), 'apex.db')
+
+# ============================================================================
+# APEX UNIFIED SCORING INTEGRATION
+# ============================================================================
+
+scoring_path = os.path.join(os.path.dirname(__file__), 'apps', 'backend', 'intelligence', 'engines', 'scoring')
+sys.path.insert(0, scoring_path)
+
+try:
+  from unified_apex_scorer import UnifiedApexScorer
+  SCORING_AVAILABLE = True
+  # DON'T create scorer at startup - create fresh instance per request
+  print("✅ Unified Apex Scoring Engine loaded")
+except ImportError as e:
+  print(f"⚠️  Scoring engine not available: {e}")
+  SCORING_AVAILABLE = False
+  
 # ═══════════════════════════════════════════════════════════════════════════
 # INLINE PROFILE BUILDER ENRICHMENT ENGINE (3-Stage Intelligence)
 
@@ -392,50 +417,57 @@ CORS(app)
 PORT = int(os.getenv('PORT', 8000))
 
 if IS_PRODUCTION:
-    # PRODUCTION: PostgreSQL on Railway
-    DATABASE_URL = os.getenv('DATABASE_URL')
-    logger.info(f"📊 Database: PostgreSQL (Railway)")
-
-    # Import PostgreSQL adapter
-    try:
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
-
-        def get_db():
-            """Get PostgreSQL database connection"""
-            conn = psycopg2.connect(DATABASE_URL)
-            return conn
-
-        def dict_cursor(conn):
-            """Get dictionary cursor for PostgreSQL"""
-            return conn.cursor(cursor_factory=RealDictCursor)
-
-        logger.info("✅ PostgreSQL adapter loaded")
-    except ImportError:
-        logger.error("❌ psycopg2 not installed - install with: pip install psycopg2-binary")
-        raise
-else:
-    # LOCAL: SQLite for development
-    import sqlite3
-
-    DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
-    logger.info(f"📊 Database: SQLite ({DATABASE})")
-
+  # PRODUCTION: PostgreSQL on Railway
+  DATABASE_URL = os.getenv('DATABASE_URL')
+  logger.info(f"📊 Database: PostgreSQL (Railway)")
+  
+  # Import PostgreSQL adapter
+  try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    
     def get_db():
-        """Get SQLite database connection"""
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        return conn
-
+      """Get PostgreSQL database connection"""
+      conn = psycopg2.connect(DATABASE_URL)
+      return conn
+    
     def dict_cursor(conn):
-        """Get cursor for SQLite (returns Row objects that act like dicts)"""
-        return conn.cursor()
+      """Get dictionary cursor for PostgreSQL"""
+      return conn.cursor(cursor_factory=RealDictCursor)
+    
+    logger.info("✅ PostgreSQL adapter loaded")
+  except ImportError:
+    logger.error("❌ psycopg2 not installed - install with: pip install psycopg2-binary")
+    raise
+    
+else:
+  # LOCAL: SQLite for development
+  import sqlite3
+  
+  DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
+  logger.info(f"📊 Database: SQLite ({DATABASE})")
+  
+  def get_db():
+    """Get SQLite database connection"""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+  
+  def dict_cursor(conn):
+    """Get cursor for SQLite (returns Row objects that act like dicts)"""
+    return conn.cursor()
+  
+# ADD THIS FUNCTION HERE (after both if/else blocks)
+def get_db_connection():
+  """Alias for get_db() - used by scoring endpoints"""
+  return get_db()
 
 logger.info(f"🚀 Server Port: {PORT}")
 
 # ================================================================
 # DATABASE SCHEMA MANAGEMENT
 # ================================================================
+
 def ensure_schema():
     """Ensure all required tables and columns exist"""
     conn = get_db()
@@ -874,146 +906,6 @@ Include all the original research, then add these structured sections.
     logger.error(traceback.format_exc())
     return jsonify({'success': False, 'error': str(e)}), 500
   
-  
-  # ================================================================
-  # API ENDPOINTS - TODAY'S BOARD (PHASE 2)
-  # ================================================================
-
-@app.route('/api/todays-board', methods=['GET'])
-def get_todays_board():
-    """Generate daily prioritized action list"""
-    try:
-        conn = get_db()
-        cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
-
-        # Date calculation differs between PostgreSQL and SQLite
-        if IS_PRODUCTION:
-          # INTEGER difference; avoids EXTRACT() type error
-          date_calc = (
-            "CASE WHEN last_contact_date IS NOT NULL "
-            "AND last_contact_date <> '' "
-            "THEN (CURRENT_DATE - last_contact_date::date) "
-            "ELSE 999 END"
-          )
-        else:
-          date_calc = "CAST(julianday('now') - julianday(last_contact_date) AS INTEGER)"
-          
-      # RELATIONSHIPS QUERY
-        query = f"""
-            SELECT 
-                id, name, email, company, title, priority_score,
-                enrichment_status, last_contact_date,
-                CASE 
-                    WHEN last_contact_date IS NULL THEN 0
-                    ELSE {date_calc}
-                END AS days_since_contact
-            FROM contacts
-            WHERE enrichment_status = 'completed'
-              AND last_contact_date IS NOT NULL
-              AND last_contact_date {'!=' if not IS_PRODUCTION else '<>'} ''
-            LIMIT 30
-        """
-
-        cursor.execute(query)
-
-        if IS_PRODUCTION:
-            relationships = cursor.fetchall()
-        else:
-            relationships = [dict(row) for row in cursor.fetchall()]
-
-        # Process relationships
-        for c in relationships:
-            days = c.get('days_since_contact', 0)
-
-            if days >= 365:
-                c['urgency_tier'] = 'urgent'
-                c['urgency_label'] = '🔥 ACT TODAY'
-                c['why_now'] = f"Last spoke {days} days ago - going cold"
-            elif days >= 180:
-                c['urgency_tier'] = 'warm'
-                c['urgency_label'] = '⏰ THIS WEEK'
-                c['why_now'] = f"Last spoke {days} days ago"
-            elif days >= 90:
-                c['urgency_tier'] = 'nurture'
-                c['urgency_label'] = '🌱 NURTURE'
-                c['why_now'] = f"Last spoke {days} days ago"
-            else:
-                c['urgency_tier'] = 'stable'
-                c['urgency_label'] = '✅ STABLE'
-                c['why_now'] = "Recent contact"
-
-            c['contact_type'] = 'relationship'
-
-        # PROSPECTS QUERY
-        cursor.execute("""
-            SELECT 
-                id, name, email, company, title, priority_score,
-                enrichment_status
-            FROM contacts
-            WHERE enrichment_status = 'completed'
-              AND (last_contact_date IS NULL OR last_contact_date = '')
-              AND priority_score >= 60
-            LIMIT 15
-        """)
-
-        if IS_PRODUCTION:
-            prospects = cursor.fetchall()
-        else:
-            prospects = [dict(row) for row in cursor.fetchall()]
-
-        # Process prospects
-        for c in prospects:
-            p = c.get('priority_score', 0)
-
-            if p >= 85:
-                c['urgency_tier'] = 'hot_prospect'
-                c['urgency_label'] = '🔥 HOT'
-            elif p >= 75:
-                c['urgency_tier'] = 'qualified_prospect'
-                c['urgency_label'] = '✅ QUALIFIED'
-            else:
-                c['urgency_tier'] = 'potential_prospect'
-                c['urgency_label'] = '🎯 POTENTIAL'
-
-            c['contact_type'] = 'prospect'
-
-        # Organize by tiers
-        urgent = [c for c in relationships if c['urgency_tier'] == 'urgent']
-        warm = [c for c in relationships if c['urgency_tier'] == 'warm']
-
-        hot = [c for c in prospects if c['urgency_tier'] == 'hot_prospect']
-        qualified = [c for c in prospects if c['urgency_tier'] == 'qualified_prospect']
-
-        conn.close()
-
-        return jsonify({
-            "success": True,
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%I:%M %p"),
-            "environment": ENVIRONMENT,
-            "relationships": {
-                "total": len(relationships),
-                "tiers": {
-                    "urgent": urgent[:5],
-                    "warm": warm[:5]
-                }
-            },
-            "new_prospects": {
-                "total": len(prospects),
-                "tiers": {
-                    "hot": hot[:5],
-                    "qualified": qualified[:5]
-                }
-            }
-        })
-    except Exception as e:
-        logger.error(f"Today's Board error: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({"success": False, "error": str(e)}), 500
-
-# ================================================================
-# MAIN
-# ================================================================
 
 
 # ============================================================================
@@ -1503,9 +1395,146 @@ def score_all_contacts():
     except Exception as e:
         logger.error(f"❌ Scoring failed: {e}")
         return {"success": False, "error": str(e)}, 500
+    
+# ============================================================================
+# SCORING ENDPOINTS
+# ============================================================================
+  
+@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
+def score_contact_endpoint(contact_id):
+  """Score a contact with unified MDCP + CRE intelligence"""
+  
+  if not SCORING_AVAILABLE:
+    return jsonify({'error': 'Scoring engine not available'}), 503
+  
+  try:
+    # Create fresh scorer instance for this request (thread-safe)
+    unified_scorer = UnifiedApexScorer(db_path=DB_PATH)
+    result = unified_scorer.score_contact_unified(contact_id, save_to_db=True)
+    
+    return jsonify({
+      'success': True,
+      'contact_id': contact_id,
+      'contact_name': result['contact_name'],
+      'company': result['company'],
+      'scores': {
+        'mdcp': result['mdcp_score'],
+        'mdcp_tier': result['mdcp_tier'],
+        'rss': result['rss_score'],
+        'rss_tier': result['rss_tier'],
+        'priority': result['priority_score'],
+        'urgency': result['urgency_level']
+      },
+      'action': result['recommended_action'],
+      'cre_applied': result.get('cre_vertical_applied', False),
+      'lifecycle_stage': result['lifecycle_stage'],
+      'lead_type': result['lead_type'],
+      'timestamp': result['calculated_at']
+    }), 200
+  
+  except Exception as e:
+    import traceback
+    return jsonify({
+      'error': str(e),
+      'traceback': traceback.format_exc()
+    }), 500
+  
+  
+@app.route('/api/contacts/score/bulk', methods=['POST'])
+def bulk_score_endpoint():
+  """Score multiple contacts"""
+  
+  if not SCORING_AVAILABLE:
+    return jsonify({'error': 'Scoring engine not available'}), 503
+  
+  data = request.json
+  contact_ids = data.get('contact_ids', [])
+  
+  if not contact_ids:
+    return jsonify({'error': 'No contact_ids provided'}), 400
+  
+  try:
+    # Create fresh scorer instance for this request (thread-safe)
+    unified_scorer = UnifiedApexScorer(db_path=DB_PATH)
+    results = unified_scorer.bulk_score_unified(contact_ids)
+    
+    return jsonify({
+      'success': True,
+      'count': len(results),
+      'results': results
+    }), 200
+  
+  except Exception as e:
+    import traceback
+    return jsonify({
+      'error': str(e),
+      'traceback': traceback.format_exc()
+    }), 500
+  
+  
+@app.route('/api/todays-board', methods=['GET'])
+def todays_board():
+  """Get today's prioritized contacts based on unified scoring"""
+  
+  try:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Get top-priority scored contacts
+    cursor.execute("""
+      SELECT 
+        id, name, email, company, title,
+        mdcp_score, mdcp_tier,
+        rss_score, rss_tier,
+        priority_score, urgency_level,
+        recommended_action, last_scored,
+        last_contact_date, lead_type
+      FROM contacts 
+      WHERE priority_score IS NOT NULL 
+      ORDER BY priority_score DESC, last_scored DESC
+      LIMIT 50
+    """)
+    
+    contacts = [dict(row) for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    # Group by urgency
+    board = {
+      'IMMEDIATE': [],
+      'HIGH': [],
+      'MEDIUM': [],
+      'LOW': []
+    }
+    
+    for contact in contacts:
+      urgency = contact.get('urgency_level', 'LOW')
+      board.get(urgency, board['LOW']).append(contact)
+      
+    return jsonify({
+      'success': True,
+      'timestamp': datetime.now().isoformat(),
+      'board': board,
+      'total_contacts': len(contacts),
+      'breakdown': {
+        'IMMEDIATE': len(board['IMMEDIATE']),
+        'HIGH': len(board['HIGH']),
+        'MEDIUM': len(board['MEDIUM']),
+        'LOW': len(board['LOW'])
+      }
+    }), 200
+  
+  except Exception as e:
+    import traceback
+    return jsonify({
+      'error': str(e),
+      'traceback': traceback.format_exc()
+    }), 500
+  
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
     logger.info(f'🚀 Server Port: {port}')
     app.run(host='0.0.0.0', port=port, debug=True)
   # Force deploy Mon Dec  1 12:23:48 PST 2025
+  
