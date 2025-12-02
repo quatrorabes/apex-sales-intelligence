@@ -1511,9 +1511,18 @@ def todays_board():
       urgency = contact.get('urgency_level', 'LOW')
       board.get(urgency, board['LOW']).append(contact)
       
+    # Separate relationships vs new prospects
+    relationships = [c for c in contacts if c.get('last_contact_date')]
+    prospects = [c for c in contacts if not c.get('last_contact_date')]
+    
     return jsonify({
       'success': True,
       'timestamp': datetime.now().isoformat(),
+      'date': datetime.now().strftime('%Y-%m-%d'),
+      'time': datetime.now().strftime('%I:%M %p'),
+      'environment': 'PRODUCTION' if IS_PRODUCTION else 'LOCAL',
+  
+      # NEW FORMAT (unified scoring)
       'board': board,
       'total_contacts': len(contacts),
       'breakdown': {
@@ -1521,6 +1530,22 @@ def todays_board():
         'HIGH': len(board['HIGH']),
         'MEDIUM': len(board['MEDIUM']),
         'LOW': len(board['LOW'])
+      },
+  
+      # OLD FORMAT (backward compatible with Dashboard)
+      'relationships': {
+        'total': len(relationships),
+        'tiers': {
+          'urgent': [c for c in relationships if c.get('urgency_level') == 'IMMEDIATE'][:5],
+          'warm': [c for c in relationships if c.get('urgency_level') == 'HIGH'][:5]
+        }
+      },
+      'new_prospects': {
+        'total': len(prospects),
+        'tiers': {
+          'hot': [c for c in prospects if c.get('urgency_level') == 'IMMEDIATE'][:5],
+          'qualified': [c for c in prospects if c.get('urgency_level') == 'HIGH'][:5]
+        }
       }
     }), 200
   
