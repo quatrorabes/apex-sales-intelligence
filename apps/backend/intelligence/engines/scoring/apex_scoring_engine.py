@@ -1,203 +1,116 @@
 #!/usr/bin/env python3
 """
 Apex Intelligence - Main Scoring Engine
-Adaptive MDCP + RSS scoring with lifecycle tracking for commercial real estate lending
+Adaptive MDCP + RSS scoring with lifecycle tracking
 Supports both SQLite (local) and PostgreSQL (Railway)
-
-Version: 2.0.0
+Version: 2.1.0 - FIXED
 """
 
 import os
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, List, Optional
 
-# ============================================================================
-# DATABASE ABSTRACTION LAYER
-# ============================================================================
 
 class DatabaseAdapter:
     """Database adapter that supports both SQLite and PostgreSQL"""
     
     def __init__(self, db_path: str = None):
-        """Initialize database connection based on environment"""
-        # Auto-detect database type
         if db_path is None:
             db_path = os.getenv('DATABASE_URL') or '/Users/chrisrabenold/projects/apex/apex.db'
         
         self.db_path = db_path
-        self.is_postgres = db_path.startswith('postgres')
+        self.is_postgres = db_path.startswith('postgres') if db_path else False
         self.conn = None
-        self.cursor = None
-        
         self._connect()
     
     def _connect(self):
-        """Establish database connection"""
         if self.is_postgres:
-            try:
-                import psycopg2
-                from psycopg2.extras import RealDictCursor
-                self.conn = psycopg2.connect(self.db_path)
-                self.cursor = self.conn.cursor(cursor_factory=RealDictCursor)
-            except ImportError:
-                raise ImportError("psycopg2 not installed. Run: pip install psycopg2-binary")
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            self.conn = psycopg2.connect(self.db_path)
+            self._cursor = self.conn.cursor(cursor_factory=RealDictCursor)
         else:
             import sqlite3
             self.conn = sqlite3.connect(self.db_path)
             self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
+            self._cursor = self.conn.cursor()
     
     def execute(self, query: str, params: tuple = None):
-        """Execute query with proper parameter style"""
         if self.is_postgres:
-            # Convert ? to %s for PostgreSQL
             query = query.replace('?', '%s')
-        
         if params:
-            self.cursor.execute(query, params)
+            self._cursor.execute(query, params)
         else:
-            self.cursor.execute(query)
+            self._cursor.execute(query)
     
     def fetchone(self) -> Optional[Dict]:
-        """Fetch one row as dict"""
-        row = self.cursor.fetchone()
-        if row is None:
-            return None
-        return dict(row)
+        row = self._cursor.fetchone()
+        return dict(row) if row else None
     
     def fetchall(self) -> List[Dict]:
-        """Fetch all rows as list of dicts"""
-        rows = self.cursor.fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row) for row in self._cursor.fetchall()]
     
     def commit(self):
-        """Commit transaction"""
         self.conn.commit()
     
     def rollback(self):
-        """Rollback transaction"""
         self.conn.rollback()
     
     def close(self):
-        """Close connection"""
         if self.conn:
             self.conn.close()
 
 
-# ============================================================================
-# INLINE UTILITIES
-# ============================================================================
-
-def safe_divide(numerator: float, denominator: float, default: float = 0.0) -> float:
-    """Safely divide two numbers"""
-    try:
-        return numerator / denominator if denominator != 0 else default
-    except:
-        return default
-
-def normalize_score(value: float, min_val: float, max_val: float) -> float:
-    """Normalize a value to 0-100 scale"""
-    if max_val == min_val:
-        return 50.0
-    return max(0, min(100, ((value - min_val) / (max_val - min_val)) * 100))
-
-def calculate_days_between(date1, date2=None) -> int:
-    """Calculate days between two dates"""
-    if date2 is None:
-        date2 = datetime.now()
-    try:
-        if isinstance(date1, str):
-            date1 = datetime.fromisoformat(date1.replace('Z', '+00:00'))
-        if isinstance(date2, str):
-            date2 = datetime.fromisoformat(date2.replace('Z', '+00:00'))
-        return abs((date2 - date1).days)
-    except:
-        return 0
-
-
-# ============================================================================
-# LEAD TYPE PROFILES
-# ============================================================================
-
 class LeadTypeProfile:
-    """Lead type configuration and MDCP weights"""
-    
     PROFILES = {
-        'BANKER': {
-            'mdcp_weights': {'Money': 0.30, 'Decision': 0.25, 'Credibility': 0.30, 'Pain': 0.15}
-        },
-        'CDC': {
-            'mdcp_weights': {'Money': 0.35, 'Decision': 0.20, 'Credibility': 0.30, 'Pain': 0.15}
-        },
-        'BROKER': {
-            'mdcp_weights': {'Money': 0.40, 'Decision': 0.20, 'Credibility': 0.20, 'Pain': 0.20}
-        },
-        'PRIVATE_LENDER': {
-            'mdcp_weights': {'Money': 0.35, 'Decision': 0.25, 'Credibility': 0.25, 'Pain': 0.15}
-        },
-        'BORROWER': {
-            'mdcp_weights': {'Money': 0.35, 'Decision': 0.25, 'Credibility': 0.25, 'Pain': 0.15}
-        }
+        'BANKER': {'mdcp_weights': {'Money': 0.30, 'Decision': 0.25, 'Credibility': 0.30, 'Pain': 0.15}},
+        'CDC': {'mdcp_weights': {'Money': 0.35, 'Decision': 0.20, 'Credibility': 0.30, 'Pain': 0.15}},
+        'BROKER': {'mdcp_weights': {'Money': 0.40, 'Decision': 0.20, 'Credibility': 0.20, 'Pain': 0.20}},
+        'PRIVATE_LENDER': {'mdcp_weights': {'Money': 0.35, 'Decision': 0.25, 'Credibility': 0.25, 'Pain': 0.15}},
+        'BORROWER': {'mdcp_weights': {'Money': 0.35, 'Decision': 0.25, 'Credibility': 0.25, 'Pain': 0.15}}
     }
     
     @classmethod
     def get_profile(cls, lead_type: str) -> Dict:
-        """Get profile for lead type"""
         if not lead_type:
             lead_type = 'BORROWER'
         return cls.PROFILES.get(lead_type.upper(), cls.PROFILES['BORROWER'])
 
 
-# ============================================================================
-# MAIN SCORING ENGINE
-# ============================================================================
-
 class ApexScoringEngine:
-    """Main scoring engine for Apex Intelligence - supports SQLite and PostgreSQL"""
-    
-    VERSION = "2.0.0"
+    VERSION = "2.1.0"
     
     def __init__(self, db_path: str = None):
-        """Initialize scoring engine with database-agnostic adapter"""
         if db_path is None:
             db_path = os.getenv('DATABASE_URL') or '/Users/chrisrabenold/projects/apex/apex.db'
-        
         self.db_path = db_path
-        self.db = DatabaseAdapter(db_path)
-        self.is_postgres = self.db.is_postgres
-        
+        self.is_postgres = db_path.startswith('postgres') if db_path else False
         db_type = "PostgreSQL" if self.is_postgres else "SQLite"
-        print(f"ApexScoringEngine initialized ({db_type})")
+        print(f"ApexScoringEngine v{self.VERSION} initialized ({db_type})")
     
-    def __del__(self):
-        """Clean up database connection"""
-        if hasattr(self, 'db') and self.db:
-            self.db.close()
-    
-    def _get_fresh_connection(self) -> DatabaseAdapter:
-        """Get a fresh database connection (thread-safe)"""
+    def _get_db(self) -> DatabaseAdapter:
         return DatabaseAdapter(self.db_path)
     
+    def fetch_contact_data(self, contact_id: int) -> Optional[Dict]:
+        db = self._get_db()
+        try:
+            db.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+            return db.fetchone()
+        finally:
+            db.close()
+    
     def score_contact(self, contact_id: int, save_to_db: bool = True) -> Dict:
-        """Complete scoring for a single contact"""
         contact = self.fetch_contact_data(contact_id)
         if not contact:
             raise ValueError(f"Contact {contact_id} not found")
         
-        contact = dict(contact)
-        
-        # Determine lifecycle stage
         lifecycle_stage = self.determine_lifecycle_stage(contact)
         lead_type = contact.get('lead_type') or 'BORROWER'
         
-        # Calculate scores
         mdcp_result = self.calculate_mdcp_score(contact, lead_type, lifecycle_stage)
         rss_result = self.calculate_rss_score(contact, lifecycle_stage)
         priority_result = self.calculate_priority_score(
-            mdcp_result['total'],
-            rss_result['total'] if rss_result['total'] else 0,
-            lifecycle_stage,
-            lead_type
+            mdcp_result['total'], rss_result['total'], lifecycle_stage, lead_type
         )
         
         result = {
@@ -221,178 +134,82 @@ class ApexScoringEngine:
         
         if save_to_db:
             self.save_scores_to_db(result)
-        
         return result
     
     def calculate_mdcp_score(self, contact: Dict, lead_type: str, lifecycle_stage: str) -> Dict:
-        """Calculate MDCP score"""
         profile = LeadTypeProfile.get_profile(lead_type)
         weights = profile['mdcp_weights']
         
-        # Calculate components
-        money_score = self.score_money(contact, lead_type)
-        decision_score = self.score_decision(contact, lead_type)
-        credibility_score = self.score_credibility(contact, lead_type, lifecycle_stage)
-        pain_score = self.score_pain(contact, lead_type)
+        money = self._score_money(contact)
+        decision = self._score_decision(contact)
+        credibility = self._score_credibility(lifecycle_stage)
+        pain = 50.0
         
-        # Apply weights
-        total = (
-            money_score * weights['Money'] +
-            decision_score * weights['Decision'] +
-            credibility_score * weights['Credibility'] +
-            pain_score * weights['Pain']
-        )
+        total = money * weights['Money'] + decision * weights['Decision'] + credibility * weights['Credibility'] + pain * weights['Pain']
+        tier = 'HOT' if total >= 85 else 'WARM' if total >= 70 else 'QUALIFIED' if total >= 55 else 'COLD'
         
-        tier = self.classify_mdcp_tier(total)
-        
-        return {
-            'total': round(total, 2),
-            'Money': round(money_score, 2),
-            'Decision': round(decision_score, 2),
-            'Credibility': round(credibility_score, 2),
-            'Pain': round(pain_score, 2),
-            'weights': weights,
-            'tier': tier,
-            'lead_type': lead_type
-        }
+        return {'total': round(total, 2), 'Money': round(money, 2), 'Decision': round(decision, 2),
+                'Credibility': round(credibility, 2), 'Pain': round(pain, 2), 'weights': weights,
+                'tier': tier, 'lead_type': lead_type}
     
-    def score_money(self, contact: Dict, lead_type: str) -> float:
-        """Score Money component"""
-        equity_percent = contact.get('equity_percent', 0) or 0
-        if equity_percent >= 35:
-            return 95.0
-        elif equity_percent >= 30:
-            return 90.0
-        elif equity_percent >= 25:
-            return 80.0
-        elif equity_percent >= 20:
-            return 70.0
-        elif equity_percent >= 15:
-            return 55.0
-        elif equity_percent >= 10:
-            return 40.0
-        else:
-            return 25.0
+    def _score_money(self, contact: Dict) -> float:
+        equity = contact.get('equity_percent', 0) or 0
+        if equity >= 35: return 95.0
+        if equity >= 30: return 90.0
+        if equity >= 25: return 80.0
+        if equity >= 20: return 70.0
+        if equity >= 15: return 55.0
+        if equity >= 10: return 40.0
+        return 25.0
     
-    def score_decision(self, contact: Dict, lead_type: str) -> float:
-        """Score Decision authority"""
-        job_title = (contact.get('title') or '').lower()
-        
-        if any(word in job_title for word in ['ceo', 'president', 'owner', 'founder']):
-            return 95.0
-        elif any(word in job_title for word in ['cfo', 'chief', 'partner']):
-            return 90.0
-        elif any(word in job_title for word in ['vp', 'vice president', 'director']):
-            return 75.0
-        elif any(word in job_title for word in ['manager', 'head of']):
-            return 60.0
-        else:
-            return 50.0
-    
-    def score_credibility(self, contact: Dict, lead_type: str, lifecycle_stage: str) -> float:
-        """Score Credibility"""
-        base_score = 50.0
-        
-        if lifecycle_stage == 'ESTABLISHED':
-            base_score = 80.0
-        elif lifecycle_stage == 'ACTIVE':
-            base_score = 65.0
-        elif lifecycle_stage == 'WARMING':
-            base_score = 50.0
-        
-        return base_score
-    
-    def score_pain(self, contact: Dict, lead_type: str) -> float:
-        """Score Pain/Urgency"""
+    def _score_decision(self, contact: Dict) -> float:
+        title = (contact.get('title') or '').lower()
+        if any(w in title for w in ['ceo', 'president', 'owner', 'founder']): return 95.0
+        if any(w in title for w in ['cfo', 'chief', 'partner']): return 90.0
+        if any(w in title for w in ['vp', 'vice president', 'director']): return 75.0
+        if any(w in title for w in ['manager', 'head of']): return 60.0
         return 50.0
     
-    def classify_mdcp_tier(self, score: float) -> str:
-        """Classify MDCP score into tier"""
-        if score >= 85:
-            return 'HOT'
-        elif score >= 70:
-            return 'WARM'
-        elif score >= 55:
-            return 'QUALIFIED'
-        else:
-            return 'COLD'
+    def _score_credibility(self, lifecycle_stage: str) -> float:
+        if lifecycle_stage == 'ESTABLISHED': return 80.0
+        if lifecycle_stage == 'ACTIVE': return 65.0
+        if lifecycle_stage == 'WARMING': return 50.0
+        return 50.0
     
     def calculate_rss_score(self, contact: Dict, lifecycle_stage: str) -> Dict:
-        """Calculate RSS score based on role seniority and scope"""
         title = (contact.get('title') or '').lower()
         
-        # 1. SENIORITY ANALYSIS (0-40 points)
-        seniority_score = 0
+        seniority = 40 if any(w in title for w in ['ceo', 'cfo', 'coo', 'chief', 'president', 'founder', 'owner', 'partner']) else \
+                   35 if any(w in title for w in ['vp', 'vice president', 'evp', 'svp']) else \
+                   30 if 'director' in title and ('senior' in title or 'sr.' in title) else \
+                   25 if 'director' in title else \
+                   20 if 'manager' in title and ('senior' in title or 'sr.' in title) else \
+                   15 if 'manager' in title else \
+                   10 if any(w in title for w in ['specialist', 'analyst', 'coordinator', 'associate']) else 5
         
-        if any(word in title for word in ['ceo', 'cfo', 'coo', 'cto', 'chief', 'president', 'founder', 'owner', 'partner']):
-            seniority_score = 40
-        elif any(word in title for word in ['vp', 'vice president', 'evp', 'svp']):
-            seniority_score = 35
-        elif 'director' in title:
-            seniority_score = 30 if ('senior' in title or 'sr.' in title) else 25
-        elif 'manager' in title:
-            seniority_score = 20 if ('senior' in title or 'sr.' in title) else 15
-        elif any(word in title for word in ['specialist', 'analyst', 'coordinator', 'associate']):
-            seniority_score = 10
-        else:
-            seniority_score = 5
+        scope = (15 if any(w in title for w in ['national', 'regional', 'global', 'international']) else 0) + \
+                (10 if any(w in title for w in ['head', 'lead', 'principal']) else 0) + \
+                (5 if any(w in title for w in ['senior', 'sr.']) else 0)
         
-        # 2. SCOPE INDICATORS (0-30 points)
-        scope_score = 0
+        authority = 30 if any(w in title for w in ['director', 'vp', 'president', 'chief', 'head']) else \
+                   20 if any(w in title for w in ['manager', 'supervisor', 'lead']) else \
+                   15 if any(w in title for w in ['senior', 'principal']) else 10
         
-        if any(word in title for word in ['national', 'regional', 'global', 'international']):
-            scope_score += 15
-        if any(word in title for word in ['head', 'lead', 'principal']):
-            scope_score += 10
-        if any(word in title for word in ['senior', 'sr.', 'lead']):
-            scope_score += 5
+        total = seniority + scope + authority
+        if lifecycle_stage == 'ESTABLISHED': total = min(100, total * 1.2)
+        elif lifecycle_stage == 'ACTIVE': total = min(100, total * 1.1)
+        elif lifecycle_stage == 'WARMING': total = min(100, total * 1.05)
         
-        # 3. DECISION AUTHORITY (0-30 points)
-        authority_score = 0
-        
-        if any(word in title for word in ['director', 'vp', 'president', 'chief', 'head']):
-            authority_score = 30
-        elif any(word in title for word in ['manager', 'supervisor', 'lead']):
-            authority_score = 20
-        elif any(word in title for word in ['senior', 'principal']):
-            authority_score = 15
-        else:
-            authority_score = 10
-        
-        # Calculate total RSS
-        total_rss = seniority_score + scope_score + authority_score
-        
-        # Apply lifecycle adjustment
-        if lifecycle_stage == 'ESTABLISHED':
-            total_rss = min(100, total_rss * 1.2)
-        elif lifecycle_stage == 'ACTIVE':
-            total_rss = min(100, total_rss * 1.1)
-        elif lifecycle_stage == 'WARMING':
-            total_rss = min(100, total_rss * 1.05)
-        
-        total_rss = round(total_rss, 2)
-        
-        return {
-            'total': total_rss,
-            'seniority': round(seniority_score, 2),
-            'scope': round(scope_score, 2),
-            'authority': round(authority_score, 2),
-            'tier': self.classify_rss_tier(total_rss)
-        }
+        tier = 'PLATINUM' if total >= 80 else 'GOLD' if total >= 65 else 'SILVER' if total >= 50 else 'BRONZE'
+        return {'total': round(total, 2), 'seniority': seniority, 'scope': scope, 'authority': authority, 'tier': tier}
     
     def classify_rss_tier(self, score: float) -> str:
-        """Classify RSS score"""
-        if score >= 80:
-            return 'PLATINUM'
-        elif score >= 65:
-            return 'GOLD'
-        elif score >= 50:
-            return 'SILVER'
-        else:
-            return 'BRONZE'
+        if score >= 80: return 'PLATINUM'
+        if score >= 65: return 'GOLD'
+        if score >= 50: return 'SILVER'
+        return 'BRONZE'
     
     def calculate_priority_score(self, mdcp: float, rss: float, lifecycle: str, lead_type: str) -> Dict:
-        """Calculate priority score"""
         if lifecycle in ['NEW', 'COLD']:
             priority = mdcp
         elif lifecycle == 'WARMING':
@@ -400,43 +217,21 @@ class ApexScoringEngine:
         else:
             priority = mdcp * 0.60 + rss * 0.40
         
-        if priority >= 80:
-            urgency = 'IMMEDIATE'
-        elif priority >= 65:
-            urgency = 'HIGH'
-        elif priority >= 50:
-            urgency = 'MEDIUM'
-        else:
-            urgency = 'LOW'
+        urgency = 'IMMEDIATE' if priority >= 80 else 'HIGH' if priority >= 65 else 'MEDIUM' if priority >= 50 else 'LOW'
         
-        action = self.get_recommended_action(priority, mdcp, rss, lifecycle, lead_type, urgency)
+        if priority >= 85: action = "🔥 HOT LEAD - Immediate outreach within 1 hour"
+        elif priority >= 70: action = "✅ GOOD OPPORTUNITY - Respond same day"
+        elif priority >= 55: action = "📧 QUALIFIED - Standard outreach within 24 hours"
+        else: action = "👀 MONITOR - Long-term nurture campaign"
         
-        return {
-            'score': round(priority, 2),
-            'urgency': urgency,
-            'action': action
-        }
-    
-    def get_recommended_action(self, priority: float, mdcp: float, rss: float, lifecycle: str, lead_type: str, urgency: str) -> str:
-        """Generate actionable recommendation"""
-        if priority >= 85:
-            return "🔥 HOT LEAD - Immediate outreach within 1 hour"
-        elif priority >= 70:
-            return "✅ GOOD OPPORTUNITY - Respond same day"
-        elif priority >= 55:
-            return "📧 QUALIFIED - Standard outreach within 24 hours"
-        else:
-            return "👀 MONITOR - Long-term nurture campaign"
+        return {'score': round(priority, 2), 'urgency': urgency, 'action': action}
     
     def determine_lifecycle_stage(self, contact: Dict) -> str:
-        """Determine lifecycle stage"""
         created_date = contact.get('created_at')
         if not created_date:
             return 'NEW'
-        
         try:
             if isinstance(created_date, str):
-                # Handle various date formats
                 for fmt in ['%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d']:
                     try:
                         created_date = datetime.strptime(created_date.split('+')[0].split('Z')[0], fmt)
@@ -445,63 +240,32 @@ class ApexScoringEngine:
                         continue
                 else:
                     return 'NEW'
-            
-            days_since_created = (datetime.now() - created_date).days
+            days = (datetime.now() - created_date).days
         except:
             return 'NEW'
         
-        if days_since_created < 30:
-            return 'NEW'
-        elif days_since_created < 90:
-            return 'WARMING'
-        elif days_since_created < 365:
-            return 'ACTIVE'
-        else:
-            return 'ESTABLISHED'
-    
-    def fetch_contact_data(self, contact_id: int) -> Optional[Dict]:
-        """Fetch contact data - thread-safe with fresh connection"""
-        db = self._get_fresh_connection()
-        try:
-            db.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
-            result = db.fetchone()
-            return result
-        finally:
-            db.close()
+        if days < 30: return 'NEW'
+        if days < 90: return 'WARMING'
+        if days < 365: return 'ACTIVE'
+        return 'ESTABLISHED'
     
     def save_scores_to_db(self, result: Dict):
-        """Save scores to database - thread-safe with fresh connection"""
-        contact_id = result['contact_id']
-        db = self._get_fresh_connection()
-        
+        db = self._get_db()
         try:
             db.execute("""
                 UPDATE contacts SET
-                    mdcp_score = ?,
-                    mdcp_tier = ?,
-                    rss_score = ?,
-                    rss_tier = ?,
-                    priority_score = ?,
-                    urgency_level = ?,
-                    recommended_action = ?,
-                    last_scored = ?,
-                    calculation_version = ?
+                    mdcp_score = ?, mdcp_tier = ?, rss_score = ?, rss_tier = ?,
+                    priority_score = ?, urgency_level = ?, recommended_action = ?,
+                    last_scored = ?, calculation_version = ?
                 WHERE id = ?
             """, (
-                result['mdcp_score'],
-                result.get('mdcp_tier'),
-                result.get('rss_score', 0),
-                result.get('rss_tier'),
-                result['priority_score'],
-                result.get('urgency_level'),
-                result.get('recommended_action'),
-                datetime.now().isoformat(),
-                result.get('calculation_version', self.VERSION),
-                contact_id
+                result['mdcp_score'], result.get('mdcp_tier'), result.get('rss_score', 0),
+                result.get('rss_tier'), result['priority_score'], result.get('urgency_level'),
+                result.get('recommended_action'), datetime.now().isoformat(),
+                result.get('calculation_version', self.VERSION), result['contact_id']
             ))
-            
             db.commit()
-            print(f"✅ Saved scores for contact {contact_id}")
+            print(f"✅ Saved scores for contact {result['contact_id']}")
         except Exception as e:
             print(f"❌ Error saving scores: {e}")
             db.rollback()
@@ -509,19 +273,6 @@ class ApexScoringEngine:
             db.close()
 
 
-# ============================================================================
-# QUICK FUNCTIONS
-# ============================================================================
-
-def score_contact(contact_id: int, db_path: str = None) -> Dict:
-    """Quick function to score a single contact"""
-    engine = ApexScoringEngine(db_path)
-    return engine.score_contact(contact_id)
-
-
 if __name__ == "__main__":
-    import sys
-    db_path = sys.argv[1] if len(sys.argv) > 1 else None
-    engine = ApexScoringEngine(db_path)
-    print("APEX Intelligence - Scoring Engine Ready")
+    engine = ApexScoringEngine()
     print(f"Database: {'PostgreSQL' if engine.is_postgres else 'SQLite'}")
