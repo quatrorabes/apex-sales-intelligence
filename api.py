@@ -85,6 +85,7 @@ cadence_router = None
 # Database path
 DB_PATH = os.path.join(os.path.dirname(__file__), 'apex.db')
 
+
 # ============================================================================
 # APEX UNIFIED SCORING INTEGRATION
 # ============================================================================
@@ -98,11 +99,9 @@ try:
   
   # Pass correct database path based on environment
   if IS_PRODUCTION:
-    # Railway uses PostgreSQL - pass DATABASE_URL
-    SCORING_DB_PATH = DATABASE_URL
+    SCORING_DB_PATH = os.getenv('DATABASE_URL')  # PostgreSQL on Railway
   else:
-    # Local uses SQLite
-    SCORING_DB_PATH = DB_PATH
+    SCORING_DB_PATH = DB_PATH  # SQLite locally
     
   print(f"✅ Unified Apex Scoring Engine loaded (DB: {'PostgreSQL' if IS_PRODUCTION else 'SQLite'})")
 except ImportError as e:
@@ -1414,10 +1413,11 @@ def score_contact_endpoint(contact_id):
     return jsonify({'error': 'Scoring engine not available'}), 503
   
   try:
-    # Use correct database for environment
-    scoring_db = DATABASE_URL if IS_PRODUCTION else DB_PATH
-    unified_scorer = UnifiedApexScorer(db_path=scoring_db)
+    # Use environment-aware database path
+    unified_scorer = UnifiedApexScorer(db_path=SCORING_DB_PATH)
     result = unified_scorer.score_contact_unified(contact_id, save_to_db=True)
+    # ... rest of endpoint
+    
     
     return jsonify({
       'success': True,
