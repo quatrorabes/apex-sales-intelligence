@@ -250,29 +250,61 @@ class ApexScoringEngine:
         return 'ESTABLISHED'
     
     def save_scores_to_db(self, result: Dict):
+        """Save scores to database - thread-safe with fresh connection"""
         db = self._get_db()
+        
         try:
-            db.execute("""
+            # Use explicit column names and values
+            query = """
                 UPDATE contacts SET
-                    mdcp_score = ?, mdcp_tier = ?, rss_score = ?, rss_tier = ?,
-                    priority_score = ?, urgency_level = ?, recommended_action = ?,
-                    last_scored = ?, calculation_version = ?
+                    mdcp_score = ?,
+                    mdcp_tier = ?,
+                    rss_score = ?,
+                    rss_tier = ?,
+                    priority_score = ?,
+                    urgency_level = ?,
+                    recommended_action = ?,
+                    last_scored = ?,
+                    calculation_version = ?
                 WHERE id = ?
-            """, (
-                result['mdcp_score'], result.get('mdcp_tier'), result.get('rss_score', 0),
-                result.get('rss_tier'), result['priority_score'], result.get('urgency_level'),
-                result.get('recommended_action'), datetime.now().isoformat(),
-                result.get('calculation_version', self.VERSION), result['contact_id']
-            ))
+            """
+            
+            params = (
+                result.get('mdcp_score'),
+                result.get('mdcp_tier'),
+                result.get('rss_score', 0),
+                result.get('rss_tier'),
+                result.get('priority_score'),
+                result.get('urgency_level'),
+                result.get('recommended_action'),
+                datetime.now().isoformat(),
+                result.get('calculation_version', self.VERSION),
+                result['contact_id']
+            )
+            
+            db.execute(query, params)
             db.commit()
-            print(f"✅ Saved scores for contact {result['contact_id']}")
+            
+            # Verify the update worked
+            db.execute("SELECT urgency_level FROM contacts WHERE id = ?", (result['contact_id'],))
+            verify = db.fetchone()
+            
+            if verify and verify.get('urgency_level'):
+                print(f"✅ Saved scores for contact {result['contact_id']} - urgency: {verify.get('urgency_level')}")
+            else:
+                print(f"⚠️  Update executed but urgency_level still NULL for contact {result['contact_id']}")
+                
         except Exception as e:
-            print(f"❌ Error saving scores: {e}")
+            print(f"❌ Error saving scores for contact {result['contact_id']}: {e}")
+            import traceback
+            traceback.print_exc()
             db.rollback()
         finally:
             db.close()
+            
 
 
 if __name__ == "__main__":
     engine = ApexScoringEngine()
     print(f"Database: {'PostgreSQL' if engine.is_postgres else 'SQLite'}")
+    
