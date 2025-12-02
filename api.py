@@ -1483,28 +1483,33 @@ def bulk_score_endpoint():
 @app.route('/api/todays-board', methods=['GET'])
 def todays_board():
   """Get today's prioritized contacts based on unified scoring"""
-  
   try:
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = get_db()
+    cursor = dict_cursor(conn) if IS_PRODUCTION else conn.cursor()
     
     # Get top-priority scored contacts
-    cursor.execute("""
-      SELECT 
+    query = """
+      SELECT
         id, name, email, company, title,
         mdcp_score, mdcp_tier,
         rss_score, rss_tier,
         priority_score, urgency_level,
         recommended_action, last_scored,
         last_contact_date, lead_type
-      FROM contacts 
-      WHERE priority_score IS NOT NULL 
+      FROM contacts
+      WHERE priority_score IS NOT NULL
       ORDER BY priority_score DESC, last_scored DESC
       LIMIT 50
-    """)
+    """
+    cursor.execute(query)
     
-    contacts = [dict(row) for row in cursor.fetchall()]
-    
+    # Handle both PostgreSQL (already dicts) and SQLite (Row objects)
+    rows = cursor.fetchall()
+    if IS_PRODUCTION:
+      contacts = list(rows)  # PostgreSQL RealDictCursor returns dicts
+    else:
+      contacts = [dict(row) for row in rows]  # SQLite needs conversion
+      
     conn.close()
     
     # Group by urgency
@@ -1516,9 +1521,12 @@ def todays_board():
     }
     
     for contact in contacts:
-      urgency = contact.get('urgency_level', 'LOW')
-      board.get(urgency, board['LOW']).append(contact)
-      
+      urgency = contact.get('urgency_level') or 'LOW'
+      if urgency in board:
+        board[urgency].append(contact)
+      else:
+        board['LOW'].append(contact)
+        
     # Separate relationships vs new prospects
     relationships = [c for c in contacts if c.get('last_contact_date')]
     prospects = [c for c in contacts if not c.get('last_contact_date')]
@@ -1563,6 +1571,7 @@ def todays_board():
       'error': str(e),
       'traceback': traceback.format_exc()
     }), 500
+  
   
 
 if __name__ == '__main__':
