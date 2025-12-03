@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { API_BASE } from '../config';
 import { 
   Phone, Mail, Linkedin, Calendar, Clock, Flame, 
   Zap, ChevronRight, RefreshCw, Star, TrendingUp,
@@ -75,10 +74,10 @@ export default function TodaysBoard({ onContactSelect }: TodaysBoardProps) {
 const fetchBoard = async () => {
   try {
     setLoading(true);
-    const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     
     // ADD THIS LINE - Actually call fetch()
-    const res = await fetch(`${API_BASE}/api/todays-board`);
+    const res = await fetch(`${API_URL}/api/todays-board`);
     const json = await res.json();
     setData(json);
   } catch (err) {
@@ -194,19 +193,19 @@ const fetchBoard = async () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           <div style={{ background: 'rgba(239,68,68,0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(239,68,68,0.3)' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>
-              {(data?.relationships?.tiers?.urgent?.length ?? 0) + (data?.relationships?.tiers?.warm?.length ?? 0)}
+              {data.relationships.urgent_count + data.relationships.warm_count}
             </div>
             <div style={{ fontSize: 13, color: '#fca5a5' }}>🔥 Relationships Need Attention</div>
           </div>
           <div style={{ background: 'rgba(34,197,94,0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(34,197,94,0.3)' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#22c55e', marginBottom: 4 }}>
-              {(data?.new_prospects?.tiers?.hot?.length ?? 0) + (data?.new_prospects?.tiers?.qualified?.length ?? 0)}
+              {data.new_prospects.hot_count + data.new_prospects.qualified_count}
             </div>
             <div style={{ fontSize: 13, color: '#4ade80' }}>🎯 Hot New Prospects</div>
           </div>
           <div style={{ background: 'rgba(99,102,241,0.15)', borderRadius: 12, padding: 16, border: '1px solid rgba(99,102,241,0.3)' }}>
             <div style={{ fontSize: 32, fontWeight: 700, color: '#818cf8', marginBottom: 4 }}>
-              {(data?.relationships?.total ?? 0) + (data?.new_prospects?.total ?? 0)}
+              {data.total_actions}
             </div>
             <div style={{ fontSize: 13, color: '#a5b4fc' }}>✅ Total Actions Today</div>
           </div>
@@ -239,7 +238,7 @@ const fetchBoard = async () => {
           <div>
             <div>🔥 Existing Relationships</div>
             <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.8 }}>
-              {data.relationships.total} contacts • {(data?.relationships?.tiers?.urgent?.length ?? 0) + (data?.relationships?.tiers?.warm?.length ?? 0)} priority
+              {data.relationships.total} contacts • {data.relationships.urgent_count + data.relationships.warm_count} priority
             </div>
           </div>
         </button>
@@ -267,7 +266,7 @@ const fetchBoard = async () => {
           <div>
             <div>🎯 New Prospects</div>
             <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.8 }}>
-              {data.new_prospects.total} prospects • {(data?.new_prospects?.tiers?.hot?.length ?? 0) + (data?.new_prospects?.tiers?.qualified?.length ?? 0)} qualified
+              {data.new_prospects.total} prospects • {data.new_prospects.hot_count + data.new_prospects.qualified_count} qualified
             </div>
           </div>
         </button>
@@ -277,38 +276,38 @@ const fetchBoard = async () => {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         {viewMode === 'relationships' ? (
           <>
-            {(data?.relationships?.tiers?.urgent?.length ?? 0) > 0 && (
+            {data.relationships.urgent_count > 0 && (
               <TierButton
                 id="urgent"
                 label="🔥 Urgent"
-                count={(data?.relationships?.tiers?.urgent?.length ?? 0)}
+                count={data.relationships.urgent_count}
                 selected={selectedTier === 'urgent'}
                 onClick={() => setSelectedTier('urgent')}
               />
             )}
-            {(data?.relationships?.tiers?.warm?.length ?? 0) > 0 && (
+            {data.relationships.warm_count > 0 && (
               <TierButton
                 id="warm"
                 label="⏰ Warm"
-                count={(data?.relationships?.tiers?.warm?.length ?? 0)}
+                count={data.relationships.warm_count}
                 selected={selectedTier === 'warm'}
                 onClick={() => setSelectedTier('warm')}
               />
             )}
-            {(data?.relationships?.tiers?.nurture?.length ?? 0) > 0 && (
+            {data.relationships.nurture_count > 0 && (
               <TierButton
                 id="nurture"
                 label="💎 Nurture"
-                count={(data?.relationships?.tiers?.nurture?.length ?? 0)}
+                count={data.relationships.nurture_count}
                 selected={selectedTier === 'nurture'}
                 onClick={() => setSelectedTier('nurture')}
               />
             )}
-            {(data?.relationships?.tiers?.stable?.length ?? 0) > 0 && (
+            {data.relationships.stable_count > 0 && (
               <TierButton
                 id="stable"
                 label="📚 Stable"
-                count={(data?.relationships?.tiers?.stable?.length ?? 0)}
+                count={data.relationships.stable_count}
                 selected={selectedTier === 'stable'}
                 onClick={() => setSelectedTier('stable')}
               />
@@ -316,29 +315,29 @@ const fetchBoard = async () => {
           </>
         ) : (
           <>
-            {(data?.new_prospects?.tiers?.hot?.length ?? 0) > 0 && (
+            {data.new_prospects.hot_count > 0 && (
               <TierButton
                 id="hot"
                 label="🎯 Hot"
-                count={(data?.new_prospects?.tiers?.hot?.length ?? 0)}
+                count={data.new_prospects.hot_count}
                 selected={selectedTier === 'hot'}
                 onClick={() => setSelectedTier('hot')}
               />
             )}
-            {(data?.new_prospects?.tiers?.qualified?.length ?? 0) > 0 && (
+            {data.new_prospects.qualified_count > 0 && (
               <TierButton
                 id="qualified"
                 label="✅ Qualified"
-                count={(data?.new_prospects?.tiers?.qualified?.length ?? 0)}
+                count={data.new_prospects.qualified_count}
                 selected={selectedTier === 'qualified'}
                 onClick={() => setSelectedTier('qualified')}
               />
             )}
-            {(data?.new_prospects?.tiers?.potential?.length ?? 0) > 0 && (
+            {data.new_prospects.potential_count > 0 && (
               <TierButton
                 id="potential"
                 label="🔍 Potential"
-                count={(data?.new_prospects?.tiers?.potential?.length ?? 0)}
+                count={data.new_prospects.potential_count}
                 selected={selectedTier === 'potential'}
                 onClick={() => setSelectedTier('potential')}
               />

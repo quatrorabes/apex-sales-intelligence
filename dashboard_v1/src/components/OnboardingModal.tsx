@@ -1,417 +1,129 @@
 import React, { useState } from 'react';
-import { API_BASE } from '../config';
-import { Target, Building2, Users, TrendingUp, CheckCircle, X } from 'lucide-react';
+import { X, Check, ArrowRight, Rocket } from 'lucide-react';
 
 interface OnboardingModalProps {
-  onComplete: (preferences: any) => void;
+  isOpen: boolean;
   onClose: () => void;
 }
 
-export default function OnboardingModal({ onComplete, onClose }: OnboardingModalProps) {
-  const [step, setStep] = useState(1);
-  const [preferences, setPreferences] = useState({
-    user_id: 'default_user',
-    industry: '',
-    target_verticals: [] as string[],
-    ideal_titles: [] as string[],
-    avoid_titles: [] as string[],
-    min_company_size: 10,
-    max_company_size: 5000,
-    target_industries: [] as string[],
-    seniority_levels: [] as string[],
-    exclude_c_suite: false
-  });
+export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClose }) => {
+  const [currentStep, setCurrentStep] = useState(0);
 
-  const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
-  const industries = [
-    { value: 'CRE_MORTGAGE', label: 'Commercial Real Estate - Mortgage/Lending' },
-    { value: 'CRE_BROKERAGE', label: 'Commercial Real Estate - Brokerage' },
-    { value: 'COMMERCIAL_BANKING', label: 'Commercial Banking' },
-    { value: 'INSURANCE', label: 'Insurance' },
-    { value: 'TECHNOLOGY', label: 'Technology' },
-    { value: 'HEALTHCARE', label: 'Healthcare' }
+  const steps = [
+    {
+      title: 'Welcome to Apex Intelligence',
+      description: 'Your AI-powered sales intelligence platform that helps you prioritize and engage with the right contacts at the right time.',
+      icon: '🎯',
+    },
+    {
+      title: "Today's Board",
+      description: 'Get personalized daily recommendations for which contacts to reach out to, based on relationship health, opportunity signals, and engagement patterns.',
+      icon: '📊',
+    },
+    {
+      title: 'AI-Powered Scoring',
+      description: 'Every contact is automatically scored using our MDCP (conversion likelihood), Priority (urgency), and RSS (relationship strength) algorithms.',
+      icon: '🤖',
+    },
+    {
+      title: 'Content Generation',
+      description: 'Generate personalized emails, LinkedIn messages, and call scripts tailored to each contact using AI that understands your relationships.',
+      icon: '✨',
+    },
+    {
+      title: 'Ready to Start',
+      description: "You're all set! Import your contacts from HubSpot or start adding them manually to unlock the full power of Apex Intelligence.",
+      icon: '🚀',
+    },
   ];
 
-  const seniorityLevels = [
-    'Principal/Owner',
-    'C-Suite (CEO, CFO, etc.)',
-    'EVP (Executive VP)',
-    'SVP (Senior VP)',
-    'VP (Vice President)',
-    'Director',
-    'Manager',
-    'Senior/Lead',
-    'Associate/Analyst'
-  ];
+  if (!isOpen) return null;
 
-  const commonTitles = {
-    CRE_MORTGAGE: [
-      'Broker',
-      'Senior Broker',
-      'Vice President',
-      'Senior Vice President',
-      'Director',
-      'Principal',
-      'Loan Officer',
-      'Mortgage Banker'
-    ],
-    CRE_BROKERAGE: [
-      'Broker',
-      'Senior Broker',
-      'Director',
-      'Senior Director',
-      'Vice President',
-      'Senior Associate',
-      'Investment Sales',
-      'Leasing Specialist'
-    ],
-    COMMERCIAL_BANKING: [
-      'Relationship Manager',
-      'Vice President',
-      'Senior Vice President',
-      'Portfolio Manager',
-      'Commercial Banker',
-      'Loan Officer'
-    ],
-    INSURANCE: [],
-    TECHNOLOGY: [],
-    HEALTHCARE: []
-  };
+  const currentStepData = steps[currentStep];
+  const isLastStep = currentStep === steps.length - 1;
 
-  const handleSubmit = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/user/onboarding`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(preferences)
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        alert('Preferences saved successfully!');
-        onComplete(preferences);
-      } else {
-        alert(`Error: ${data.error || data.message}`);
-      }
-    } catch (error) {
-      console.error('Error saving preferences:', error);
-      alert('Failed to save preferences');
-    }
-  };
-
-  const toggleTitle = (title: string, isIdeal: boolean) => {
-    const titleLower = title.toLowerCase();
-    if (isIdeal) {
-      setPreferences(prev => ({
-        ...prev,
-        ideal_titles: prev.ideal_titles.includes(titleLower)
-          ? prev.ideal_titles.filter(t => t !== titleLower)
-          : [...prev.ideal_titles, titleLower]
-      }));
+  const handleNext = () => {
+    if (isLastStep) {
+      onClose();
     } else {
-      setPreferences(prev => ({
-        ...prev,
-        avoid_titles: prev.avoid_titles.includes(titleLower)
-          ? prev.avoid_titles.filter(t => t !== titleLower)
-          : [...prev.avoid_titles, titleLower]
-      }));
+      setCurrentStep(currentStep + 1);
     }
   };
-
-  const toggleSeniority = (level: string) => {
-    setPreferences(prev => ({
-      ...prev,
-      seniority_levels: prev.seniority_levels.includes(level)
-        ? prev.seniority_levels.filter(l => l !== level)
-        : [...prev.seniority_levels, level]
-    }));
-  };
-
-  const toggleVertical = (vertical: string) => {
-    setPreferences(prev => ({
-      ...prev,
-      target_verticals: prev.target_verticals.includes(vertical)
-        ? prev.target_verticals.filter(v => v !== vertical)
-        : [...prev.target_verticals, vertical]
-    }));
-  };
-
-  const totalSteps = 5;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 z-50">
-      <div className="bg-slate-800 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-slate-700">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">Configure Your Ideal Customer Profile</h2>
-            <button onClick={onClose} className="text-slate-400 hover:text-white">
-              <X className="w-6 h-6" />
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold">Getting Started</h2>
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-white/20 rounded-lg transition"
+            >
+              <X className="h-6 w-6" />
             </button>
           </div>
-          <div className="flex items-center gap-2 mt-4">
-            {Array.from({length: totalSteps}, (_, i) => i + 1).map(i => (
+          
+          {/* Progress Bar */}
+          <div className="flex gap-2">
+            {steps.map((_, index) => (
               <div
-                key={i}
-                className={`flex-1 h-2 rounded ${
-                  i <= step ? 'bg-blue-500' : 'bg-slate-700'
+                key={index}
+                className={`h-1 flex-1 rounded-full transition ${
+                  index <= currentStep ? 'bg-white' : 'bg-white/30'
                 }`}
               />
             ))}
           </div>
         </div>
 
-        <div className="p-6">
-          {step === 1 && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">What's your business?</h3>
-                <div className="grid grid-cols-1 gap-3">
-                  {industries.map(ind => (
-                    <label
-                      key={ind.value}
-                      className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
-                        preferences.industry === ind.value
-                          ? 'border-blue-500 bg-blue-500/10'
-                          : 'border-slate-700 hover:border-slate-600'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="industry"
-                        value={ind.value}
-                        checked={preferences.industry === ind.value}
-                        onChange={(e) => setPreferences({...preferences, industry: e.target.value})}
-                        className="text-blue-500"
-                      />
-                      <div>
-                        <p className="text-white font-medium">{ind.label}</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+        {/* Content */}
+        <div className="p-8">
+          <div className="text-center mb-8">
+            <div className="text-6xl mb-4">{currentStepData.icon}</div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-3">
+              {currentStepData.title}
+            </h3>
+            <p className="text-gray-600 text-lg leading-relaxed">
+              {currentStepData.description}
+            </p>
+          </div>
 
-          {step === 2 && (
-            <div style={{ padding: '24px' }}>
-              <h2 style={{ marginBottom: '24px' }}>Your Products and Services</h2>
-            
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
-                  Products (up to 5)
-                </label>
-                {[0, 1, 2, 3, 4].map(i => (
-                  <input
-                    key={`product-${i}`}
-                    type="text"
-                    placeholder={`Product ${i + 1}${i === 0 ? ' (e.g., SBA 504 loans)' : ''}`}
-                    style={{ 
-                      width: '100%', 
-                      padding: '8px', 
-                      marginBottom: '8px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px'
-                    }}
-                    value={preferences.products?.[i] || ''}
-                    onChange={(e) => {
-                      const newProducts = [...(preferences.products || [])];
-                      newProducts[i] = e.target.value;
-                      setPreferences({...preferences, products: newProducts.filter(Boolean)});
-                    }}
-                  />
-                ))}
-              </div>
-            
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 600 }}>
-                  Services (up to 5)
-                </label>
-                {[0, 1, 2, 3, 4].map(i => (
-                  <input
-                    key={`service-${i}`}
-                    type="text"
-                    placeholder={`Service ${i + 1}${i === 0 ? ' (e.g., Free consultation)' : ''}`}
-                    style={{ 
-                      width: '100%', 
-                      padding: '8px', 
-                      marginBottom: '8px',
-                      border: '1px solid #ddd',
-                      borderRadius: '4px'
-                    }}
-                    value={preferences.services?.[i] || ''}
-                    onChange={(e) => {
-                      const newServices = [...(preferences.services || [])];
-                      newServices[i] = e.target.value;
-                      setPreferences({...preferences, services: newServices.filter(Boolean)});
-                    }}
-                  />
-                ))}
-              </div>
-            
-              {/* Repeat for value_propositions, target_customers, personal_differentiators, company_differentiators */}
-            
-              <button onClick={() => setStep(3)}>Next →</button>
-            </div>
-          )}
-    
-          {step === 3 && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">What job titles do you target?</h3>
-                {preferences.industry && commonTitles[preferences.industry as keyof typeof commonTitles] && (
-                  <div>
-                    <p className="text-sm text-slate-400 mb-3">Common titles in your industry (click to select):</p>
-                    <div className="flex flex-wrap gap-2 mb-6">
-                      {(commonTitles[preferences.industry as keyof typeof commonTitles] || []).map(title => (
-                        <button
-                          key={title}
-                          onClick={() => toggleTitle(title, true)}
-                          className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                            preferences.ideal_titles.includes(title.toLowerCase())
-                              ? 'bg-green-600 text-white'
-                              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                          }`}
-                        >
-                          {title}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+          {/* Step Counter */}
+          <div className="text-center text-sm text-gray-500 mb-6">
+            Step {currentStep + 1} of {steps.length}
+          </div>
 
-                <div>
-                  <p className="text-sm text-slate-400 mb-3">Titles to AVOID (click to mark):</p>
-                  <div className="flex flex-wrap gap-2">
-                    {['HR', 'Marketing', 'IT', 'Legal', 'Admin', 'Assistant', 'Coordinator', 'Intern'].map(title => (
-                      <button
-                        key={title}
-                        onClick={() => toggleTitle(title, false)}
-                        className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                          preferences.avoid_titles.includes(title.toLowerCase())
-                            ? 'bg-red-600 text-white'
-                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                        }`}
-                      >
-                        {title}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">What seniority levels do you target?</h3>
-                <div className="space-y-2">
-                  {seniorityLevels.map(level => (
-                    <label
-                      key={level}
-                      className="flex items-center gap-3 p-3 rounded-lg border border-slate-700 hover:border-slate-600 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={preferences.seniority_levels.includes(level)}
-                        onChange={() => toggleSeniority(level)}
-                        className="text-blue-500"
-                      />
-                      <span className="text-white">{level}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <label className="flex items-center gap-3 p-4 mt-4 rounded-lg bg-red-900/20 border border-red-800">
-                  <input
-                    type="checkbox"
-                    checked={preferences.exclude_c_suite}
-                    onChange={(e) => setPreferences({...preferences, exclude_c_suite: e.target.checked})}
-                    className="text-red-500"
-                  />
-                  <div>
-                    <p className="text-white font-medium">Exclude Non-CRE C-Suite</p>
-                    <p className="text-sm text-slate-400">Penalize CEOs/CFOs not in real estate</p>
-                  </div>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {step === 5 && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium text-white mb-4">Company Size Preferences</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-2">Minimum Employees</label>
-                    <input
-                      type="number"
-                      value={preferences.min_company_size}
-                      onChange={(e) => setPreferences({...preferences, min_company_size: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-2">Maximum Employees</label>
-                    <input
-                      type="number"
-                      value={preferences.max_company_size}
-                      onChange={(e) => setPreferences({...preferences, max_company_size: parseInt(e.target.value) || 10000})}
-                      className="w-full px-3 py-2 bg-slate-700 rounded-lg text-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-slate-700/50 rounded-lg p-4">
-                <h4 className="text-white font-medium mb-3">Your ICP Summary:</h4>
-                <div className="space-y-2 text-sm text-slate-300">
-                  <p>• Industry: {preferences.industry || 'Not selected'}</p>
-                  <p>• Target Verticals: {preferences.target_verticals.join(', ') || 'None selected'}</p>
-                  <p>• Target Titles: {preferences.ideal_titles.join(', ') || 'None selected'}</p>
-                  <p>• Avoid Titles: {preferences.avoid_titles.join(', ') || 'None selected'}</p>
-                  <p>• Company Size: {preferences.min_company_size} - {preferences.max_company_size} employees</p>
-                  <p>• Exclude Non-CRE C-Suite: {preferences.exclude_c_suite ? 'Yes' : 'No'}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="p-6 border-t border-slate-700 flex justify-between">
-          {step > 1 && (
+          {/* Navigation */}
+          <div className="flex gap-3">
+            {currentStep > 0 && (
+              <button
+                onClick={() => setCurrentStep(currentStep - 1)}
+                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+              >
+                Previous
+              </button>
+            )}
             <button
-              onClick={() => setStep(step - 1)}
-              className="px-6 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600"
+              onClick={handleNext}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition font-medium"
             >
-              Previous
+              {isLastStep ? (
+                <>
+                  <Rocket className="h-5 w-5" />
+                  Get Started
+                </>
+              ) : (
+                <>
+                  Next
+                  <ArrowRight className="h-5 w-5" />
+                </>
+              )}
             </button>
-          )}
-          {step < totalSteps ? (
-            <button
-              onClick={() => setStep(step + 1)}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 ml-auto"
-              disabled={step === 1 && !preferences.industry}
-            >
-              Next
-            </button>
-          ) : (
-            <button
-              onClick={handleSubmit}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 ml-auto flex items-center gap-2"
-            >
-              <CheckCircle className="w-5 h-5" />
-              Complete Setup
-            </button>
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
-}
+};

@@ -1,343 +1,233 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  RefreshCw, Search, Filter, Download, 
-  CheckCircle, Clock, AlertCircle, ChevronDown, ArrowUpDown,
-  Users, Zap, Flame, Briefcase
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Filter, Download, RefreshCw, User, Mail, Phone, Linkedin, TrendingUp } from 'lucide-react';
+import { apiClient } from '../utils/api';
+import { Contact } from '../types';
+import { PersonaBadge } from './PersonaBadge';
 import ContactDetailModal from './ContactDetailModal';
-import { API_BASE } from '../config';
 
-interface Contact {
-  id: number;
-  name: string;
-  email?: string;
-  phone?: string;
-  company?: string;
-  title?: string;
-  job_title?: string;
-  enrichment_status?: string;
-  priority_score?: number;
-  mdcp_score?: number;
-  persona?: string;
-  lifecyclestage?: string;
-  lifecycle_stage?: string;
-}
-
-export default function ContactsBoard() {
-  const [allContacts, setAllContacts] = useState<Contact[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+export const ContactsBoard: React.FC = () => {
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  
-  // Sorting state
-  const [sortField, setSortField] = useState<keyof Contact>('priority_score');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortField, setSortField] = useState<'name' | 'mdcp_score' | 'priority_score'>('mdcp_score');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [selectedContactId, setSelectedContactId] = useState<number | null>(null);
 
-  const fetchContacts = useCallback(async () => {
+  useEffect(() => {
+    loadContacts();
+  }, []);
+
+  const loadContacts = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/contacts?limit=1000`);
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
-      const contactList: Contact[] = Array.isArray(data) ? data : (data.contacts || []);
-      setAllContacts(contactList);
-      setFilteredContacts(contactList);
-    } catch (err: any) {
-      setError(err.message);
+      const response = await apiClient.getContacts({ limit: 100 });
+      setContacts(response.contacts || []);
+    } catch (error) {
+      console.error('Failed to load contacts:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    fetchContacts();
-    window.addEventListener('contacts-updated', fetchContacts);
-    return () => window.removeEventListener('contacts-updated', fetchContacts);
-  }, [fetchContacts]);
-
-  // Handle Search & Sort
-  useEffect(() => {
-    let result = [...allContacts];
-
-    // 1. Filter
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(c => 
-        (c.name || '').toLowerCase().includes(term) ||
-        (c.email || '').toLowerCase().includes(term) ||
-        (c.company || '').toLowerCase().includes(term) ||
-        (c.title || '').toLowerCase().includes(term)
+  const filteredContacts = contacts
+    .filter(contact => {
+      const query = searchQuery.toLowerCase();
+      return (
+        contact.name?.toLowerCase().includes(query) ||
+        contact.company?.toLowerCase().includes(query) ||
+        contact.email?.toLowerCase().includes(query)
       );
-    }
-
-    // 2. Sort
-    result.sort((a, b) => {
-      const valA = a[sortField] || 0;
-      const valB = b[sortField] || 0;
-      
-      // String comparison for text fields
-      if (typeof valA === 'string' && typeof valB === 'string') {
-        return sortDirection === 'asc' 
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
+    })
+    .sort((a, b) => {
+      const aVal = a[sortField] || 0;
+      const bVal = b[sortField] || 0;
+      if (sortField === 'name') {
+        return sortDirection === 'asc'
+          ? String(aVal).localeCompare(String(bVal))
+          : String(bVal).localeCompare(String(aVal));
       }
-      
-      // Numeric comparison
-      if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
+      return sortDirection === 'asc' ? Number(aVal) - Number(bVal) : Number(bVal) - Number(aVal);
     });
 
-    setFilteredContacts(result);
-  }, [allContacts, searchTerm, sortField, sortDirection]);
-
-  const handleSort = (field: keyof Contact) => {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('desc'); // Default to desc for new field
+  const getTierColor = (tier?: string) => {
+    switch (tier?.toLowerCase()) {
+      case 'hot': return 'bg-red-100 text-red-800 border-red-300';
+      case 'warm': return 'bg-orange-100 text-orange-800 border-orange-300';
+      case 'qualified': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'nurture': return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'cold': return 'bg-gray-100 text-gray-800 border-gray-300';
+      default: return 'bg-gray-100 text-gray-800 border-gray-300';
     }
   };
 
-  // Matches Today's Board vivid colors
-  const getScoreColor = (score: number = 0) => {
-    if (score >= 80) return { text: '#ef4444', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)' }; // Red/Hot
-    if (score >= 50) return { text: '#fbbf24', bg: 'rgba(251,191,36,0.1)', border: 'rgba(251,191,36,0.3)' }; // Yellow/Warm
-    if (score >= 30) return { text: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)' }; // Green/Nurture
-    return { text: '#94a3b8', bg: 'rgba(148,163,184,0.1)', border: 'rgba(148,163,184,0.3)' }; // Gray/Stable
+  const getAvatarColor = (name: string) => {
+    const colors = [
+      'bg-blue-500', 'bg-purple-500', 'bg-green-500',
+      'bg-orange-500', 'bg-pink-500', 'bg-indigo-500'
+    ];
+    return colors[name?.charCodeAt(0) % colors.length || 0];
   };
 
-  if (loading) return (
-    <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
-      <RefreshCw size={32} className="animate-spin" style={{ marginBottom: 16, opacity: 0.5 }} />
-      <div>Loading contacts database...</div>
-    </div>
-  );
-
-  if (error) return <div style={{ padding: 48, textAlign: 'center', color: '#ef4444' }}>Error: {error}</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: 12 }}>
-      {/* HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ 
-            width: 40, height: 40, 
-            background: 'linear-gradient(135deg, rgba(59,130,246,0.2), rgba(37,99,235,0.2))', 
-            borderRadius: 10, 
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '1px solid rgba(59,130,246,0.3)'
-          }}>
-            <Users size={20} color="#60a5fa" />
-          </div>
-          <div>
-            <h2 style={{ fontSize: 24, fontWeight: 700, color: '#f8fafc', margin: 0 }}>All Contacts</h2>
-            <p style={{ margin: '2px 0 0', color: '#94a3b8', fontSize: 13 }}>
-              {allContacts.length} total • {filteredContacts.length} visible
-            </p>
-          </div>
-        </div>
-        
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button 
-            onClick={fetchContacts}
-            style={{ 
-              background: 'rgba(30, 41, 59, 0.6)', 
-              border: '1px solid #334155', 
-              borderRadius: 8, 
-              padding: '8px 12px', 
-              color: '#94a3b8', 
-              cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontSize: 13, fontWeight: 500,
-              transition: 'all 0.2s'
-            }}
-          >
-            <RefreshCw size={14} /> Refresh
+    <div className="p-6">
+      {/* Header & Search */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">All Contacts</h1>
+        <div className="flex gap-2">
+          <button onClick={loadContacts} className="p-2 hover:bg-gray-100 rounded-lg" title="Refresh">
+            <RefreshCw size={20} className="text-gray-600" />
           </button>
-          <button style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500 }}>
-            <Download size={14}/> Export
+          <button className="p-2 hover:bg-gray-100 rounded-lg" title="Filter">
+            <Filter size={20} className="text-gray-600" />
+          </button>
+          <button className="p-2 hover:bg-gray-100 rounded-lg" title="Export">
+            <Download size={20} className="text-gray-600" />
           </button>
         </div>
       </div>
 
-      {/* SEARCH BAR */}
-      <div style={{ position: 'relative', marginBottom: 20 }}>
-        <Search size={18} style={{ position: 'absolute', top: 12, left: 16, color: '#64748b' }} />
-        <input 
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        <input
           type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search by name, company, title, or email..."
-          style={{
-            width: '100%',
-            padding: '12px 16px 12px 48px',
-            background: 'rgba(30, 41, 59, 0.4)', // Transparent dark
-            border: '1px solid #334155',
-            borderRadius: 12,
-            color: '#f8fafc',
-            fontSize: 14,
-            outline: 'none',
-            backdropFilter: 'blur(12px)'
-          }}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search contacts by name, company, or email..."
+          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
       </div>
 
-      {/* TABLE */}
-      <div style={{ 
-        borderRadius: 16, 
-        border: '1px solid rgba(148,163,184,0.1)', 
-        overflow: 'hidden', 
-        background: 'rgba(15, 23, 42, 0.6)', // Deep semi-transparent
-        backdropFilter: 'blur(20px)',
-        boxShadow: '0 20px 40px -10px rgba(0,0,0,0.5)'
-      }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: 'rgba(30, 41, 59, 0.8)', borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-              {[
-                { id: 'name', label: 'Contact' },
-                { id: 'company', label: 'Company' },
-                { id: 'lifecyclestage', label: 'Lead Status' }, // NEW
-                { id: 'priority_score', label: 'Score' },
-                { id: 'persona', label: 'Persona' },
-                { id: 'enrichment_status', label: 'Enrichment' }
-              ].map((col) => (
-                <th 
-                  key={col.id}
-                  onClick={() => handleSort(col.id as keyof Contact)} 
-                  style={{ 
-                    padding: '16px 20px', 
-                    textAlign: 'left', 
-                    fontSize: 11, 
-                    fontWeight: 700, 
-                    color: '#64748b', 
-                    cursor: 'pointer',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    userSelect: 'none'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {col.label}
-                    {sortField === col.id && (
-                      <ArrowUpDown size={12} color={sortDirection === 'asc' ? '#60a5fa' : '#64748b'} />
-                    )}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredContacts.map((c) => {
-              const score = c.priority_score || c.mdcp_score || 0;
-              const colors = getScoreColor(score);
-              const leadStatus = c.lifecycle_stage || c.lifecyclestage || 'New';
-              
-              return (
-                <tr 
-                  key={c.id} 
-                  onClick={() => setSelectedContact(c)}
-                  style={{ borderTop: '1px solid rgba(148,163,184,0.05)', cursor: 'pointer', transition: 'all 0.1s ease-out' }}
-                  className="contact-row"
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.08)'} // Blue hover
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  {/* Name & Email */}
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ fontWeight: 600, color: '#f1f5f9', fontSize: 14, marginBottom: 2 }}>{c.name}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{c.email || 'No email'}</div>
-                  </td>
-
-                  {/* Company & Title */}
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 500 }}>{c.company || 'No Company'}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>{c.title || c.job_title || '-'}</div>
-                  </td>
-
-                  {/* Lead Status (NEW) */}
-                  <td style={{ padding: '16px 20px' }}>
-                    <span style={{ 
-                      fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 99,
-                      background: '#1e293b', border: '1px solid #334155', color: '#94a3b8',
-                      textTransform: 'capitalize'
-                    }}>
-                      {leadStatus}
-                    </span>
-                  </td>
-
-                  {/* Score */}
-                  <td style={{ padding: '16px 20px' }}>
-                    <div style={{ 
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', 
-                      width: 36, height: 36, borderRadius: 10, 
-                      background: colors.bg, color: colors.text, border: `1px solid ${colors.border}`,
-                      fontWeight: 700, fontSize: 14,
-                      boxShadow: `0 4px 10px -2px ${colors.bg}`
-                    }}>
-                      {Math.round(score)}
-                    </div>
-                  </td>
-
-                  {/* Persona */}
-                  <td style={{ padding: '16px 20px' }}>
-                    {c.persona ? (
-                      <span style={{ 
-                        fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 99, 
-                        background: 'rgba(124, 58, 237, 0.1)', color: '#a78bfa', 
-                        border: '1px solid rgba(124, 58, 237, 0.2)',
-                        display: 'inline-flex', alignItems: 'center', gap: 4
-                      }}>
-                        <Briefcase size={10} />
-                        {c.persona.replace(/_/g, ' ')}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 12, color: '#475569' }}>—</span>
-                    )}
-                  </td>
-
-                  {/* Enrichment Status */}
-                  <td style={{ padding: '16px 20px' }}>
-                    {c.enrichment_status === 'completed' ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4ade80', fontWeight: 600 }}>
-                        <Zap size={14} fill="#4ade80" /> Enriched
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
-                        <Clock size={14} /> Pending
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-            
-            {filteredContacts.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ padding: 60, textAlign: 'center', color: '#64748b' }}>
-                  <Search size={48} style={{ opacity: 0.2, margin: '0 auto 16px' }} />
-                  No contacts found matching "{searchTerm}"
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* Sort Controls */}
+      <div className="flex items-center gap-4 mb-6">
+        <span className="text-sm text-gray-600">Sort by:</span>
+        <select
+          value={sortField}
+          onChange={(e) => setSortField(e.target.value as any)}
+          className="text-sm border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="mdcp_score">MDCP Score</option>
+          <option value="priority_score">Priority Score</option>
+          <option value="name">Name</option>
+        </select>
+        <button
+          onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+        >
+          {sortDirection === 'asc' ? '↑ Ascending' : '↓ Descending'}
+        </button>
+        <span className="ml-auto text-sm text-gray-500">{filteredContacts.length} contacts</span>
       </div>
 
-      {selectedContact && (
+      {/* Contacts Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredContacts.map((contact) => (
+          <div
+            key={contact.id}
+            onClick={() => setSelectedContactId(contact.id)}
+            className="border border-gray-200 rounded-lg p-4 hover:shadow-lg hover:border-blue-300 transition cursor-pointer bg-white"
+          >
+            {/* Contact Header */}
+            <div className="flex items-start gap-3 mb-3">
+              <div className={`w-10 h-10 rounded-full ${getAvatarColor(contact.name)} flex items-center justify-center text-white font-bold`}>
+                {contact.name?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900 truncate">{contact.name}</h3>
+                <p className="text-sm text-gray-600 truncate">{contact.title}</p>
+                <p className="text-sm text-gray-500 truncate">{contact.company}</p>
+              </div>
+            </div>
+
+            {/* Persona Badge */}
+            {contact.persona && (
+              <div className="mb-3">
+                <PersonaBadge persona={contact.persona} confidence={contact.persona_confidence_score} size="sm" />
+              </div>
+            )}
+
+            {/* Scores */}
+            <div className="flex gap-3 mb-3">
+              <div className="flex-1 bg-gray-50 rounded p-2">
+                <p className="text-xs text-indigo-600 font-medium">MDCP</p>
+                <p className="text-lg font-bold text-gray-900">{contact.mdcp_score || 0}</p>
+                {contact.mdcp_tier && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded border ${getTierColor(contact.mdcp_tier)}`}>
+                    {contact.mdcp_tier}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 bg-gray-50 rounded p-2">
+                <p className="text-xs text-purple-600 font-medium">Priority</p>
+                <p className="text-lg font-bold text-gray-900">{contact.priority_score || 0}</p>
+                {contact.urgency_level && (
+                  <span className="text-xs text-gray-500">{contact.urgency_level}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Contact Methods */}
+            <div className="flex gap-1 pt-2 border-t border-gray-100">
+              {contact.email && (
+                <a
+                  href={`mailto:${contact.email}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 hover:bg-blue-50 rounded text-blue-600 transition"
+                  title="Email"
+                >
+                  <Mail size={16} />
+                </a>
+              )}
+              {contact.phone && (
+                <a
+                  href={`tel:${contact.phone}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 hover:bg-green-50 rounded text-green-600 transition"
+                  title="Call"
+                >
+                  <Phone size={16} />
+                </a>
+              )}
+              {contact.linkedin_url && (
+                <a
+                  href={contact.linkedin_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1.5 hover:bg-blue-50 rounded text-blue-600 transition"
+                  title="LinkedIn"
+                >
+                  <Linkedin size={16} />
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {filteredContacts.length === 0 && (
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <p className="text-gray-500">No contacts found</p>
+        </div>
+      )}
+
+      {/* THE MODAL - THIS WAS MISSING! */}
+      {selectedContactId && (
         <ContactDetailModal
-          contact={selectedContact}
-          onClose={() => setSelectedContact(null)}
-          onEnrichmentComplete={(updated) => {
-            setSelectedContact(updated);
-            fetchContacts();
-          }}
+          contactId={selectedContactId}
+          onClose={() => setSelectedContactId(null)}
         />
       )}
     </div>
   );
-}
+};
+
+export default ContactsBoard;

@@ -1,200 +1,124 @@
 import React, { useState } from 'react';
-import { API_BASE } from '../config';
-import { Phone, Mail, Linkedin, Users, CheckCircle, Clock } from 'lucide-react';
+import { Phone, Mail, Calendar, FileText, Send } from 'lucide-react';
 
 interface ActivityLoggerProps {
   contactId: number;
-  contactName: string;
-  onActivityLogged?: () => void;
+  onActivityLogged?: (activity: any) => void;
 }
 
-export default function ActivityLogger({ contactId, contactName, onActivityLogged }: ActivityLoggerProps) {
-  const [activityType, setActivityType] = useState<'call' | 'email' | 'linkedin' | 'meeting'>('call');
-  const [outcome, setOutcome] = useState('');
+export const ActivityLogger: React.FC<ActivityLoggerProps> = ({ contactId, onActivityLogged }) => {
+  const [activityType, setActivityType] = useState<'call' | 'email' | 'meeting' | 'note'>('note');
   const [notes, setNotes] = useState('');
-  const [logging, setLogging] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [outcome, setOutcome] = useState('');
+  const [isLogging, setIsLogging] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLogging(true);
+    setIsLogging(true);
 
     try {
-      const res = await fetch('${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/activities/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contact_id: contactId,
-          activity_type: activityType,
-          activity_date: new Date().toISOString(),
-          direction: 'outbound',
-          outcome,
-          notes,
-        }),
-      });
+      const activity = {
+        type: activityType,
+        notes,
+        outcome,
+        timestamp: new Date().toISOString(),
+      };
 
-      const data = await res.json();
-
-      if (data.success) {
-        setSuccess(true);
-        setNotes('');
-        setOutcome('');
-        onActivityLogged?.();
-        setTimeout(() => setSuccess(false), 3000);
-      }
-    } catch (err) {
-      console.error('Failed to log activity:', err);
+      // API call would go here
+      console.log('Logging activity:', activity);
+      
+      onActivityLogged?.(activity);
+      
+      // Reset form
+      setNotes('');
+      setOutcome('');
+    } catch (error) {
+      console.error('Failed to log activity:', error);
     } finally {
-      setLogging(false);
+      setIsLogging(false);
     }
   };
 
-  const activityOptions = [
-    { value: 'call', label: '📞 Call', icon: Phone },
-    { value: 'email', label: '📧 Email', icon: Mail },
-    { value: 'linkedin', label: '💼 LinkedIn', icon: Linkedin },
-    { value: 'meeting', label: '👥 Meeting', icon: Users },
+  const activityTypes = [
+    { value: 'call', label: 'Phone Call', icon: Phone },
+    { value: 'email', label: 'Email', icon: Mail },
+    { value: 'meeting', label: 'Meeting', icon: Calendar },
+    { value: 'note', label: 'Note', icon: FileText },
   ];
 
-  const outcomeOptions = {
-    call: ['Connected', 'Voicemail', 'No Answer', 'Wrong Number'],
-    email: ['Sent', 'Replied', 'Bounced', 'Opened'],
-    linkedin: ['Message Sent', 'Connection Request', 'Endorsed', 'Comment'],
-    meeting: ['Scheduled', 'Completed', 'Rescheduled', 'Cancelled'],
-  };
-
   return (
-    <div style={{ background: 'rgba(30,41,59,0.5)', borderRadius: 12, padding: 20, border: '1px solid rgba(148,163,184,0.2)' }}>
-      <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: '#e5e7eb' }}>
-        Log Activity with {contactName}
-      </h3>
-
-      <form onSubmit={handleSubmit}>
-        {/* Activity Type */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: '#9ca3af' }}>
+    <div className="bg-white rounded-lg border p-4">
+      <h3 className="font-semibold text-gray-900 mb-4">Log Activity</h3>
+      
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Activity Type Selection */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Activity Type
           </label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {activityOptions.map((option) => {
-              const Icon = option.icon;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setActivityType(option.value as any)}
-                  style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    border: activityType === option.value ? '2px solid rgba(99,102,241,0.8)' : '1px solid rgba(148,163,184,0.3)',
-                    background: activityType === option.value ? 'rgba(99,102,241,0.2)' : 'rgba(15,23,42,0.6)',
-                    color: activityType === option.value ? '#a5b4fc' : '#9ca3af',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                  }}
-                >
-                  <Icon size={16} />
-                  {option.label}
-                </button>
-              );
-            })}
+          <div className="grid grid-cols-4 gap-2">
+            {activityTypes.map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setActivityType(value as any)}
+                className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition ${
+                  activityType === value
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="text-xs font-medium">{label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Outcome */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: '#9ca3af' }}>
-            Outcome
-          </label>
-          <select
-            value={outcome}
-            onChange={(e) => setOutcome(e.target.value)}
-            required
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: '1px solid rgba(148,163,184,0.3)',
-              background: 'rgba(15,23,42,0.6)',
-              color: '#e5e7eb',
-              fontSize: 14,
-            }}
-          >
-            <option value="">Select outcome...</option>
-            {outcomeOptions[activityType].map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </div>
-
         {/* Notes */}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 8, color: '#9ca3af' }}>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             Notes
           </label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes..."
             rows={3}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: '1px solid rgba(148,163,184,0.3)',
-              background: 'rgba(15,23,42,0.6)',
-              color: '#e5e7eb',
-              fontSize: 14,
-              resize: 'vertical',
-            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="What happened during this interaction?"
+            required
           />
         </div>
 
-        {/* Submit */}
+        {/* Outcome */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Outcome
+          </label>
+          <select
+            value={outcome}
+            onChange={(e) => setOutcome(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select outcome...</option>
+            <option value="interested">Interested</option>
+            <option value="follow_up">Follow-up Scheduled</option>
+            <option value="not_interested">Not Interested</option>
+            <option value="no_response">No Response</option>
+            <option value="meeting_scheduled">Meeting Scheduled</option>
+          </select>
+        </div>
+
+        {/* Submit Button */}
         <button
           type="submit"
-          disabled={logging || !outcome}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: 8,
-            border: 'none',
-            background: success
-              ? 'linear-gradient(135deg, rgba(34,197,94,0.5), rgba(22,163,74,0.5))'
-              : logging || !outcome
-              ? 'rgba(71,85,105,0.5)'
-              : 'linear-gradient(135deg, rgba(99,102,241,0.6), rgba(79,70,229,0.6))',
-            color: '#e5e7eb',
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: logging || !outcome ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-          }}
+          disabled={isLogging}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
         >
-          {success ? (
-            <>
-              <CheckCircle size={18} />
-              Activity Logged!
-            </>
-          ) : logging ? (
-            <>
-              <Clock size={18} />
-              Logging...
-            </>
-          ) : (
-            'Log Activity'
-          )}
+          <Send className="h-4 w-4" />
+          {isLogging ? 'Logging...' : 'Log Activity'}
         </button>
       </form>
     </div>
   );
-}
+};

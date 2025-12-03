@@ -1,0 +1,63 @@
+# ======================
+# APEX ENVIRONMENT VARIABLES
+# ======================
+
+# OpenAI Configuration
+OPENAI_API_KEY=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
+
+OPENAI_MODEL=gpt-4
+
+# Perplexity AI (for enrichment)
+PERPLEXITY_API_KEY=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
+
+
+# HubSpot Integration
+HUBSPOT_ACCESS_TOKEN=pat-na2-f9d23c17-86f8-4a63-83f7-9742a77c5645
+HUBSPOT_PAGE_SIZE=100
+
+# LinkMatch Pro (for LinkedIn data)
+LINKMATCH_API_KEY=your-linkmatch-key-here
+
+# Notion Integration
+NOTION_DATABASE_ID=27cc34ccf9a58074b134caebe23dae06
+NOTION_DEALS_DB_ID=e74541825cf44c7dae53c63aeb8f8e29
+NOTION_API_KEY=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
+
+
+# ======================
+# APEX ENVIRONMENT VARIABLES
+# ======================
+
+# Frontend Configuration
+VITE_API_URL=http://localhost:8000
+VITE_API_BASE_URL=http://localhost:8000/api
+
+# Database Configuration (KEEP THESE COMMENTED for local SQLite development)
+#DATABASE_URL=postgresql://postgres:DVvrEuXgkDYZTJhIvLQIandkkWuppucN@hopper.proxy.rlwy.net:24065/railway
+#DB_PASSWORD=FVeEgcWwRBxMWMXJrAunTbmyPpHdonKR
+DATABASE_URL=
+SQLITE_DATABASE=apex.db
+
+# Python API (Apex Backend)
+PYTHON_API_URL=http://localhost:8000
+API_BASE_URL=http://localhost:8000
+PORT=8000
+
+# ======================
+# CRITICAL: AI API KEYS (REQUIRED FOR ENRICHMENT)
+# ======================
+
+
+# Salesforce (Optional - for CRM import)
+SALESFORCE_CLIENT_ID=
+SALESFORCE_CLIENT_SECRET=
+
+# ======================
+# FEATURE FLAGS
+# ======================
+ENABLE_ENRICHMENT=true
+ENABLE_SCORING=true
+ENABLE_PERSONA_CLASSIFICATION=true
+ENABLE_CONTENT_GENERATION=true
+ENABLE_AUTOMATION=true
+ENABLE_ML_PREDICTIONS=true

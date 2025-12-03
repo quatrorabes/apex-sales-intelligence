@@ -1,0 +1,330 @@
+// src/components/TodaysBoard.tsx
+import React, { useState, useEffect } from 'react';
+
+interface Contact {
+  id: number;
+  name: string;
+  email: string;
+  company: string;
+  title: string;
+  priority_score: number;
+  mdcp_score?: number;
+  mdcp_tier?: string;
+  urgency_level?: string;
+  rss_tier?: string;
+}
+
+interface TodaysBoardData {
+  success: boolean;
+  date: string;
+  contacts: Contact[];
+}
+
+export default function TodaysBoard() {
+  const [data, setData] = useState<TodaysBoardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+  useEffect(() => {
+    const fetchBoard = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`${API_URL}/api/todays-board`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const json = await response.json();
+        console.log('Today\'s Board API Response:', json);
+        setData(json);
+        setError(null);
+      } catch (err) {
+        console.error('Failed to fetch Today\'s Board:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load board');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBoard();
+  }, [API_URL]);
+
+  if (loading) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <h2>Loading Today's Board...</h2>
+        <div style={{ marginTop: '20px', fontSize: '48px' }}>⏳</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: '#d32f2f' }}>
+        <h2>⚠️ Error Loading Board</h2>
+        <p>{error}</p>
+        <p style={{ marginTop: '20px', fontSize: '14px', color: '#666' }}>
+          Make sure the backend is running on {API_URL}
+        </p>
+      </div>
+    );
+  }
+
+  if (!data || !data.success) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center' }}>
+        <h2>No data available</h2>
+      </div>
+    );
+  }
+
+  // Categorize contacts by tier
+  const hotContacts = data.contacts.filter(c => c.mdcp_tier === 'HOT');
+  const warmContacts = data.contacts.filter(c => c.mdcp_tier === 'WARM');
+  const coldContacts = data.contacts.filter(c => c.mdcp_tier === 'COLD');
+
+  // Categorize by urgency
+  const urgentContacts = data.contacts.filter(c => c.urgency_level === 'IMMEDIATE' || c.urgency_level === 'HIGH');
+  const mediumContacts = data.contacts.filter(c => c.urgency_level === 'MEDIUM');
+  const lowContacts = data.contacts.filter(c => c.urgency_level === 'LOW');
+
+  return (
+    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '30px' }}>
+        <h1 style={{ fontSize: '32px', fontWeight: 'bold', marginBottom: '8px' }}>
+          📋 Today's Board
+        </h1>
+        <p style={{ color: '#666', fontSize: '16px' }}>
+          {data.date} • {data.contacts.length} contacts
+        </p>
+      </div>
+
+      {/* Summary Stats */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+        gap: '16px',
+        marginBottom: '30px'
+      }}>
+        <StatCard 
+          icon="🔥" 
+          label="HOT Prospects" 
+          count={hotContacts.length} 
+          color="#ef4444"
+        />
+        <StatCard 
+          icon="⚡" 
+          label="WARM Prospects" 
+          count={warmContacts.length} 
+          color="#f59e0b"
+        />
+        <StatCard 
+          icon="⏰" 
+          label="Urgent Actions" 
+          count={urgentContacts.length} 
+          color="#8b5cf6"
+        />
+        <StatCard 
+          icon="📊" 
+          label="Total Contacts" 
+          count={data.contacts.length} 
+          color="#3b82f6"
+        />
+      </div>
+
+      {/* Urgent Contacts Section */}
+      {urgentContacts.length > 0 && (
+        <Section title="🔥 Urgent Actions" color="#ef4444">
+          {urgentContacts.slice(0, 5).map(contact => (
+            <ContactCard key={contact.id} contact={contact} />
+          ))}
+        </Section>
+      )}
+
+      {/* Hot Prospects Section */}
+      {hotContacts.length > 0 && (
+        <Section title="🔥 HOT Prospects" color="#ef4444">
+          {hotContacts.slice(0, 5).map(contact => (
+            <ContactCard key={contact.id} contact={contact} />
+          ))}
+        </Section>
+      )}
+
+      {/* Warm Prospects Section */}
+      {warmContacts.length > 0 && (
+        <Section title="⚡ WARM Prospects" color="#f59e0b">
+          {warmContacts.slice(0, 5).map(contact => (
+            <ContactCard key={contact.id} contact={contact} />
+          ))}
+        </Section>
+      )}
+
+      {/* Medium Priority Section */}
+      {mediumContacts.length > 0 && (
+        <Section title="📌 Medium Priority" color="#3b82f6">
+          {mediumContacts.slice(0, 5).map(contact => (
+            <ContactCard key={contact.id} contact={contact} />
+          ))}
+        </Section>
+      )}
+
+      {/* Empty State */}
+      {data.contacts.length === 0 && (
+        <div style={{ 
+          padding: '60px', 
+          textAlign: 'center',
+          backgroundColor: '#f9fafb',
+          borderRadius: '12px',
+          border: '2px dashed #d1d5db'
+        }}>
+          <div style={{ fontSize: '64px', marginBottom: '16px' }}>📭</div>
+          <h3 style={{ fontSize: '20px', marginBottom: '8px' }}>No contacts ready yet</h3>
+          <p style={{ color: '#666' }}>
+            Add contacts and enrich them to see your prioritized board
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Helper Components
+
+interface StatCardProps {
+  icon: string;
+  label: string;
+  count: number;
+  color: string;
+}
+
+function StatCard({ icon, label, count, color }: StatCardProps) {
+  return (
+    <div style={{
+      padding: '20px',
+      backgroundColor: 'white',
+      borderRadius: '12px',
+      border: '1px solid #e5e7eb',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+    }}>
+      <div style={{ fontSize: '32px', marginBottom: '8px' }}>{icon}</div>
+      <div style={{ fontSize: '24px', fontWeight: 'bold', color }}>{count}</div>
+      <div style={{ fontSize: '14px', color: '#6b7280' }}>{label}</div>
+    </div>
+  );
+}
+
+interface SectionProps {
+  title: string;
+  color: string;
+  children: React.ReactNode;
+}
+
+function Section({ title, color, children }: SectionProps) {
+  return (
+    <div style={{ marginBottom: '30px' }}>
+      <h2 style={{ 
+        fontSize: '20px', 
+        fontWeight: 'bold', 
+        marginBottom: '16px',
+        color,
+        borderLeft: `4px solid ${color}`,
+        paddingLeft: '12px'
+      }}>
+        {title}
+      </h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+interface ContactCardProps {
+  contact: Contact;
+}
+
+function ContactCard({ contact }: ContactCardProps) {
+  const getTierColor = (tier?: string) => {
+    switch(tier) {
+      case 'HOT': return '#ef4444';
+      case 'WARM': return '#f59e0b';
+      case 'COLD': return '#3b82f6';
+      default: return '#6b7280';
+    }
+  };
+
+  const getTierEmoji = (tier?: string) => {
+    switch(tier) {
+      case 'HOT': return '🔥';
+      case 'WARM': return '⚡';
+      case 'COLD': return '❄️';
+      default: return '📊';
+    }
+  };
+
+  return (
+    <div style={{
+      padding: '16px',
+      backgroundColor: 'white',
+      borderRadius: '8px',
+      border: '1px solid #e5e7eb',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+      transition: 'all 0.2s',
+      cursor: 'pointer'
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+      e.currentTarget.style.transform = 'translateY(-2px)';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+      e.currentTarget.style.transform = 'translateY(0)';
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+        <div style={{ flex: 1 }}>
+          <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '4px' }}>
+            {contact.name || 'Unknown'}
+          </h3>
+          <p style={{ color: '#6b7280', fontSize: '14px', marginBottom: '8px' }}>
+            {contact.title || 'No title'} {contact.company ? `at ${contact.company}` : ''}
+          </p>
+          <p style={{ color: '#9ca3af', fontSize: '13px' }}>
+            {contact.email || 'No email'}
+          </p>
+        </div>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+          {/* MDCP Tier Badge */}
+          {contact.mdcp_tier && (
+            <div style={{
+              padding: '4px 12px',
+              borderRadius: '16px',
+              backgroundColor: getTierColor(contact.mdcp_tier) + '20',
+              color: getTierColor(contact.mdcp_tier),
+              fontSize: '12px',
+              fontWeight: 'bold'
+            }}>
+              {getTierEmoji(contact.mdcp_tier)} {contact.mdcp_tier}
+            </div>
+          )}
+          
+          {/* Priority Score */}
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1f2937' }}>
+            {Math.round(contact.priority_score || 0)}
+          </div>
+          
+          {/* Urgency Level */}
+          {contact.urgency_level && (
+            <div style={{ fontSize: '11px', color: '#6b7280' }}>
+              {contact.urgency_level}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
