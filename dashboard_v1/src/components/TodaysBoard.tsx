@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ProspectCard } from './ProspectCard';
 import { KPICard } from './KPICard';
 import api from '../services/api';
@@ -15,6 +15,8 @@ interface Contact {
   contact_type?: string;
   mdcp_score?: number;
   priority_score?: number;
+  enrichment_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  last_enriched?: string;
 }
 
 interface BoardData {
@@ -54,7 +56,7 @@ export default function TodaysBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchBoard = async () => {
+  const fetchBoard = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -73,13 +75,20 @@ export default function TodaysBoard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchBoard();
     const interval = setInterval(fetchBoard, 300000); // Refresh every 5 min
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchBoard]);
+
+  const handleEnrichComplete = useCallback(() => {
+    // Refresh board data after enrichment
+    setTimeout(() => {
+      fetchBoard();
+    }, 1000);
+  }, [fetchBoard]);
 
   if (loading) {
     return (
@@ -125,6 +134,9 @@ export default function TodaysBoard() {
   // Calculate KPI metrics
   const totalHot = (board.relationships?.urgent_count || 0) + (board.new_prospects?.hot_count || 0);
   const pipelineValue = Math.round((totalHot * 45000) / 1000) / 1000; // Rough estimate
+  const enrichedCount = [...urgentContacts, ...hotProspects, ...warmContacts].filter(c => c.why_now).length;
+  const totalContacts = urgentContacts.length + hotProspects.length + warmContacts.length;
+  const enrichmentRate = totalContacts > 0 ? Math.round((enrichedCount / totalContacts) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-midnight-950 p-8">
@@ -139,7 +151,7 @@ export default function TodaysBoard() {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
           <KPICard
             label="Total Actions Today"
             value={board.total_actions}
@@ -157,6 +169,12 @@ export default function TodaysBoard() {
             trend={{ value: 23, isPositive: true }}
             delay={0.2}
           />
+          <KPICard
+            label="AI Enrichment"
+            value={`${enrichmentRate}%`}
+            trend={{ value: enrichmentRate - 75, isPositive: enrichmentRate >= 75 }}
+            delay={0.3}
+          />
         </div>
 
         {/* Urgent Relationships */}
@@ -172,12 +190,17 @@ export default function TodaysBoard() {
               {urgentContacts.map(contact => (
                 <ProspectCard
                   key={contact.id}
+                  id={contact.id}
                   name={contact.name}
                   company={contact.company}
+                  email={contact.email}
                   score={contact.mdcp_score || contact.priority_score || 50}
                   aiReason={contact.why_now}
+                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
+                  lastEnriched={contact.last_enriched}
                   tags={[contact.urgency_label || 'Urgent', contact.contact_type || 'Relationship'].filter(Boolean)}
                   onClick={() => window.location.href = `/contacts/${contact.id}`}
+                  onEnrichComplete={handleEnrichComplete}
                 />
               ))}
             </div>
@@ -197,12 +220,17 @@ export default function TodaysBoard() {
               {hotProspects.map(contact => (
                 <ProspectCard
                   key={contact.id}
+                  id={contact.id}
                   name={contact.name}
                   company={contact.company}
+                  email={contact.email}
                   score={contact.mdcp_score || contact.priority_score || 85}
                   aiReason={contact.why_now}
+                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
+                  lastEnriched={contact.last_enriched}
                   tags={['Hot', 'New Prospect', contact.contact_type].filter(Boolean)}
                   onClick={() => window.location.href = `/contacts/${contact.id}`}
+                  onEnrichComplete={handleEnrichComplete}
                 />
               ))}
             </div>
@@ -222,12 +250,17 @@ export default function TodaysBoard() {
               {warmContacts.slice(0, 6).map(contact => (
                 <ProspectCard
                   key={contact.id}
+                  id={contact.id}
                   name={contact.name}
                   company={contact.company}
+                  email={contact.email}
                   score={contact.mdcp_score || contact.priority_score || 70}
                   aiReason={contact.why_now}
+                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
+                  lastEnriched={contact.last_enriched}
                   tags={[contact.urgency_label || 'Warm', 'Relationship'].filter(Boolean)}
                   onClick={() => window.location.href = `/contacts/${contact.id}`}
+                  onEnrichComplete={handleEnrichComplete}
                 />
               ))}
             </div>
@@ -247,12 +280,17 @@ export default function TodaysBoard() {
               {qualifiedProspects.slice(0, 6).map(contact => (
                 <ProspectCard
                   key={contact.id}
+                  id={contact.id}
                   name={contact.name}
                   company={contact.company}
+                  email={contact.email}
                   score={contact.mdcp_score || contact.priority_score || 75}
                   aiReason={contact.why_now}
+                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
+                  lastEnriched={contact.last_enriched}
                   tags={['Qualified', contact.contact_type || 'Prospect'].filter(Boolean)}
                   onClick={() => window.location.href = `/contacts/${contact.id}`}
+                  onEnrichComplete={handleEnrichComplete}
                 />
               ))}
             </div>
