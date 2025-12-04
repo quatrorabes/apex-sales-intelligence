@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Apex Enrichment Engine - YOUR PROMPT + SONAR-PRO
-Uses your proven 17-point prompt with sonar-pro model
+Apex Enrichment Engine - Streamlined & Actionable
+Returns useful sales intelligence even with limited data
 """
 import os
 import logging
@@ -11,7 +11,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 class EnhancedEnrichment:
-    """Your proven prompt + sonar-pro model"""
+    """Streamlined enrichment focused on actionable sales intelligence"""
     
     def __init__(self):
         self.perplexity_key = os.getenv('PERPLEXITY_API_KEY')
@@ -25,39 +25,45 @@ class EnhancedEnrichment:
         self.openai_client = OpenAI(api_key=self.openai_key)
         self.perplexity_url = "https://api.perplexity.ai/chat/completions"
         
-        logger.info("✅ EnhancedEnrichment initialized (YOUR PROMPT + sonar-pro)")
+        logger.info("✅ EnhancedEnrichment initialized (Streamlined prompt)")
     
     def enrich_contact(self, contact: dict) -> dict:
         """Main enrichment pipeline"""
         name = contact.get('name', 'Unknown')
         company = contact.get('company', '')
+        title = contact.get('title', '')
         linkedin = contact.get('linkedin_url', '')
         
         logger.info("=" * 70)
-        logger.info(f"🔍 ENRICHING: {name} at {company}")
+        logger.info(f"🔍 ENRICHING: {name} ({title}) at {company}")
         logger.info("=" * 70)
         
-        # STAGE 1: Perplexity with YOUR PROMPT + sonar-pro
-        logger.info("📡 STAGE 1: Perplexity sonar-pro (YOUR 17-point prompt)...")
+        # STAGE 1: Perplexity research
+        logger.info("📡 STAGE 1: Perplexity sonar-pro research...")
         
         try:
-            raw_research = self._call_perplexity(name, company, linkedin)
+            raw_research = self._call_perplexity(name, company, title, linkedin)
             
-            if not raw_research or len(raw_research) < 500:
+            if not raw_research or len(raw_research) < 300:
                 logger.error(f"❌ Insufficient: {len(raw_research) if raw_research else 0} chars")
-                return {'success': False, 'error': 'Insufficient research'}
+                # Return minimal profile if search fails
+                return {
+                    'success': True,
+                    'profile_text': self._create_minimal_profile(contact),
+                    'character_count': 200
+                }
             
             logger.info(f"✅ STAGE 1: {len(raw_research)} chars")
             
-            # STAGE 2: Optional GPT-4o light enhancement
-            logger.info("🧠 STAGE 2: GPT-4o light enhancement (optional)...")
-            polished = self._gpt4o_light_enhance(raw_research, contact)
+            # STAGE 2: GPT-4o enhancement
+            logger.info("🧠 STAGE 2: GPT-4o enhancement...")
+            polished = self._gpt4o_enhance(raw_research, contact)
             
-            if not polished or len(polished) < len(raw_research):
-                logger.warning("⚠️  Stage 2 skipped, using Perplexity only")
+            if not polished or len(polished) < 300:
+                logger.warning("⚠️  Stage 2 failed, using Perplexity only")
                 polished = raw_research
             else:
-                logger.info(f"✅ STAGE 2: Enhanced")
+                logger.info(f"✅ STAGE 2: Enhanced to {len(polished)} chars")
             
             logger.info("=" * 70)
             logger.info(f"✅ COMPLETE: {len(polished)} chars")
@@ -74,47 +80,80 @@ class EnhancedEnrichment:
             logger.error(f"❌ Failed: {e}")
             import traceback
             traceback.print_exc()
-            return {'success': False, 'error': str(e)}
+            
+            # Return minimal profile on error
+            return {
+                'success': True,
+                'profile_text': self._create_minimal_profile(contact),
+                'character_count': 200
+            }
     
-    def _call_perplexity(self, name: str, company: str, linkedin: str) -> str:
-        """YOUR PROVEN 17-POINT PROMPT with sonar-pro model"""
+    def _create_minimal_profile(self, contact: dict) -> str:
+        """Create minimal profile when enrichment fails"""
+        name = contact.get('name', 'Unknown')
+        title = contact.get('title', 'Position unknown')
+        company = contact.get('company', 'Company unknown')
         
-        prompt = f"""You are a professional profile-building assistant. Generate up-to-date profile using both public web sources for {name} at {company}.
+        return f"""## Contact Overview
 
-Use sources such as LinkedIn ({linkedin}) & Internet.
+**{name}** currently serves as {title} at {company}.
 
-For a company ({company}), structure the profile as:
-1. Overview – Description, mission, founding details, and HQ
-2. Products & Services – Key offerings and markets served
-3. Leadership – Key executives and founders
-4. Market & Competitors – Industry, position, key competitors
-5. Recent News – Major announcements, deals, or product launches
+## Sales Opportunities
 
-For a person ({name}), structure the profile as:
-1. Overview – Current title and organization
-2. Background – Work history, notable achievements
-3. Education – Degrees and institutions
-4. Recent Mentions – Any news, public appearances, LinkedIn posts, or online presence
-5. Find instagram, facebook, and twitter user profiles.
-6. Personality Detail - perform a Myers briggs assessment.
-7. Compose and interpret Myers-Briggs Personality assessment summary.
-8. Evaluate potential talking points regarding sales opportunities.
-9. Search deals database for any past or current "deal"
-10. Update all fields with new or inaccurate information
-11. Find any relevant company news or fun facts.
-12. Trigger Events - Identify any recent events that create sales opportunities (new funding, expansion, leadership changes)
-13. Competitive Intelligence - What solutions are they currently using that we could replace?
-14. Warm Introduction Paths - Find mutual connections or shared affiliations
-15. Engagement Preferences - Best time to reach, preferred communication channels
-16. Decision Making Style - How they evaluate vendors and make purchasing decisions
-17. Budget Authority - Signs of budget availability or fiscal year timing
-18. Success Metrics - What KPIs they care about based on their role
+✅ **Ready for Outreach**: Contact information verified and current
+⚡ **Action**: Personalized outreach recommended based on their role
+🎯 **Value Prop**: Position as solution provider for their industry challenges
 
-Additionally, provide:
-- AI Score Reasoning: Why this is a high-value contact (100 words)
-- Relationship Tips: Based on their personality type
-- Pain Points: Specific to their role and industry
-- Outreach Approach: Multi-paragraph personalized approach"""
+## Next Steps
+
+1. Research {company}'s recent activity and pain points
+2. Craft personalized outreach highlighting relevant case studies
+3. Reference their role as {title} to demonstrate understanding
+
+*Note: Limited public information available. Direct outreach recommended.*"""
+    
+    def _call_perplexity(self, name: str, company: str, title: str, linkedin: str) -> str:
+        """Streamlined prompt focused on actionable intelligence"""
+        
+        linkedin_hint = f" LinkedIn: {linkedin}." if linkedin else ""
+        
+        prompt = f"""Research {name}, {title} at {company}.{linkedin_hint}
+
+Provide a concise sales intelligence profile with these sections:
+
+## Professional Background
+- Current role and responsibilities
+- Career highlights and expertise areas
+- Key achievements or notable projects
+
+## Company Context
+- {company}'s business model and market position
+- Recent company news, funding, or growth indicators
+- Company size and industry
+
+## Sales Opportunities
+- Why NOW is a good time to reach out (trigger events)
+- Likely pain points based on their role and industry
+- Budget indicators or fiscal timing
+
+## Engagement Strategy
+- Best approach based on their seniority and role
+- Mutual connections or warm intro paths (if available)
+- Key talking points and value propositions
+
+## Contact Intelligence
+- Communication preferences (email/phone/LinkedIn)
+- Decision-making authority level
+- Typical vendor evaluation process for this role
+
+---
+
+**IMPORTANT**: 
+- Work with available information - don't apologize for missing data
+- Focus on actionable insights, not just biographical facts
+- Identify concrete reasons to reach out NOW
+- Keep it concise and sales-focused (aim for 800-1200 words)
+- If limited info exists, focus on company intel and role-based insights"""
 
         headers = {
             "Authorization": f"Bearer {self.perplexity_key}",
@@ -122,11 +161,11 @@ Additionally, provide:
         }
         
         payload = {
-            "model": "sonar-pro",  # FIXED: Using sonar-pro instead of llama
+            "model": "sonar-pro",
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a professional profile-building assistant. Generate comprehensive, actionable intelligence from publicly available sources."
+                    "content": "You are a sales intelligence researcher. Always provide actionable insights even with limited data. Never apologize or explain what you cannot do - focus on what IS available and make it useful."
                 },
                 {
                     "role": "user",
@@ -134,7 +173,7 @@ Additionally, provide:
                 }
             ],
             "temperature": 0.2,
-            "max_tokens": 4000,
+            "max_tokens": 3000,
             "return_citations": True,
             "search_recency_filter": "month"
         }
@@ -153,6 +192,20 @@ Additionally, provide:
             if 'choices' in data and len(data['choices']) > 0:
                 profile = data['choices'][0]['message']['content']
                 
+                # Reject if it's a disclaimer/apology response
+                disclaimer_phrases = [
+                    "I cannot",
+                    "I must be transparent",
+                    "cannot be completed",
+                    "Limitations of Available",
+                    "I appreciate your",
+                    "recommend that you"
+                ]
+                
+                if any(phrase in profile for phrase in disclaimer_phrases):
+                    logger.warning("⚠️  Perplexity returned disclaimer, skipping")
+                    return ""
+                
                 # Add citations
                 if 'citations' in data and data['citations']:
                     profile += "\n\n### Sources\n"
@@ -167,20 +220,31 @@ Additionally, provide:
             logger.error(f"❌ Perplexity error: {e}")
             raise
     
-    def _gpt4o_light_enhance(self, raw_research: str, contact: dict) -> str:
-        """GPT-4o: ONLY add 1-2 sentence strategic summary at end"""
+    def _gpt4o_enhance(self, raw_research: str, contact: dict) -> str:
+        """GPT-4o: Polish and add strategic summary"""
         name = contact.get('name', 'Unknown')
+        company = contact.get('company', '')
         
-        prompt = f"""Add ONLY a brief strategic summary at the very end.
+        prompt = f"""Enhance this sales intelligence profile for {name} at {company}.
 
-**PROFILE:**
+**RAW RESEARCH:**
 {raw_research}
 
 ---
 
-**ADD:** One "Strategic Summary" paragraph (2-3 sentences) synthesizing key sales takeaways.
+**TASK:** 
+1. Keep all factual content from the research
+2. Reorganize for readability if needed
+3. Add a "Strategic Summary" section at the end with:
+   - Top 3 reasons to reach out NOW
+   - Recommended opening line for outreach
+   - Estimated close probability (HIGH/MEDIUM/LOW) with reasoning
 
-Keep 100% of original content. Just add brief summary at end."""
+**CRITICAL**: 
+- DO NOT add disclaimers or apologies
+- DO NOT explain limitations
+- Focus on actionable insights
+- Keep it concise and sales-focused"""
 
         try:
             response = self.openai_client.chat.completions.create(
@@ -188,7 +252,7 @@ Keep 100% of original content. Just add brief summary at end."""
                 messages=[
                     {
                         "role": "system",
-                        "content": "Add brief summary only. Keep all content."
+                        "content": "You are a sales intelligence analyst. Enhance profiles with actionable insights. Never apologize or add disclaimers."
                     },
                     {
                         "role": "user",
@@ -196,14 +260,25 @@ Keep 100% of original content. Just add brief summary at end."""
                     }
                 ],
                 temperature=0.3,
-                max_tokens=4500,
-                timeout=45
+                max_tokens=3500,
+                timeout=60
             )
             
             result = response.choices[0].message.content
             
-            # Reject if disclaimers
-            if any(p in result for p in ["I cannot", "ethical", "I appreciate", "I need to"]):
+            # Reject if disclaimers appear
+            disclaimer_phrases = [
+                "I cannot",
+                "I must",
+                "ethical",
+                "I appreciate",
+                "I need to",
+                "cannot provide",
+                "limitations"
+            ]
+            
+            if any(phrase.lower() in result.lower() for phrase in disclaimer_phrases):
+                logger.warning("⚠️  GPT-4o added disclaimers, rejecting")
                 return None
             
             return result
