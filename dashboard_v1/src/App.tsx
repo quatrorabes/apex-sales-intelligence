@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ThemeDemo } from './pages/ThemeDemo';
 import TodaysBoard from './components/TodaysBoard';
+import ContactDetail from './pages/ContactDetail';
 import './index.css';
 
 function App() {
@@ -9,6 +10,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/todays-board" element={<TodaysBoard />} />
+        <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/demo" element={<ThemeDemo />} />
         <Route path="/" element={
           <div className="min-h-screen bg-midnight-950 flex items-center justify-center">
