@@ -2,6 +2,7 @@
 """
 Apex Enrichment Engine - Multi-Stage Search Strategy
 Does 3 targeted searches then combines for rich profiles
+Target: 8000+ character profiles
 """
 import os
 import logging
@@ -110,18 +111,18 @@ class EnhancedEnrichment:
         if linkedin:
             query = f"{name} {company} site:linkedin.com OR {linkedin}"
         else:
-            query = f"{name} {company} site:linkedin.com professional profile"
+            query = f"{name} {company} site:linkedin.com professional profile background education"
         
         return self._perplexity_search(query, "person profile")
     
     def _search_company(self, company: str) -> str:
         """Stage 2: Company news and intelligence"""
-        query = f"{company} news funding leadership products services recent"
+        query = f"{company} company news funding leadership team products services market competitors recent announcements"
         return self._perplexity_search(query, "company intelligence")
     
     def _search_combined(self, name: str, company: str, title: str) -> str:
         """Stage 3: Person+company combined context"""
-        query = f"{name} {title} {company} deals announcements achievements"
+        query = f"{name} {title} {company} deals announcements achievements projects press mentions"
         return self._perplexity_search(query, "combined context")
     
     def _perplexity_search(self, query: str, search_type: str) -> str:
@@ -136,15 +137,15 @@ class EnhancedEnrichment:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a research assistant. Extract all relevant information from search results. Be comprehensive and factual."
+                    "content": "You are a comprehensive research assistant. Extract ALL relevant information from search results. Be thorough and detailed. Include facts, context, and specific details."
                 },
                 {
                     "role": "user",
-                    "content": f"Research and provide all available information about: {query}"
+                    "content": f"Provide comprehensive, detailed information about: {query}\n\nInclude all available facts, context, background, and specific details."
                 }
             ],
             "temperature": 0.1,
-            "max_tokens": 2000,
+            "max_tokens": 3000,  # Increased from 2000
             "return_citations": True,
             "search_recency_filter": "month"
         }
@@ -154,7 +155,7 @@ class EnhancedEnrichment:
                 self.perplexity_url,
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=90
             )
             
             response.raise_for_status()
@@ -169,7 +170,7 @@ class EnhancedEnrichment:
             # Add citations
             if 'citations' in data and data['citations']:
                 content += "\n\nSources:\n"
-                for i, citation in enumerate(data['citations'][:10], 1):
+                for i, citation in enumerate(data['citations'][:15], 1):  # Increased from 10
                     content += f"[{i}] {citation}\n"
             
             return content
@@ -179,81 +180,153 @@ class EnhancedEnrichment:
             return ""
     
     def _generate_profile(self, research_data: str, contact: dict) -> str:
-        """Generate structured profile from combined research"""
+        """Generate comprehensive structured profile from combined research"""
         name = contact.get('name', 'Unknown')
         company = contact.get('company', '')
         
-        prompt = f"""Using the research data below, create a comprehensive sales intelligence profile.
+        prompt = f"""Using the research data below, create a COMPREHENSIVE sales intelligence profile (target 8000+ characters).
 
 **RESEARCH DATA:**
 {research_data}
 
 ---
 
-**Generate profile with these sections:**
+**Generate a DETAILED profile with these sections:**
 
 ## {name} - Professional Profile
 
 ### Overview
-- Current role and organization
-- Key responsibilities and focus areas
+- Current role, organization, and tenure
+- Key responsibilities and areas of focus
+- Reporting structure and team size (if available)
 
-### Background
-- Career history and achievements
-- Education and credentials
-- Notable projects or deals
+### Background & Experience
+- Complete career history with dates and companies
+- Major achievements and notable projects
+- Industry expertise and specializations
+- Awards and recognition
+
+### Education & Credentials
+- Degrees, institutions, and graduation years
+- Certifications and professional development
+- Academic achievements
 
 ### Personality & Working Style
-- Professional strengths (inferred from public info)
-- Communication and decision-making style
-- Leadership approach
+- Professional strengths and leadership approach (inferred)
+- Communication style and preferences
+- Decision-making patterns
+- Core values and motivations (based on public statements)
 
-### Social Presence
-- LinkedIn activity and engagement
-- Other professional profiles (if available)
+### Social Presence & Engagement
+- LinkedIn activity, posts, and engagement topics
+- Twitter/X presence and thought leadership
+- Speaking engagements and conference appearances
+- Published articles or media mentions
 
 ## {company} - Company Intelligence
 
 ### Company Overview
-- Business model and offerings
-- Market position and competitors
-- Size and locations
+- Business model, mission, and value proposition
+- Founded date, headquarters, and locations
+- Company size (employees, revenue if public)
+- Ownership structure (public/private/PE-backed)
 
-### Recent Activity
-- News, funding, or major announcements
-- Product launches or partnerships
-- Leadership changes
+### Products & Services
+- Core offerings and product lines
+- Target markets and customer segments
+- Pricing models and go-to-market strategy
+
+### Market Position
+- Industry category and market size
+- Top 3-5 competitors
+- Competitive advantages and differentiators
+- Market share and growth trajectory
+
+### Leadership & Culture
+- CEO and executive team background
+- Board members and advisors
+- Company culture and values
+- Employee sentiment (if available)
+
+### Recent Activity & News
+- Funding rounds, M&A, or IPO activity
+- Product launches and major announcements
+- Partnerships and strategic initiatives
+- Leadership changes or organizational shifts
+- Press coverage and media mentions
 
 ## Sales Opportunities
 
-### Why Reach Out NOW
-- Trigger events creating urgency
-- Pain points based on role and industry
-- Budget timing indicators
+### Trigger Events - Why Reach Out NOW
+- Recent company events creating urgency
+- Budget cycle timing and fiscal indicators
+- Expansion signals or hiring patterns
+- Technology changes or migrations
+- Competitive pressures or market shifts
+
+### Pain Points & Challenges
+- Industry-specific challenges they're facing
+- Role-specific pain points based on title
+- Problems our solution could address
+- Current gap analysis
+
+### Budget & Authority
+- Decision-making level and influence
+- Budget ownership and approval process
+- Typical vendor evaluation criteria
+- Procurement cycle and timeline
 
 ### Engagement Strategy
-- Best approach based on seniority
-- Communication preferences
-- Key talking points
-- Warm introduction paths (if available)
+- Best communication channels (email/phone/LinkedIn)
+- Optimal timing for outreach
+- Referral and warm introduction paths
+- Mutual connections or shared affiliations
+- Content preferences and interests
 
-### Success Factors
-- Decision-making authority
-- KPIs they care about
-- How they evaluate vendors
+### Value Proposition Alignment
+- Key talking points specific to their role
+- Case studies or testimonials from similar companies
+- ROI metrics they care about
+- Success metrics and KPIs for their position
+
+### Competitive Intelligence
+- Current solutions they're likely using
+- Vendor relationships and contracts
+- Technology stack (if known)
+- Integration requirements
 
 ## Strategic Summary
-- Top 3 reasons this is a high-value contact
-- Recommended opening line for outreach
-- Estimated opportunity level (HIGH/MEDIUM/LOW)
+
+### Opportunity Assessment
+- **Opportunity Level:** HIGH / MEDIUM / LOW (with specific reasoning)
+- **Close Probability:** Percentage estimate with justification
+- **Deal Size Potential:** Estimated value and time to close
+
+### Top 5 Reasons to Engage
+1. [Specific trigger or pain point]
+2. [Budget/timing indicator]
+3. [Strategic fit factor]
+4. [Competitive advantage]
+5. [Relationship leverage point]
+
+### Recommended Opening Line
+[Specific, personalized opening that references recent activity, shared connection, or relevant pain point]
+
+### 30/60/90 Day Engagement Plan
+- **Days 1-30:** [Initial outreach strategy]
+- **Days 31-60:** [Follow-up and value demonstration]
+- **Days 61-90:** [Proposal and closing activities]
 
 ---
 
-**IMPORTANT:**
-- Use ONLY facts from the research data
-- If information is limited, focus on what IS available
-- No disclaimers or apologies
-- Be specific and actionable
+**CRITICAL INSTRUCTIONS:**
+- Use ONLY verifiable facts from the research data
+- Be COMPREHENSIVE - aim for 8000+ characters
+- Include specific names, dates, numbers, and details
+- No disclaimers, apologies, or explanations of limitations
+- If a section lacks data, briefly note it and move on
+- Focus on actionable, sales-relevant insights
+- Be specific and detailed in every section
 """
 
         headers = {
@@ -266,7 +339,7 @@ class EnhancedEnrichment:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a sales intelligence analyst. Create actionable profiles from research data. Be concise and specific."
+                    "content": "You are an expert sales intelligence analyst. Create comprehensive, detailed, actionable profiles. Be thorough and specific. Target 8000+ characters."
                 },
                 {
                     "role": "user",
@@ -274,7 +347,7 @@ class EnhancedEnrichment:
                 }
             ],
             "temperature": 0.3,
-            "max_tokens": 3000
+            "max_tokens": 4500  # Increased from 3000 to allow longer outputs
         }
         
         try:
@@ -282,7 +355,7 @@ class EnhancedEnrichment:
                 self.perplexity_url,
                 headers=headers,
                 json=payload,
-                timeout=60
+                timeout=120  # Increased timeout for longer generation
             )
             
             response.raise_for_status()
