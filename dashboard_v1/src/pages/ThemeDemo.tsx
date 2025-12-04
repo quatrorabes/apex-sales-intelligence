@@ -122,10 +122,10 @@ export const ThemeDemo: React.FC = () => {
               </div>
             </div>
 
-            {/* Violet AI Insight */}
+            {/* Blue AI Insight */}
             <div className="flex justify-start">
-              <div className="bg-violet-muted border-l-4 border-violet px-6 py-4 rounded-2xl rounded-tl-sm max-w-lg">
-                <p className="text-violet font-semibold mb-1 flex items-center gap-2">
+              <div className="bg-blue-muted border-l-4 border-blue px-6 py-4 rounded-2xl rounded-tl-sm max-w-lg shadow-blue-glow">
+                <p className="text-blue font-semibold mb-1 flex items-center gap-2">
                   <span>✨</span> AI Analysis
                 </p>
                 <p className="text-text-secondary italic">
@@ -188,9 +188,9 @@ export const ThemeDemo: React.FC = () => {
               <p className="text-text-tertiary text-xs">Primary Gold</p>
             </div>
             <div className="space-y-2">
-              <div className="bg-violet h-20 rounded-lg"></div>
-              <p className="text-text-secondary text-sm font-mono">#A78BFA</p>
-              <p className="text-text-tertiary text-xs">AI Violet</p>
+              <div className="bg-blue h-20 rounded-lg shadow-blue-glow"></div>
+              <p className="text-text-secondary text-sm font-mono">#3B82F6</p>
+              <p className="text-text-tertiary text-xs">AI Deep Blue</p>
             </div>
             <div className="space-y-2">
               <div className="bg-coral h-20 rounded-lg"></div>
