@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Apex Enrichment Engine - Pass ALL data to Perplexity
-Uses proven prompt structure that works manually
+Apex Enrichment Engine - Multi-Stage Search Strategy
+Does 3 targeted searches then combines for rich profiles
 """
 import os
 import logging
 import requests
 from openai import OpenAI
+import time
 
 logger = logging.getLogger(__name__)
 
 class EnhancedEnrichment:
-    """Pass all contact data to Perplexity with proven prompt"""
+    """Multi-stage search for comprehensive enrichment"""
     
     def __init__(self):
         self.perplexity_key = os.getenv('PERPLEXITY_API_KEY')
@@ -25,11 +26,11 @@ class EnhancedEnrichment:
         self.openai_client = OpenAI(api_key=self.openai_key)
         self.perplexity_url = "https://api.perplexity.ai/chat/completions"
         
-        logger.info("✅ EnhancedEnrichment initialized")
+        logger.info("✅ EnhancedEnrichment initialized (Multi-Stage Search)")
     
     def enrich_contact(self, contact: dict) -> dict:
-        """Main enrichment pipeline"""
-        name = contact.get('name', '') or contact.get('firstname', '') + ' ' + contact.get('lastname', '')
+        """Main enrichment pipeline with 3-stage search"""
+        name = contact.get('name', '') or f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
         company = contact.get('company', '')
         title = contact.get('title', '')
         email = contact.get('email', '')
@@ -39,29 +40,50 @@ class EnhancedEnrichment:
         logger.info("=" * 70)
         logger.info(f"🔍 ENRICHING: {name} at {company}")
         logger.info(f"   Title: {title}")
-        logger.info(f"   Email: {email}")
-        logger.info(f"   Phone: {phone}")
         logger.info(f"   LinkedIn: {linkedin}")
         logger.info("=" * 70)
         
         try:
-            # Call Perplexity with ALL data
-            profile = self._call_perplexity(
-                name=name,
-                company=company,
-                title=title,
-                email=email,
-                phone=phone,
-                linkedin=linkedin
-            )
+            # STAGE 1: LinkedIn/Person Search
+            logger.info("📡 STAGE 1: Searching LinkedIn for person profile...")
+            person_data = self._search_person(name, company, linkedin)
+            logger.info(f"   ✅ Got {len(person_data)} chars")
+            time.sleep(1)  # Rate limit
+            
+            # STAGE 2: Company/News Search
+            logger.info("📡 STAGE 2: Searching company news and intel...")
+            company_data = self._search_company(company)
+            logger.info(f"   ✅ Got {len(company_data)} chars")
+            time.sleep(1)  # Rate limit
+            
+            # STAGE 3: Combined Person+Company Context
+            logger.info("📡 STAGE 3: Searching person+company relationships...")
+            combined_data = self._search_combined(name, company, title)
+            logger.info(f"   ✅ Got {len(combined_data)} chars")
+            
+            # Combine all research
+            total_research = f"""# Research Data for {name} at {company}
+
+## Person Profile Data
+{person_data}
+
+## Company Intelligence Data
+{company_data}
+
+## Combined Context & Relationships
+{combined_data}
+"""
+            
+            logger.info(f"📊 Total research: {len(total_research)} chars")
+            
+            # STAGE 4: Generate Profile from Combined Data
+            logger.info("🧠 STAGE 4: Generating structured profile...")
+            profile = self._generate_profile(total_research, contact)
             
             if not profile or len(profile) < 500:
-                logger.warning(f"⚠️  Short response: {len(profile) if profile else 0} chars")
-                # Don't fail - return what we got
-                if profile:
-                    logger.info("Returning short profile anyway")
-                else:
-                    profile = self._create_minimal_profile(contact)
+                logger.warning(f"⚠️ Short profile: {len(profile) if profile else 0} chars")
+                # Use raw research if generation fails
+                profile = total_research if len(total_research) > 500 else self._create_minimal_profile(contact)
             
             logger.info(f"✅ COMPLETE: {len(profile)} chars")
             logger.info("=" * 70)
@@ -77,15 +99,206 @@ class EnhancedEnrichment:
             import traceback
             traceback.print_exc()
             
-            # Return minimal profile on error
             return {
                 'success': True,
                 'profile_text': self._create_minimal_profile(contact),
                 'character_count': 200
             }
     
+    def _search_person(self, name: str, company: str, linkedin: str) -> str:
+        """Stage 1: LinkedIn-focused person search"""
+        if linkedin:
+            query = f"{name} {company} site:linkedin.com OR {linkedin}"
+        else:
+            query = f"{name} {company} site:linkedin.com professional profile"
+        
+        return self._perplexity_search(query, "person profile")
+    
+    def _search_company(self, company: str) -> str:
+        """Stage 2: Company news and intelligence"""
+        query = f"{company} news funding leadership products services recent"
+        return self._perplexity_search(query, "company intelligence")
+    
+    def _search_combined(self, name: str, company: str, title: str) -> str:
+        """Stage 3: Person+company combined context"""
+        query = f"{name} {title} {company} deals announcements achievements"
+        return self._perplexity_search(query, "combined context")
+    
+    def _perplexity_search(self, query: str, search_type: str) -> str:
+        """Execute a Perplexity search and return raw results"""
+        headers = {
+            "Authorization": f"Bearer {self.perplexity_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "sonar-pro",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a research assistant. Extract all relevant information from search results. Be comprehensive and factual."
+                },
+                {
+                    "role": "user",
+                    "content": f"Research and provide all available information about: {query}"
+                }
+            ],
+            "temperature": 0.1,
+            "max_tokens": 2000,
+            "return_citations": True,
+            "search_recency_filter": "month"
+        }
+        
+        try:
+            response = requests.post(
+                self.perplexity_url,
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'choices' not in data or len(data['choices']) == 0:
+                logger.warning(f"⚠️ No results for {search_type}")
+                return ""
+            
+            content = data['choices'][0]['message']['content']
+            
+            # Add citations
+            if 'citations' in data and data['citations']:
+                content += "\n\nSources:\n"
+                for i, citation in enumerate(data['citations'][:10], 1):
+                    content += f"[{i}] {citation}\n"
+            
+            return content
+            
+        except Exception as e:
+            logger.error(f"❌ Search failed for {search_type}: {e}")
+            return ""
+    
+    def _generate_profile(self, research_data: str, contact: dict) -> str:
+        """Generate structured profile from combined research"""
+        name = contact.get('name', 'Unknown')
+        company = contact.get('company', '')
+        
+        prompt = f"""Using the research data below, create a comprehensive sales intelligence profile.
+
+**RESEARCH DATA:**
+{research_data}
+
+---
+
+**Generate profile with these sections:**
+
+## {name} - Professional Profile
+
+### Overview
+- Current role and organization
+- Key responsibilities and focus areas
+
+### Background
+- Career history and achievements
+- Education and credentials
+- Notable projects or deals
+
+### Personality & Working Style
+- Professional strengths (inferred from public info)
+- Communication and decision-making style
+- Leadership approach
+
+### Social Presence
+- LinkedIn activity and engagement
+- Other professional profiles (if available)
+
+## {company} - Company Intelligence
+
+### Company Overview
+- Business model and offerings
+- Market position and competitors
+- Size and locations
+
+### Recent Activity
+- News, funding, or major announcements
+- Product launches or partnerships
+- Leadership changes
+
+## Sales Opportunities
+
+### Why Reach Out NOW
+- Trigger events creating urgency
+- Pain points based on role and industry
+- Budget timing indicators
+
+### Engagement Strategy
+- Best approach based on seniority
+- Communication preferences
+- Key talking points
+- Warm introduction paths (if available)
+
+### Success Factors
+- Decision-making authority
+- KPIs they care about
+- How they evaluate vendors
+
+## Strategic Summary
+- Top 3 reasons this is a high-value contact
+- Recommended opening line for outreach
+- Estimated opportunity level (HIGH/MEDIUM/LOW)
+
+---
+
+**IMPORTANT:**
+- Use ONLY facts from the research data
+- If information is limited, focus on what IS available
+- No disclaimers or apologies
+- Be specific and actionable
+"""
+
+        headers = {
+            "Authorization": f"Bearer {self.perplexity_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "sonar-pro",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a sales intelligence analyst. Create actionable profiles from research data. Be concise and specific."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.3,
+            "max_tokens": 3000
+        }
+        
+        try:
+            response = requests.post(
+                self.perplexity_url,
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'choices' in data and len(data['choices']) > 0:
+                return data['choices'][0]['message']['content']
+            
+            return ""
+            
+        except Exception as e:
+            logger.error(f"❌ Profile generation failed: {e}")
+            return ""
+    
     def _create_minimal_profile(self, contact: dict) -> str:
-        """Fallback when enrichment fails"""
+        """Fallback minimal profile"""
         name = contact.get('name', 'Unknown')
         title = contact.get('title', 'Position unknown')
         company = contact.get('company', 'Company unknown')
@@ -102,124 +315,6 @@ class EnhancedEnrichment:
 1. Search for recent {company} news and developments
 2. Identify relevant case studies or solutions
 3. Craft personalized outreach referencing their specific challenges
+
+*Note: Limited public information available. Direct research recommended.*
 """
-    
-    def _call_perplexity(self, name: str, company: str, title: str, email: str, phone: str, linkedin: str) -> str:
-        """Send ALL data with proven prompt structure"""
-        
-        # Build context with ALL available data
-        context_parts = []
-        if name: context_parts.append(f"Name: {name}")
-        if title: context_parts.append(f"Title: {title}")
-        if company: context_parts.append(f"Company: {company}")
-        if email: context_parts.append(f"Email: {email}")
-        if phone: context_parts.append(f"Phone: {phone}")
-        if linkedin: context_parts.append(f"LinkedIn: {linkedin}")
-        
-        contact_context = "\n".join(context_parts)
-        
-        # Use the EXACT structure that works for Dorit Fischer
-        prompt = f"""Build comprehensive profile for:
-
-{contact_context}
-
-Provide:
-
-**Person Profile:**
-1. Overview – Current title and organization
-2. Background – Work history, notable achievements
-3. Education – Degrees and institutions
-4. Recent Mentions – News, public appearances, LinkedIn posts
-5. Social Media Profiles – Instagram, Facebook, Twitter (if available)
-6. Personality Detail – Perform Myers-Briggs assessment (inferred from professional style)
-7. StrengthsFinder – Key professional strengths
-8. Sales Opportunities Talking Points – Why this is a valuable contact
-9. Fun Fact – Interesting personal or professional detail
-
-**Company Profile ({company}):**
-1. Overview – Description, mission, founding details, HQ location
-2. Products & Services – Key offerings and markets served
-3. Leadership – Key executives and founders
-4. Market & Competitors – Industry position, key competitors
-5. Recent News – Major announcements, deals, product launches, funding
-
-**Sales Intelligence:**
-1. Trigger Events – Recent events creating sales opportunities (funding, expansion, leadership changes)
-2. Current Solutions – What they might be using that we could replace
-3. Warm Introduction Paths – Mutual connections or shared affiliations
-4. Engagement Preferences – Best time/channel to reach out
-5. Decision Making Style – How they evaluate vendors
-6. Budget Authority – Signs of budget availability or fiscal timing
-7. Success Metrics – KPIs they care about based on role
-
-**Updates & New Information:**
-- Verify all fields with current, accurate information
-- Highlight any deals, partnerships, or major changes
-- Note recent LinkedIn activity or company announcements
-
-Format as structured markdown with clear sections and citations."""
-
-        headers = {
-            "Authorization": f"Bearer {self.perplexity_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "sonar-pro",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are a professional sales intelligence researcher. Build comprehensive profiles from publicly available sources. Always provide actionable insights even with limited data. Work with what's available and make it useful."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.2,
-            "max_tokens": 4000,
-            "return_citations": True,
-            "search_recency_filter": "month"
-        }
-        
-        logger.info("📡 Calling Perplexity sonar-pro...")
-        
-        try:
-            response = requests.post(
-                self.perplexity_url,
-                headers=headers,
-                json=payload,
-                timeout=120
-            )
-            
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'choices' not in data or len(data['choices']) == 0:
-                logger.error("❌ No choices in response")
-                return ""
-            
-            profile = data['choices'][0]['message']['content']
-            
-            # Add citations
-            if 'citations' in data and data['citations']:
-                profile += "\n\n### Sources\n"
-                for i, citation in enumerate(data['citations'][:20], 1):  # Limit to 20 citations
-                    profile += f"[{i}] {citation}\n"
-            
-            logger.info(f"✅ Perplexity returned {len(profile)} characters")
-            
-            # Log first 500 chars for debugging
-            logger.info(f"Preview: {profile[:500]}...")
-            
-            return profile
-                
-        except requests.exceptions.Timeout:
-            logger.error("❌ Perplexity timeout after 120s")
-            raise
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Perplexity request error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"❌ Unexpected error: {e}")
-            raise
