@@ -1,5 +1,3 @@
-#!/bin/bash
-
 #!/usr/bin/env bash
 # apex_deploy_and_import.sh
 # Run from: ~/projects/apex
@@ -50,13 +48,13 @@ echo ""
 echo "🚂 STEP 3: Railway deployment..."
 
 if command -v railway &> /dev/null; then
-	echo "Checking Railway status..."
-	railway status || true
-	echo ""
-	echo "Recent logs (last 20 lines):"
-	railway logs --tail 20 || true
+    echo "Checking Railway status..."
+    railway status || true
+    echo ""
+    echo "Recent logs (last 20 lines):"
+    railway logs --tail 20 || true
 else
-	echo "⚠️  Railway CLI not installed. Check https://apex-intelligence-production.up.railway.app/api/health manually"
+    echo "⚠️  Railway CLI not installed. Check https://apex-intelligence-production.up.railway.app/api/health manually"
 fi
 
 # ─────────────────────────────────────────────────────────────────
@@ -66,30 +64,30 @@ echo ""
 echo "🔑 STEP 4: Loading environment variables..."
 
 if [ -f .env ]; then
-	export $(grep -v '^#' .env | grep -v '^$' | xargs)
-	echo "✅ Environment loaded"
-	
-	# Verify critical keys
-	if [ -n "${HUBSPOT_ACCESS_TOKEN:-}" ]; then
-		echo "   ✅ HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:0:10}..."
-	else
-		echo "   ❌ HUBSPOT_ACCESS_TOKEN: NOT SET"
-	fi
-	
-	if [ -n "${PERPLEXITY_API_KEY:-}" ]; then
-		echo "   ✅ PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:0:10}..."
-	else
-		echo "   ❌ PERPLEXITY_API_KEY: NOT SET"
-	fi
-	
-	if [ -n "${OPENAI_API_KEY:-}" ]; then
-		echo "   ✅ OPENAI_API_KEY: ${OPENAI_API_KEY:0:10}..."
-	else
-		echo "   ❌ OPENAI_API_KEY: NOT SET"
-	fi
+    export $(grep -v '^#' .env | grep -v '^$' | xargs)
+    echo "✅ Environment loaded"
+    
+    # Verify critical keys
+    if [ -n "${HUBSPOT_ACCESS_TOKEN:-}" ]; then
+        echo "   ✅ HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:0:10}..."
+    else
+        echo "   ❌ HUBSPOT_ACCESS_TOKEN: NOT SET"
+    fi
+    
+    if [ -n "${PERPLEXITY_API_KEY:-}" ]; then
+        echo "   ✅ PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:0:10}..."
+    else
+        echo "   ❌ PERPLEXITY_API_KEY: NOT SET"
+    fi
+    
+    if [ -n "${OPENAI_API_KEY:-}" ]; then
+        echo "   ✅ OPENAI_API_KEY: ${OPENAI_API_KEY:0:10}..."
+    else
+        echo "   ❌ OPENAI_API_KEY: NOT SET"
+    fi
 else
-	echo "❌ .env file not found!"
-	exit 1
+    echo "❌ .env file not found!"
+    exit 1
 fi
 
 # ─────────────────────────────────────────────────────────────────
@@ -99,11 +97,11 @@ echo ""
 echo "🐍 STEP 5: Python environment..."
 
 if [ -d ".venv" ]; then
-	source .venv/bin/activate
+    source .venv/bin/activate
 else
-	python3 -m venv .venv
-	source .venv/bin/activate
-	pip install -U pip
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -U pip
 fi
 
 pip install -q requests python-dotenv openai 2>/dev/null || true
@@ -119,21 +117,21 @@ python3 << 'PYEOF'
 import sqlite3
 
 cols = [
-	("first_name", "TEXT"),
-	("last_name", "TEXT"),
-	("phone_mobile", "TEXT"),
-	("linkedin_url", "TEXT"),
-	("company_domain", "TEXT"),
-	("company_website", "TEXT"),
-	("company_hq_city", "TEXT"),
-	("company_hq_state", "TEXT"),
-	("industry", "TEXT"),
-	("data_completeness_score", "INTEGER DEFAULT 0"),
-	("enrichment_ready", "INTEGER DEFAULT 0"),
-	("import_source", "TEXT"),
-	("crm_id", "TEXT"),
-	("last_crm_sync", "TEXT"),
-	("last_contact_date", "TEXT")
+    ("first_name", "TEXT"),
+    ("last_name", "TEXT"),
+    ("phone_mobile", "TEXT"),
+    ("linkedin_url", "TEXT"),
+    ("company_domain", "TEXT"),
+    ("company_website", "TEXT"),
+    ("company_hq_city", "TEXT"),
+    ("company_hq_state", "TEXT"),
+    ("industry", "TEXT"),
+    ("data_completeness_score", "INTEGER DEFAULT 0"),
+    ("enrichment_ready", "INTEGER DEFAULT 0"),
+    ("import_source", "TEXT"),
+    ("crm_id", "TEXT"),
+    ("last_crm_sync", "TEXT"),
+    ("last_contact_date", "TEXT")
 ]
 
 con = sqlite3.connect('apex.db')
@@ -141,12 +139,12 @@ cur = con.cursor()
 added = skipped = 0
 
 for c, t in cols:
-	try:
-		cur.execute(f"ALTER TABLE contacts ADD COLUMN {c} {t}")
-		added += 1
-	except Exception as e:
-		if "duplicate column name" in str(e).lower():
-			skipped += 1
+    try:
+        cur.execute(f"ALTER TABLE contacts ADD COLUMN {c} {t}")
+        added += 1
+    except Exception as e:
+        if "duplicate column name" in str(e).lower():
+            skipped += 1
 
 con.commit()
 con.close()
@@ -174,15 +172,15 @@ TOKEN = os.getenv('HUBSPOT_ACCESS_TOKEN')
 DB = 'apex.db'
 
 if not TOKEN:
-	print("❌ HUBSPOT_ACCESS_TOKEN not set")
-	print("   Run: export $(grep -v '^#' .env | xargs)")
-	exit(1)
+    print("❌ HUBSPOT_ACCESS_TOKEN not set")
+    print("   Run: export $(grep -v '^#' .env | xargs)")
+    exit(1)
 
 headers = {"Authorization": f"Bearer {TOKEN}"}
 url = "https://api.hubapi.com/crm/v3/objects/contacts"
 params = {
-	"limit": 100,
-	"properties": "firstname,lastname,email,phone,mobilephone,jobtitle,company,hs_linkedin_url"
+    "limit": 100,
+    "properties": "firstname,lastname,email,phone,mobilephone,jobtitle,company,hs_linkedin_url"
 }
 
 print("📥 Fetching contacts from HubSpot...")
@@ -191,27 +189,27 @@ all_contacts = []
 after = None
 
 while True:
-	if after:
-		params['after'] = after
-	
-	resp = requests.get(url, headers=headers, params=params)
-	
-	if resp.status_code != 200:
-		print(f"❌ HubSpot API error: {resp.status_code}")
-		print(resp.text[:500])
-		break
-	
-	data = resp.json()
-	contacts = data.get('results', [])
-	all_contacts.extend(contacts)
-	
-	paging = data.get('paging', {}).get('next', {})
-	after = paging.get('after')
-	
-	print(f"   Fetched {len(all_contacts)} contacts...")
-	
-	if not after:
-		break
+    if after:
+        params['after'] = after
+    
+    resp = requests.get(url, headers=headers, params=params)
+    
+    if resp.status_code != 200:
+        print(f"❌ HubSpot API error: {resp.status_code}")
+        print(resp.text[:500])
+        break
+    
+    data = resp.json()
+    contacts = data.get('results', [])
+    all_contacts.extend(contacts)
+    
+    paging = data.get('paging', {}).get('next', {})
+    after = paging.get('after')
+    
+    print(f"   Fetched {len(all_contacts)} contacts...")
+    
+    if not after:
+        break
 
 print(f"✅ Total fetched: {len(all_contacts)}")
 
@@ -221,70 +219,70 @@ cur = con.cursor()
 imported = updated = skipped = 0
 
 for c in all_contacts:
-	props = c.get('properties', {})
-	email = props.get('email')
-	
-	if not email:
-		skipped += 1
-		continue
-	
-	first = props.get('firstname', '') or ''
-	last = props.get('lastname', '') or ''
-	name = f"{first} {last}".strip() or email.split('@')[0]
-	
-	# Check if exists
-	cur.execute("SELECT id FROM contacts WHERE email = ?", (email,))
-	existing = cur.fetchone()
-	
-	if existing:
-		# Update existing
-		cur.execute("""
-			UPDATE contacts SET
-				name = COALESCE(?, name),
-				phone = COALESCE(?, phone),
-				phone_mobile = COALESCE(?, phone_mobile),
-				title = COALESCE(?, title),
-				company = COALESCE(?, company),
-				linkedin_url = COALESCE(?, linkedin_url),
-				import_source = 'hubspot',
-				crm_id = ?,
-				last_crm_sync = ?,
-				updated_at = ?
-			WHERE email = ?
-		""", (
-			name,
-			props.get('phone'),
-			props.get('mobilephone'),
-			props.get('jobtitle'),
-			props.get('company'),
-			props.get('hs_linkedin_url'),
-			c.get('id'),
-			datetime.now().isoformat(),
-			datetime.now().isoformat(),
-			email
-		))
-		updated += 1
-	else:
-		# Insert new
-		cur.execute("""
-			INSERT INTO contacts (
-				name, email, phone, phone_mobile, title, company, 
-				linkedin_url, import_source, crm_id, last_crm_sync, 
-				enrichment_status, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, 'hubspot', ?, ?, 'pending', ?, ?)
-		""", (
-			name, email,
-			props.get('phone'),
-			props.get('mobilephone'),
-			props.get('jobtitle'),
-			props.get('company'),
-			props.get('hs_linkedin_url'),
-			c.get('id'),
-			datetime.now().isoformat(),
-			datetime.now().isoformat(),
-			datetime.now().isoformat()
-		))
-		imported += 1
+    props = c.get('properties', {})
+    email = props.get('email')
+    
+    if not email:
+        skipped += 1
+        continue
+    
+    first = props.get('firstname', '') or ''
+    last = props.get('lastname', '') or ''
+    name = f"{first} {last}".strip() or email.split('@')[0]
+    
+    # Check if exists
+    cur.execute("SELECT id FROM contacts WHERE email = ?", (email,))
+    existing = cur.fetchone()
+    
+    if existing:
+        # Update existing
+        cur.execute("""
+            UPDATE contacts SET
+                name = COALESCE(?, name),
+                phone = COALESCE(?, phone),
+                phone_mobile = COALESCE(?, phone_mobile),
+                title = COALESCE(?, title),
+                company = COALESCE(?, company),
+                linkedin_url = COALESCE(?, linkedin_url),
+                import_source = 'hubspot',
+                crm_id = ?,
+                last_crm_sync = ?,
+                updated_at = ?
+            WHERE email = ?
+        """, (
+            name,
+            props.get('phone'),
+            props.get('mobilephone'),
+            props.get('jobtitle'),
+            props.get('company'),
+            props.get('hs_linkedin_url'),
+            c.get('id'),
+            datetime.now().isoformat(),
+            datetime.now().isoformat(),
+            email
+        ))
+        updated += 1
+    else:
+        # Insert new
+        cur.execute("""
+            INSERT INTO contacts (
+                name, email, phone, phone_mobile, title, company, 
+                linkedin_url, import_source, crm_id, last_crm_sync, 
+                enrichment_status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'hubspot', ?, ?, 'pending', ?, ?)
+        """, (
+            name, email,
+            props.get('phone'),
+            props.get('mobilephone'),
+            props.get('jobtitle'),
+            props.get('company'),
+            props.get('hs_linkedin_url'),
+            c.get('id'),
+            datetime.now().isoformat(),
+            datetime.now().isoformat(),
+            datetime.now().isoformat()
+        ))
+        imported += 1
 
 con.commit()
 con.close()
@@ -307,18 +305,104 @@ echo ""
 echo "🔌 STEP 8: Testing HubSpot API connection..."
 
 HUBSPOT_TEST=$(curl -s -o /dev/null -w "%{http_code}" \
-	-H "Authorization: Bearer $HUBSPOT_ACCESS_TOKEN" \
-	"https://api.hubapi.com/crm/v3/objects/contacts?limit=1")
+    -H "Authorization: Bearer $HUBSPOT_ACCESS_TOKEN" \
+    "https://api.hubapi.com/crm/v3/objects/contacts?limit=1")
 
 if [ "$HUBSPOT_TEST" = "200" ]; then
-	echo "✅ HubSpot API: Connected"
+    echo "✅ HubSpot API: Connected"
 else
-	echo "❌ HubSpot API: Failed (HTTP $HUBSPOT_TEST)"
-	echo "   Check your HUBSPOT_ACCESS_TOKEN in .env"
-	exit 1
+    echo "❌ HubSpot API: Failed (HTTP $HUBSPOT_TEST)"
+    echo "   Check your HUBSPOT_ACCESS_TOKEN in .env"
+    exit 1
 fi
 
 # ─────────────────────────────────────────────────────────────────
 # STEP 9: Run HubSpot Import
 # ─────────────────────────────────────────────────────────────────
+echo ""
+echo "📥 STEP 9: Importing contacts from HubSpot..."
+
+python scripts/import_hubspot.py
+
+# ─────────────────────────────────────────────────────────────────
+# STEP 10: Verify database
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "📊 STEP 10: Database verification..."
+
+sqlite3 apex.db << 'SQL'
+.mode column
+.headers on
+
+SELECT '--- CONTACT COUNTS ---' as '';
+SELECT 
+    COUNT(*) as total,
+    SUM(CASE WHEN enrichment_status = 'completed' THEN 1 ELSE 0 END) as enriched,
+    SUM(CASE WHEN priority_score IS NOT NULL THEN 1 ELSE 0 END) as scored
+FROM contacts;
+
+SELECT '';
+SELECT '--- TOP 5 BY PRIORITY ---' as '';
+SELECT id, substr(name, 1, 25) as name, priority_score, enrichment_status
+FROM contacts 
+WHERE priority_score IS NOT NULL
+ORDER BY priority_score DESC 
+LIMIT 5;
+
+SELECT '';
+SELECT '--- IMPORT SOURCES ---' as '';
+SELECT import_source, COUNT(*) as count 
+FROM contacts 
+GROUP BY import_source;
+SQL
+
+# ─────────────────────────────────────────────────────────────────
+# STEP 11: Start local API (background check)
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "🖥️  STEP 11: Checking local API..."
+
+API_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health 2>/dev/null || echo "000")
+
+if [ "$API_STATUS" = "200" ]; then
+    echo "✅ Local API already running on :8000"
+else
+    echo "⚠️  Local API not running. Start with:"
+    echo "   source .venv/bin/activate && python api.py"
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# STEP 12: Test Today's Board
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "📋 STEP 12: Testing Today's Board..."
+
+if [ "$API_STATUS" = "200" ]; then
+    curl -s http://localhost:8000/api/todays-board | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(f'✅ Today\\'s Board:')
+print(f'   Total contacts: {data.get(\"total_contacts\", 0)}')
+print(f'   Urgent relationships: {len(data.get(\"relationships\", {}).get(\"tiers\", {}).get(\"urgent\", []))}')
+print(f'   Warm relationships: {len(data.get(\"relationships\", {}).get(\"tiers\", {}).get(\"warm\", []))}')
+print(f'   Hot prospects: {len(data.get(\"new_prospects\", {}).get(\"tiers\", {}).get(\"hot\", []))}')
+print(f'   Qualified prospects: {len(data.get(\"new_prospects\", {}).get(\"tiers\", {}).get(\"qualified\", []))}')
+"
+else
+    echo "⏭️  Skipped - API not running"
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# DONE
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "🎉 DEPLOYMENT COMPLETE"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+echo "NEXT STEPS:"
+echo "  1. Start API (if not running):  python api.py"
+echo "  2. Start Dashboard:             cd dashboard_v1 && npm run dev"
+echo "  3. Open browser:                http://localhost:5173"
+echo "  4. Check Railway:               https://apex-intelligence-production.up.railway.app/api/health"
 echo ""
