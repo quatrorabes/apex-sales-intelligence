@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { API_ENDPOINTS } from '../config/api';
 import enrichmentService from '../services/enrichmentService';
+import { IntelligenceSection } from '../components/intelligence/IntelligenceSection';
+import { OpportunityBadge } from '../components/intelligence/OpportunityBadge';
+import { TriggerEventsTimeline } from '../components/intelligence/TriggerEventsTimeline';
+import { StrategicHighlights } from '../components/intelligence/StrategicHighlights';
 
 interface Contact {
   id: number;
@@ -18,6 +22,26 @@ interface Contact {
   mdcp_score?: number;
   priority_score?: number;
   profile_content?: string;
+  // Structured intelligence fields
+  executive_summary?: string;
+  professional_overview?: string;
+  background_experience?: string;
+  education?: string;
+  personality_style?: string;
+  social_presence?: string;
+  company_overview?: string;
+  products_services?: string;
+  market_position?: string;
+  leadership?: string;
+  recent_activity?: string;
+  trigger_events?: string;
+  pain_points?: string;
+  engagement_strategy?: string;
+  recommended_opening?: string;
+  opportunity_level?: string;
+  top_reasons?: string;
+  strategic_summary?: string;
+  competitive_intelligence?: string;
 }
 
 export default function ContactDetail() {
@@ -52,7 +76,6 @@ export default function ContactDetail() {
     try {
       setEnriching(true);
       
-      // If re-enriching, reset status first
       if (reEnrich) {
         await fetch(`${API_ENDPOINTS.contacts}/${id}/reset-enrichment`, {
           method: 'POST'
@@ -61,13 +84,12 @@ export default function ContactDetail() {
       
       await enrichmentService.enrichContact(parseInt(id));
       
-      // Poll for completion
       await enrichmentService.waitForEnrichment(
         parseInt(id),
         (status) => {
           console.log('Enrichment status:', status);
           if (status.status === 'completed') {
-            fetchContact(); // Refresh contact data
+            fetchContact();
           }
         }
       );
@@ -108,10 +130,11 @@ export default function ContactDetail() {
 
   const enrichmentStatus = contact.enrichment_status || 'none';
   const score = contact.mdcp_score || contact.priority_score || 0;
+  const hasIntelligence = contact.executive_summary || contact.professional_overview || contact.trigger_events;
 
   return (
     <div className="min-h-screen bg-midnight-950 p-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <button
           onClick={() => navigate('/todays-board')}
@@ -121,7 +144,7 @@ export default function ContactDetail() {
         </button>
 
         {/* Contact Header Card */}
-        <div className="bg-midnight-900 border border-midnight-700 rounded-card p-8 mb-6">
+        <div className="bg-midnight-900 border border-midnight-700 rounded-xl p-8 mb-6">
           <div className="flex justify-between items-start mb-6">
             <div>
               <h1 className="text-4xl font-bold text-text-primary mb-2">
@@ -131,7 +154,6 @@ export default function ContactDetail() {
               <p className="text-lg text-text-tertiary">{contact.company}</p>
             </div>
             
-            {/* Score Badge */}
             <div className="text-center">
               <div className="text-5xl font-bold text-gold mb-1">{score.toFixed(0)}</div>
               <div className="text-sm text-text-secondary">MDCP Score</div>
@@ -169,7 +191,7 @@ export default function ContactDetail() {
             )}
           </div>
 
-          {/* Enrichment Status */}
+          {/* Enrichment Status & Actions */}
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-text-secondary">Enrichment:</span>
@@ -188,14 +210,8 @@ export default function ContactDetail() {
                   ⏳ Pending
                 </span>
               )}
-              {enrichmentStatus === 'failed' && (
-                <span className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm">
-                  ✗ Failed
-                </span>
-              )}
             </div>
 
-            {/* Enrich Buttons */}
             <div className="flex gap-2">
               {enrichmentStatus === 'completed' && (
                 <button
@@ -226,22 +242,159 @@ export default function ContactDetail() {
           </div>
         </div>
 
-        {/* AI Intelligence Profile */}
-        {contact.profile_content && (
-          <div className="bg-midnight-900 border border-midnight-700 rounded-card p-8">
-            <h2 className="text-2xl font-bold text-text-primary mb-6">🤖 AI Intelligence Profile</h2>
-            <div 
-              className="prose prose-invert max-w-none text-text-secondary"
-              style={{ whiteSpace: 'pre-wrap' }}
-            >
-              {contact.profile_content}
-            </div>
+        {/* STRUCTURED INTELLIGENCE DISPLAY */}
+        {hasIntelligence && (
+          <div className="space-y-6">
+            <h2 className="text-3xl font-bold text-text-primary mb-6">🤖 AI Intelligence Profile</h2>
+
+            {/* Strategic Highlights */}
+            {(contact.recommended_opening || contact.opportunity_level || contact.top_reasons) && (
+              <StrategicHighlights
+                opening_line={contact.recommended_opening}
+                opportunity_level={contact.opportunity_level}
+                top_reasons={contact.top_reasons}
+              />
+            )}
+
+            {/* Executive Summary */}
+            {contact.executive_summary && (
+              <IntelligenceSection
+                title="Executive Summary"
+                content={contact.executive_summary}
+                icon="📋"
+                defaultOpen={true}
+              />
+            )}
+
+            {/* Trigger Events - Special Timeline Display */}
+            {contact.trigger_events && (
+              <div className="bg-midnight-900 border border-midnight-700 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-3">
+                  <span className="text-2xl">🔥</span>
+                  Trigger Events - Why Reach Out NOW
+                </h3>
+                <TriggerEventsTimeline content={contact.trigger_events} />
+              </div>
+            )}
+
+            {/* Professional Profile Sections */}
+            {contact.professional_overview && (
+              <IntelligenceSection
+                title="Professional Overview"
+                content={contact.professional_overview}
+                icon="👤"
+                defaultOpen={false}
+              />
+            )}
+
+            {contact.background_experience && (
+              <IntelligenceSection
+                title="Background & Experience"
+                content={contact.background_experience}
+                icon="💼"
+              />
+            )}
+
+            {contact.personality_style && (
+              <IntelligenceSection
+                title="Personality & Working Style"
+                content={contact.personality_style}
+                icon="🧠"
+              />
+            )}
+
+            {/* Company Intelligence */}
+            {contact.company_overview && (
+              <IntelligenceSection
+                title="Company Overview"
+                content={contact.company_overview}
+                icon="🏢"
+              />
+            )}
+
+            {contact.recent_activity && (
+              <IntelligenceSection
+                title="Recent Activity & News"
+                content={contact.recent_activity}
+                icon="📰"
+                defaultOpen={true}
+              />
+            )}
+
+            {/* Sales Intelligence */}
+            {contact.pain_points && (
+              <IntelligenceSection
+                title="Pain Points & Challenges"
+                content={contact.pain_points}
+                icon="🎯"
+                defaultOpen={true}
+              />
+            )}
+
+            {contact.engagement_strategy && (
+              <IntelligenceSection
+                title="Engagement Strategy"
+                content={contact.engagement_strategy}
+                icon="💡"
+                defaultOpen={true}
+                copyable={true}
+              />
+            )}
+
+            {contact.competitive_intelligence && (
+              <IntelligenceSection
+                title="Competitive Intelligence"
+                content={contact.competitive_intelligence}
+                icon="🔍"
+              />
+            )}
+
+            {/* Additional Sections */}
+            {contact.education && (
+              <IntelligenceSection
+                title="Education & Credentials"
+                content={contact.education}
+                icon="🎓"
+              />
+            )}
+
+            {contact.social_presence && (
+              <IntelligenceSection
+                title="Social Presence & Engagement"
+                content={contact.social_presence}
+                icon="🌐"
+              />
+            )}
+
+            {contact.products_services && (
+              <IntelligenceSection
+                title="Products & Services"
+                content={contact.products_services}
+                icon="📦"
+              />
+            )}
+
+            {contact.market_position && (
+              <IntelligenceSection
+                title="Market Position"
+                content={contact.market_position}
+                icon="📊"
+              />
+            )}
+
+            {contact.leadership && (
+              <IntelligenceSection
+                title="Leadership Team"
+                content={contact.leadership}
+                icon="👥"
+              />
+            )}
           </div>
         )}
 
         {/* Empty State */}
-        {!contact.profile_content && enrichmentStatus !== 'processing' && (
-          <div className="bg-midnight-900 border border-midnight-700 rounded-card p-12 text-center">
+        {!hasIntelligence && enrichmentStatus !== 'processing' && (
+          <div className="bg-midnight-900 border border-midnight-700 rounded-xl p-12 text-center">
             <div className="text-6xl mb-4">🤖</div>
             <h3 className="text-2xl font-bold text-text-primary mb-2">
               No Intelligence Data Yet
