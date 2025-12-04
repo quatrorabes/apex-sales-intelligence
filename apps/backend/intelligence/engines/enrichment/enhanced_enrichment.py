@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Apex Enrichment Engine - Streamlined & Actionable
-Returns useful sales intelligence even with limited data
+Apex Enrichment Engine - Pass ALL data to Perplexity
+Uses proven prompt structure that works manually
 """
 import os
 import logging
@@ -11,7 +11,7 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 class EnhancedEnrichment:
-    """Streamlined enrichment focused on actionable sales intelligence"""
+    """Pass all contact data to Perplexity with proven prompt"""
     
     def __init__(self):
         self.perplexity_key = os.getenv('PERPLEXITY_API_KEY')
@@ -25,59 +25,55 @@ class EnhancedEnrichment:
         self.openai_client = OpenAI(api_key=self.openai_key)
         self.perplexity_url = "https://api.perplexity.ai/chat/completions"
         
-        logger.info("✅ EnhancedEnrichment initialized (Streamlined prompt)")
+        logger.info("✅ EnhancedEnrichment initialized")
     
     def enrich_contact(self, contact: dict) -> dict:
         """Main enrichment pipeline"""
-        name = contact.get('name', 'Unknown')
+        name = contact.get('name', '') or contact.get('firstname', '') + ' ' + contact.get('lastname', '')
         company = contact.get('company', '')
         title = contact.get('title', '')
+        email = contact.get('email', '')
+        phone = contact.get('phone', '')
         linkedin = contact.get('linkedin_url', '')
         
         logger.info("=" * 70)
-        logger.info(f"🔍 ENRICHING: {name} ({title}) at {company}")
+        logger.info(f"🔍 ENRICHING: {name} at {company}")
+        logger.info(f"   Title: {title}")
+        logger.info(f"   Email: {email}")
+        logger.info(f"   Phone: {phone}")
+        logger.info(f"   LinkedIn: {linkedin}")
         logger.info("=" * 70)
         
-        # STAGE 1: Perplexity research
-        logger.info("📡 STAGE 1: Perplexity sonar-pro research...")
-        
         try:
-            raw_research = self._call_perplexity(name, company, title, linkedin)
+            # Call Perplexity with ALL data
+            profile = self._call_perplexity(
+                name=name,
+                company=company,
+                title=title,
+                email=email,
+                phone=phone,
+                linkedin=linkedin
+            )
             
-            if not raw_research or len(raw_research) < 300:
-                logger.error(f"❌ Insufficient: {len(raw_research) if raw_research else 0} chars")
-                # Return minimal profile if search fails
-                return {
-                    'success': True,
-                    'profile_text': self._create_minimal_profile(contact),
-                    'character_count': 200
-                }
+            if not profile or len(profile) < 500:
+                logger.warning(f"⚠️  Short response: {len(profile) if profile else 0} chars")
+                # Don't fail - return what we got
+                if profile:
+                    logger.info("Returning short profile anyway")
+                else:
+                    profile = self._create_minimal_profile(contact)
             
-            logger.info(f"✅ STAGE 1: {len(raw_research)} chars")
-            
-            # STAGE 2: GPT-4o enhancement
-            logger.info("🧠 STAGE 2: GPT-4o enhancement...")
-            polished = self._gpt4o_enhance(raw_research, contact)
-            
-            if not polished or len(polished) < 300:
-                logger.warning("⚠️  Stage 2 failed, using Perplexity only")
-                polished = raw_research
-            else:
-                logger.info(f"✅ STAGE 2: Enhanced to {len(polished)} chars")
-            
-            logger.info("=" * 70)
-            logger.info(f"✅ COMPLETE: {len(polished)} chars")
+            logger.info(f"✅ COMPLETE: {len(profile)} chars")
             logger.info("=" * 70)
             
             return {
                 'success': True,
-                'profile_text': polished,
-                'raw_research': raw_research,
-                'character_count': len(polished)
+                'profile_text': profile,
+                'character_count': len(profile)
             }
             
         except Exception as e:
-            logger.error(f"❌ Failed: {e}")
+            logger.error(f"❌ Enrichment failed: {e}")
             import traceback
             traceback.print_exc()
             
@@ -89,71 +85,79 @@ class EnhancedEnrichment:
             }
     
     def _create_minimal_profile(self, contact: dict) -> str:
-        """Create minimal profile when enrichment fails"""
+        """Fallback when enrichment fails"""
         name = contact.get('name', 'Unknown')
         title = contact.get('title', 'Position unknown')
         company = contact.get('company', 'Company unknown')
         
-        return f"""## Contact Overview
+        return f"""## {name}
+**{title}** at **{company}**
 
-**{name}** currently serves as {title} at {company}.
+### Sales Opportunities
+✅ Contact verified - ready for outreach
+🎯 Research {company}'s recent activity before reaching out
+💡 Personalize based on their role as {title}
 
-## Sales Opportunities
-
-✅ **Ready for Outreach**: Contact information verified and current
-⚡ **Action**: Personalized outreach recommended based on their role
-🎯 **Value Prop**: Position as solution provider for their industry challenges
-
-## Next Steps
-
-1. Research {company}'s recent activity and pain points
-2. Craft personalized outreach highlighting relevant case studies
-3. Reference their role as {title} to demonstrate understanding
-
-*Note: Limited public information available. Direct outreach recommended.*"""
+### Next Steps
+1. Search for recent {company} news and developments
+2. Identify relevant case studies or solutions
+3. Craft personalized outreach referencing their specific challenges
+"""
     
-    def _call_perplexity(self, name: str, company: str, title: str, linkedin: str) -> str:
-        """Streamlined prompt focused on actionable intelligence"""
+    def _call_perplexity(self, name: str, company: str, title: str, email: str, phone: str, linkedin: str) -> str:
+        """Send ALL data with proven prompt structure"""
         
-        linkedin_hint = f" LinkedIn: {linkedin}." if linkedin else ""
+        # Build context with ALL available data
+        context_parts = []
+        if name: context_parts.append(f"Name: {name}")
+        if title: context_parts.append(f"Title: {title}")
+        if company: context_parts.append(f"Company: {company}")
+        if email: context_parts.append(f"Email: {email}")
+        if phone: context_parts.append(f"Phone: {phone}")
+        if linkedin: context_parts.append(f"LinkedIn: {linkedin}")
         
-        prompt = f"""Research {name}, {title} at {company}.{linkedin_hint}
+        contact_context = "\n".join(context_parts)
+        
+        # Use the EXACT structure that works for Dorit Fischer
+        prompt = f"""Build comprehensive profile for:
 
-Provide a concise sales intelligence profile with these sections:
+{contact_context}
 
-## Professional Background
-- Current role and responsibilities
-- Career highlights and expertise areas
-- Key achievements or notable projects
+Provide:
 
-## Company Context
-- {company}'s business model and market position
-- Recent company news, funding, or growth indicators
-- Company size and industry
+**Person Profile:**
+1. Overview – Current title and organization
+2. Background – Work history, notable achievements
+3. Education – Degrees and institutions
+4. Recent Mentions – News, public appearances, LinkedIn posts
+5. Social Media Profiles – Instagram, Facebook, Twitter (if available)
+6. Personality Detail – Perform Myers-Briggs assessment (inferred from professional style)
+7. StrengthsFinder – Key professional strengths
+8. Sales Opportunities Talking Points – Why this is a valuable contact
+9. Fun Fact – Interesting personal or professional detail
 
-## Sales Opportunities
-- Why NOW is a good time to reach out (trigger events)
-- Likely pain points based on their role and industry
-- Budget indicators or fiscal timing
+**Company Profile ({company}):**
+1. Overview – Description, mission, founding details, HQ location
+2. Products & Services – Key offerings and markets served
+3. Leadership – Key executives and founders
+4. Market & Competitors – Industry position, key competitors
+5. Recent News – Major announcements, deals, product launches, funding
 
-## Engagement Strategy
-- Best approach based on their seniority and role
-- Mutual connections or warm intro paths (if available)
-- Key talking points and value propositions
+**Sales Intelligence:**
+1. Trigger Events – Recent events creating sales opportunities (funding, expansion, leadership changes)
+2. Current Solutions – What they might be using that we could replace
+3. Warm Introduction Paths – Mutual connections or shared affiliations
+4. Engagement Preferences – Best time/channel to reach out
+5. Decision Making Style – How they evaluate vendors
+6. Budget Authority – Signs of budget availability or fiscal timing
+7. Success Metrics – KPIs they care about based on role
 
-## Contact Intelligence
-- Communication preferences (email/phone/LinkedIn)
-- Decision-making authority level
-- Typical vendor evaluation process for this role
+**Updates & New Information:**
+- Verify all fields with current, accurate information
+- Highlight any deals, partnerships, or major changes
+- Note recent LinkedIn activity or company announcements
 
----
-
-**IMPORTANT**: 
-- Work with available information - don't apologize for missing data
-- Focus on actionable insights, not just biographical facts
-- Identify concrete reasons to reach out NOW
-- Keep it concise and sales-focused (aim for 800-1200 words)
-- If limited info exists, focus on company intel and role-based insights"""
+Format as structured markdown with clear sections and citations."""
 
         headers = {
             "Authorization": f"Bearer {self.perplexity_key}",
@@ -165,7 +169,7 @@ Provide a concise sales intelligence profile with these sections:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a sales intelligence researcher. Always provide actionable insights even with limited data. Never apologize or explain what you cannot do - focus on what IS available and make it useful."
+                    "content": "You are a professional sales intelligence researcher. Build comprehensive profiles from publicly available sources. Always provide actionable insights even with limited data. Work with what's available and make it useful."
                 },
                 {
                     "role": "user",
@@ -173,10 +177,12 @@ Provide a concise sales intelligence profile with these sections:
                 }
             ],
             "temperature": 0.2,
-            "max_tokens": 3000,
+            "max_tokens": 4000,
             "return_citations": True,
             "search_recency_filter": "month"
         }
+        
+        logger.info("📡 Calling Perplexity sonar-pro...")
         
         try:
             response = requests.post(
@@ -189,100 +195,31 @@ Provide a concise sales intelligence profile with these sections:
             response.raise_for_status()
             data = response.json()
             
-            if 'choices' in data and len(data['choices']) > 0:
-                profile = data['choices'][0]['message']['content']
-                
-                # Reject if it's a disclaimer/apology response
-                disclaimer_phrases = [
-                    "I cannot",
-                    "I must be transparent",
-                    "cannot be completed",
-                    "Limitations of Available",
-                    "I appreciate your",
-                    "recommend that you"
-                ]
-                
-                if any(phrase in profile for phrase in disclaimer_phrases):
-                    logger.warning("⚠️  Perplexity returned disclaimer, skipping")
-                    return ""
-                
-                # Add citations
-                if 'citations' in data and data['citations']:
-                    profile += "\n\n### Sources\n"
-                    for i, citation in enumerate(data['citations'], 1):
-                        profile += f"[{i}] {citation}\n"
-                
-                return profile
+            if 'choices' not in data or len(data['choices']) == 0:
+                logger.error("❌ No choices in response")
+                return ""
             
-            return ""
+            profile = data['choices'][0]['message']['content']
+            
+            # Add citations
+            if 'citations' in data and data['citations']:
+                profile += "\n\n### Sources\n"
+                for i, citation in enumerate(data['citations'][:20], 1):  # Limit to 20 citations
+                    profile += f"[{i}] {citation}\n"
+            
+            logger.info(f"✅ Perplexity returned {len(profile)} characters")
+            
+            # Log first 500 chars for debugging
+            logger.info(f"Preview: {profile[:500]}...")
+            
+            return profile
                 
-        except Exception as e:
-            logger.error(f"❌ Perplexity error: {e}")
+        except requests.exceptions.Timeout:
+            logger.error("❌ Perplexity timeout after 120s")
             raise
-    
-    def _gpt4o_enhance(self, raw_research: str, contact: dict) -> str:
-        """GPT-4o: Polish and add strategic summary"""
-        name = contact.get('name', 'Unknown')
-        company = contact.get('company', '')
-        
-        prompt = f"""Enhance this sales intelligence profile for {name} at {company}.
-
-**RAW RESEARCH:**
-{raw_research}
-
----
-
-**TASK:** 
-1. Keep all factual content from the research
-2. Reorganize for readability if needed
-3. Add a "Strategic Summary" section at the end with:
-   - Top 3 reasons to reach out NOW
-   - Recommended opening line for outreach
-   - Estimated close probability (HIGH/MEDIUM/LOW) with reasoning
-
-**CRITICAL**: 
-- DO NOT add disclaimers or apologies
-- DO NOT explain limitations
-- Focus on actionable insights
-- Keep it concise and sales-focused"""
-
-        try:
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a sales intelligence analyst. Enhance profiles with actionable insights. Never apologize or add disclaimers."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,
-                max_tokens=3500,
-                timeout=60
-            )
-            
-            result = response.choices[0].message.content
-            
-            # Reject if disclaimers appear
-            disclaimer_phrases = [
-                "I cannot",
-                "I must",
-                "ethical",
-                "I appreciate",
-                "I need to",
-                "cannot provide",
-                "limitations"
-            ]
-            
-            if any(phrase.lower() in result.lower() for phrase in disclaimer_phrases):
-                logger.warning("⚠️  GPT-4o added disclaimers, rejecting")
-                return None
-            
-            return result
-            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Perplexity request error: {e}")
+            raise
         except Exception as e:
-            logger.error(f"❌ GPT-4o error: {e}")
-            return None
+            logger.error(f"❌ Unexpected error: {e}")
+            raise
