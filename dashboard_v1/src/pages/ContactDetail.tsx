@@ -46,11 +46,19 @@ export default function ContactDetail() {
     }
   };
 
-  const handleEnrich = async () => {
+  const handleEnrich = async (reEnrich: boolean = false) => {
     if (!id) return;
     
     try {
       setEnriching(true);
+      
+      // If re-enriching, reset status first
+      if (reEnrich) {
+        await fetch(`${API_ENDPOINTS.contacts}/${id}/reset-enrichment`, {
+          method: 'POST'
+        });
+      }
+      
       await enrichmentService.enrichContact(parseInt(id));
       
       // Poll for completion
@@ -187,16 +195,28 @@ export default function ContactDetail() {
               )}
             </div>
 
-            {/* Enrich Button */}
-            {enrichmentStatus !== 'completed' && enrichmentStatus !== 'processing' && (
-              <button
-                onClick={handleEnrich}
-                disabled={enriching}
-                className="px-6 py-2 bg-gradient-to-r from-gold to-gold-hover text-midnight-950 font-semibold rounded-xl hover:shadow-gold-glow transition-all disabled:opacity-50"
-              >
-                {enriching ? '⚡ Enriching...' : '⚡ Enrich Now'}
-              </button>
-            )}
+            {/* Enrich Buttons */}
+            <div className="flex gap-2">
+              {enrichmentStatus === 'completed' && (
+                <button
+                  onClick={() => handleEnrich(true)}
+                  disabled={enriching}
+                  className="px-4 py-2 bg-midnight-800 text-text-secondary font-semibold rounded-xl hover:bg-midnight-700 transition-all disabled:opacity-50 border border-midnight-600"
+                >
+                  {enriching ? '⚡ Re-Enriching...' : '🔄 Re-Enrich'}
+                </button>
+              )}
+              
+              {enrichmentStatus !== 'completed' && enrichmentStatus !== 'processing' && (
+                <button
+                  onClick={() => handleEnrich(false)}
+                  disabled={enriching}
+                  className="px-6 py-2 bg-gradient-to-r from-gold to-gold-hover text-midnight-950 font-semibold rounded-xl hover:shadow-gold-glow transition-all disabled:opacity-50"
+                >
+                  {enriching ? '⚡ Enriching...' : '⚡ Enrich Now'}
+                </button>
+              )}
+            </div>
 
             {contact.enriched_at && (
               <span className="text-sm text-text-tertiary">
@@ -230,7 +250,7 @@ export default function ContactDetail() {
               Click "Enrich Now" to generate AI-powered insights for this contact
             </p>
             <button
-              onClick={handleEnrich}
+              onClick={() => handleEnrich(false)}
               disabled={enriching}
               className="px-8 py-3 bg-gradient-to-r from-gold to-gold-hover text-midnight-950 font-semibold rounded-xl hover:shadow-gold-glow transition-all"
             >
