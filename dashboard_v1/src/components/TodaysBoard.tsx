@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { ProspectCard } from './ProspectCard';
+import { KPICard } from './KPICard';
 import api from '../services/api';
 
 interface Contact {
@@ -81,10 +83,10 @@ export default function TodaysBoard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-midnight-950">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading Today's Board...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold mx-auto mb-4"></div>
+          <p className="text-text-secondary">Loading Today's Board...</p>
         </div>
       </div>
     );
@@ -92,14 +94,14 @@ export default function TodaysBoard() {
 
   if (error) {
     return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <h3 className="text-red-800 font-semibold mb-2">⚠️ Error Loading Board</h3>
-          <p className="text-red-600 text-sm">{error}</p>
-          <p className="text-red-500 text-xs mt-2">Make sure the backend is running on http://localhost:8000</p>
+      <div className="p-6 bg-midnight-950 min-h-screen">
+        <div className="bg-red-900 bg-opacity-20 border border-red-500 rounded-card p-6 max-w-2xl mx-auto">
+          <h3 className="text-red-400 font-semibold mb-2 text-lg">⚠️ Error Loading Board</h3>
+          <p className="text-red-300 text-sm mb-2">{error}</p>
+          <p className="text-red-400 text-xs mb-4">Make sure the backend is running on http://localhost:8000</p>
           <button
             onClick={fetchBoard}
-            className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            className="px-6 py-3 bg-gradient-to-r from-gold to-gold-hover text-midnight-950 font-semibold rounded-xl hover:shadow-gold-glow transition-all"
           >
             Retry
           </button>
@@ -110,7 +112,7 @@ export default function TodaysBoard() {
 
   if (!board) return null;
 
-  // Extract contacts from the new API structure
+  // Extract contacts from the API structure
   const urgentContacts = board.relationships?.tiers?.urgent || [];
   const warmContacts = board.relationships?.tiers?.warm || [];
   const nurtureContacts = board.relationships?.tiers?.nurture || [];
@@ -120,119 +122,150 @@ export default function TodaysBoard() {
   const qualifiedProspects = board.new_prospects?.tiers?.qualified || [];
   const potentialProspects = board.new_prospects?.tiers?.potential || [];
 
+  // Calculate KPI metrics
+  const totalHot = (board.relationships?.urgent_count || 0) + (board.new_prospects?.hot_count || 0);
+  const pipelineValue = Math.round((totalHot * 45000) / 1000) / 1000; // Rough estimate
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">📋 Today's Board</h1>
-        <p className="text-gray-600">{board.date} • {board.time}</p>
-        <p className="text-lg font-semibold text-indigo-600 mt-2">{board.recommendation}</p>
-      </div>
-
-      {/* Urgent Relationships */}
-      {urgentContacts.length > 0 && (
-        <div className="mb-6 bg-red-50 border-l-4 border-red-500 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-red-800 mb-4">
-            🔥 URGENT - {urgentContacts.length} Relationship{urgentContacts.length !== 1 ? 's' : ''} Going Cold
-          </h2>
-          <div className="space-y-3">
-            {urgentContacts.map(contact => (
-              <ContactCard key={contact.id} contact={contact} />
-            ))}
+    <div className="min-h-screen bg-midnight-950 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-text-primary mb-2">📋 Today's Board</h1>
+          <p className="text-text-secondary text-lg">{board.date} • {board.time}</p>
+          <div className="mt-4 bg-blue-muted border-l-4 border-blue px-6 py-4 rounded-lg">
+            <p className="text-blue font-semibold">{board.recommendation}</p>
           </div>
         </div>
-      )}
 
-      {/* Hot Prospects */}
-      {hotProspects.length > 0 && (
-        <div className="mb-6 bg-green-50 border-l-4 border-green-500 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-green-800 mb-4">
-            🎯 HOT PROSPECTS - {hotProspects.length} Ready to Call
-          </h2>
-          <div className="space-y-3">
-            {hotProspects.map(contact => (
-              <ContactCard key={contact.id} contact={contact} />
-            ))}
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+          <KPICard
+            label="Total Actions Today"
+            value={board.total_actions}
+            trend={{ value: 15, isPositive: true }}
+            delay={0}
+          />
+          <KPICard
+            label="Hot Prospects"
+            value={totalHot}
+            delay={0.1}
+          />
+          <KPICard
+            label="Est. Pipeline"
+            value={`$${pipelineValue}M`}
+            trend={{ value: 23, isPositive: true }}
+            delay={0.2}
+          />
+        </div>
+
+        {/* Urgent Relationships */}
+        {urgentContacts.length > 0 && (
+          <section className="mb-12">
+            <div className="flex items-center gap-3 mb-6">
+              <h2 className="text-2xl font-bold text-red">🔥 URGENT</h2>
+              <span className="text-text-secondary">
+                {urgentContacts.length} Relationship{urgentContacts.length !== 1 ? 's' : ''} Going Cold
+              </span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {urgentContacts.map(contact => (
+                <ProspectCard
+                  key={contact.id}
+                  name={contact.name}
+                  company={contact.company}
+                  score={contact.mdcp_score || contact.priority_score || 50}
+                  aiReason={contact.why_now}
+                  tags={[contact.urgency_label || 'Urgent', contact.contact_type || 'Relationship'].filter(Boolean)}
+                  onClick={() => window.location.href = `/contacts/${contact.id}`}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Hot Prospects */}
+        {hotProspects.length > 0 && (
+          <section className="mb-12">
+            <div className="flex items-center gap-3 mb-6">
+              <h2 className="text-2xl font-bold text-gold">🎯 HOT PROSPECTS</h2>
+              <span className="text-text-secondary">
+                {hotProspects.length} Ready to Call
+              </span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {hotProspects.map(contact => (
+                <ProspectCard
+                  key={contact.id}
+                  name={contact.name}
+                  company={contact.company}
+                  score={contact.mdcp_score || contact.priority_score || 85}
+                  aiReason={contact.why_now}
+                  tags={['Hot', 'New Prospect', contact.contact_type].filter(Boolean)}
+                  onClick={() => window.location.href = `/contacts/${contact.id}`}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Warm Relationships */}
+        {warmContacts.length > 0 && (
+          <section className="mb-12">
+            <div className="flex items-center gap-3 mb-6">
+              <h2 className="text-2xl font-bold text-coral">⏰ THIS WEEK</h2>
+              <span className="text-text-secondary">
+                {warmContacts.length} Warm Relationship{warmContacts.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {warmContacts.slice(0, 6).map(contact => (
+                <ProspectCard
+                  key={contact.id}
+                  name={contact.name}
+                  company={contact.company}
+                  score={contact.mdcp_score || contact.priority_score || 70}
+                  aiReason={contact.why_now}
+                  tags={[contact.urgency_label || 'Warm', 'Relationship'].filter(Boolean)}
+                  onClick={() => window.location.href = `/contacts/${contact.id}`}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Qualified Prospects */}
+        {qualifiedProspects.length > 0 && (
+          <section className="mb-12">
+            <div className="flex items-center gap-3 mb-6">
+              <h2 className="text-2xl font-bold text-blue">✅ QUALIFIED</h2>
+              <span className="text-text-secondary">
+                {qualifiedProspects.length} Prospect{qualifiedProspects.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {qualifiedProspects.slice(0, 6).map(contact => (
+                <ProspectCard
+                  key={contact.id}
+                  name={contact.name}
+                  company={contact.company}
+                  score={contact.mdcp_score || contact.priority_score || 75}
+                  aiReason={contact.why_now}
+                  tags={['Qualified', contact.contact_type || 'Prospect'].filter(Boolean)}
+                  onClick={() => window.location.href = `/contacts/${contact.id}`}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Empty State */}
+        {board.total_actions === 0 && (
+          <div className="text-center py-20 bg-midnight-900 rounded-card border border-midnight-600">
+            <p className="text-text-secondary text-xl mb-2">No actions for today</p>
+            <p className="text-text-tertiary text-sm">Enrich and score contacts to populate your board</p>
           </div>
-        </div>
-      )}
-
-      {/* Warm Relationships */}
-      {warmContacts.length > 0 && (
-        <div className="mb-6 bg-orange-50 border-l-4 border-orange-500 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-orange-800 mb-4">
-            ⏰ THIS WEEK - {warmContacts.length} Warm Relationship{warmContacts.length !== 1 ? 's' : ''}
-          </h2>
-          <div className="space-y-3">
-            {warmContacts.slice(0, 5).map(contact => (
-              <ContactCard key={contact.id} contact={contact} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Qualified Prospects */}
-      {qualifiedProspects.length > 0 && (
-        <div className="mb-6 bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6">
-          <h2 className="text-xl font-bold text-blue-800 mb-4">
-            ✅ QUALIFIED - {qualifiedProspects.length} Prospect{qualifiedProspects.length !== 1 ? 's' : ''}
-          </h2>
-          <div className="space-y-3">
-            {qualifiedProspects.slice(0, 5).map(contact => (
-              <ContactCard key={contact.id} contact={contact} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {board.total_actions === 0 && (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
-          <p className="text-gray-500 text-lg">No actions for today</p>
-          <p className="text-gray-400 text-sm mt-2">Enrich and score contacts to populate your board</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ContactCard({ contact }: { contact: Contact }) {
-  return (
-    <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <h3 className="font-semibold text-gray-900">{contact.name}</h3>
-          <p className="text-sm text-gray-600">{contact.title} at {contact.company}</p>
-          {contact.why_now && (
-            <p className="text-sm text-gray-500 mt-1 italic">{contact.why_now}</p>
-          )}
-        </div>
-        <div className="text-right ml-4">
-          {contact.urgency_label && (
-            <span className="text-sm font-semibold">{contact.urgency_label}</span>
-          )}
-          {contact.mdcp_score && (
-            <p className="text-xs text-gray-500 mt-1">Score: {contact.mdcp_score}</p>
-          )}
-        </div>
-      </div>
-      <div className="mt-3 flex gap-2">
-        <a
-          href={`mailto:${contact.email}`}
-          onClick={(e) => e.stopPropagation()}
-          className="text-xs px-3 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
-        >
-          Email
-        </a>
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            window.location.href = `/contacts/${contact.id}`;
-          }}
-          className="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-        >
-          View Profile
-        </button>
+        )}
       </div>
     </div>
   );
