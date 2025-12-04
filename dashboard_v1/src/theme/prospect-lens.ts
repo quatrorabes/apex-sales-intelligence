@@ -1,0 +1,30 @@
+export const prospectLens = {
+  dark: {
+    bg: 'bg-[#020617]',
+    card: 'bg-[#020617]',
+    cardBorder: 'border-[#1F2937]',
+    accentPrimary: 'text-[#EC4899]',
+    accentSecondary: 'text-[#0EA5E9]',
+    gradientHalo: 'from-[#EC4899]/30 to-transparent',
+    textPrimary: 'text-[#F9FAFB]',
+    textMuted: 'text-[#9CA3AF]',
+    positive: 'text-[#22C55E]',
+    risk: 'text-[#F97316]',
+    timelineIcon: 'bg-[#1F2937] border-[#EC4899]',
+    aiSummary: 'bg-gradient-to-r from-[#EC4899]/10 to-[#0EA5E9]/10 border-l-4 border-[#EC4899]',
+  },
+  light: {
+    bg: 'bg-[#EEF2FF]',
+    card: 'bg-white',
+    cardBorder: 'border-[#E5E7EB]',
+    accentPrimary: 'text-[#DB2777]',
+    accentSecondary: 'text-[#0284C7]',
+    gradientHalo: 'from-[#DB2777]/20 to-transparent',
+    textPrimary: 'text-[#111827]',
+    textMuted: 'text-[#6B7280]',
+    positive: 'text-[#16A34A]',
+    risk: 'text-[#EA580C]',
+    timelineIcon: 'bg-[#F3F4F6] border-[#DB2777]',
+    aiSummary: 'bg-gradient-to-r from-[#DB2777]/5 to-[#0284C7]/5 border-l-4 border-[#DB2777]',
+  }
+};

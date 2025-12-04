@@ -1,143 +1,89 @@
-import React, { useState, useEffect } from 'react';
-import { Home, Users, Calendar, Brain, Sparkles, BarChart3, Menu, X } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
+import { Moon, Sun, LayoutDashboard, Users, TrendingUp } from 'lucide-react';
+import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import TodaysBoard from './components/TodaysBoard';
-import ContactsBoard from './components/ContactsBoard';
-import ApexIntelligence from './components/ApexIntelligence';
-import ContactEnrichmentView from './components/ContactEnrichmentView';
-import CadenceDashboard from './components/CadenceDashboard';
-import { OnboardingModal } from './components/OnboardingModal';
-import { apiClient } from './utils/api';
-import './styles/index.css';
+import { ContactsBoard } from './components/ContactsBoard';
 
-type View = 'today' | 'contacts' | 'intelligence' | 'enrichment' | 'cadence';
-
-function App() {
-  const [currentView, setCurrentView] = useState<View>('today');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [apiHealth, setApiHealth] = useState<'healthy' | 'unhealthy' | 'checking'>('checking');
-
-  useEffect(() => {
-    checkApiHealth();
-    
-    // Check if first visit
-    const hasSeenOnboarding = localStorage.getItem('apex_onboarding_seen');
-    if (!hasSeenOnboarding) {
-      setShowOnboarding(true);
-    }
-  }, []);
-
-  const checkApiHealth = async () => {
-    try {
-      await apiClient.getHealth();
-      setApiHealth('healthy');
-    } catch (error) {
-      console.error('API health check failed:', error);
-      setApiHealth('unhealthy');
-    }
-  };
-
-  const handleOnboardingClose = () => {
-    setShowOnboarding(false);
-    localStorage.setItem('apex_onboarding_seen', 'true');
-  };
-
-  const navItems = [
-    { id: 'today' as View, label: "Today's Board", icon: Home },
-    { id: 'contacts' as View, label: 'All Contacts', icon: Users },
-    { id: 'intelligence' as View, label: 'Apex Intelligence', icon: Brain },
-    { id: 'enrichment' as View, label: 'Enrichment', icon: Sparkles },
-    { id: 'cadence' as View, label: 'Cadence', icon: Calendar },
-  ];
+function AppContent() {
+  const { mode, toggleTheme } = useTheme();
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <aside
-        className={`bg-gradient-to-b from-gray-900 to-gray-800 text-white transition-all duration-300 ${
-          sidebarOpen ? 'w-64' : 'w-20'
-        } flex-shrink-0 flex flex-col`}
-      >
-        {/* Logo */}
-        <div className="p-6 border-b border-gray-700">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-              <Brain className="h-6 w-6 text-white" />
-            </div>
-            {sidebarOpen && (
-              <div>
-                <h1 className="text-xl font-bold">Apex</h1>
-                <p className="text-xs text-gray-400">Intelligence</p>
+    <Router>
+      <div className={mode === 'dark' ? 'bg-[#050816] min-h-screen' : 'bg-[#F4F5FB] min-h-screen'}>
+        {/* Nav */}
+        <nav className="bg-[#0B1120]/95 backdrop-blur-xl border-b border-[#94A3B8]/35 sticky top-0 z-40">
+          <div className="max-w-7xl mx-auto px-6 py-3.5">
+            <div className="flex items-center justify-between">
+              {/* Logo */}
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#22D3EE] to-[#6366F1] flex items-center justify-center">
+                  <TrendingUp className="text-white" size={20} />
+                </div>
+                <h1 className="text-lg font-semibold bg-gradient-to-r from-[#22D3EE] to-[#6366F1] bg-clip-text text-transparent">
+                  APEX
+                </h1>
               </div>
-            )}
-          </div>
-        </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-2">
-          {navItems.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setCurrentView(id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                currentView === id
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`}
-              title={!sidebarOpen ? label : undefined}
-            >
-              <Icon className="h-5 w-5 flex-shrink-0" />
-              {sidebarOpen && <span className="font-medium">{label}</span>}
-            </button>
-          ))}
+              {/* Nav Links */}
+              <div className="flex items-center gap-4">
+                <NavLink
+                  to="/board"
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-[#22D3EE] text-[#050816]'
+                        : 'text-[#CBD5E1] hover:text-[#22D3EE]'
+                    }`
+                  }
+                >
+                  <LayoutDashboard size={16} />
+                  <span>Board</span>
+                </NavLink>
+
+                <NavLink
+                  to="/contacts"
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-[#22D3EE] text-[#050816]'
+                        : 'text-[#CBD5E1] hover:text-[#22D3EE]'
+                    }`
+                  }
+                >
+                  <Users size={16} />
+                  <span>Contacts</span>
+                </NavLink>
+              </div>
+
+              {/* Theme Toggle */}
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg border border-[#94A3B8]/35 text-[#CBD5E1] hover:bg-[#22D3EE]/10 hover:text-[#22D3EE] transition-all"
+              >
+                {mode === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+            </div>
+          </div>
         </nav>
 
-        {/* API Status */}
-        <div className="p-4 border-t border-gray-700">
-          <div className="flex items-center gap-2">
-            <div
-              className={`h-3 w-3 rounded-full ${
-                apiHealth === 'healthy'
-                  ? 'bg-green-500'
-                  : apiHealth === 'unhealthy'
-                  ? 'bg-red-500'
-                  : 'bg-yellow-500 animate-pulse'
-              }`}
-            />
-            {sidebarOpen && (
-              <span className="text-sm text-gray-400">
-                API {apiHealth === 'healthy' ? 'Connected' : apiHealth === 'unhealthy' ? 'Offline' : 'Checking...'}
-              </span>
-            )}
-          </div>
-        </div>
+        {/* Routes */}
+        <main>
+          <Routes>
+            <Route path="/" element={<TodaysBoard />} />
+            <Route path="/board" element={<TodaysBoard />} />
+            <Route path="/contacts" element={<ContactsBoard />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  );
+}
 
-        {/* Toggle Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-4 border-t border-gray-700 hover:bg-gray-700 transition"
-        >
-          {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-7xl mx-auto p-6">
-          {currentView === 'today' && <TodaysBoard />}
-          {currentView === 'contacts' && <ContactsBoard />}
-          {currentView === 'intelligence' && <ApexIntelligence />}
-          {currentView === 'enrichment' && <ContactEnrichmentView />}
-          {currentView === 'cadence' && <CadenceDashboard />}
-        </div>
-      </main>
-
-      {/* Onboarding Modal */}
-      <OnboardingModal
-        isOpen={showOnboarding}
-        onClose={handleOnboardingClose}
-      />
-    </div>
+function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }
 

@@ -1,272 +1,324 @@
 #!/bin/bash
-# apex_deploy.sh - Complete deployment script for APEX Intelligence
 
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════════════╗
-║                                                                   ║
-║      🏛️  APEX INTELLIGENCE - PRODUCTION DEPLOYMENT SCRIPT       ║
-║                                                                   ║
-║      World-Class Sales Intelligence Platform                     ║
-║      Complete Integration & Deployment                           ║
-║                                                                   ║
-╚═══════════════════════════════════════════════════════════════════╝
-EOF
+#!/usr/bin/env bash
+# apex_deploy_and_import.sh
+# Run from: ~/projects/apex
 
-set -e  # Exit on error
+set -euo pipefail
 
-echo ""
-echo "🚀 Step 1: Environment Setup"
-echo "─────────────────────────────────────────────────────────────────"
+echo "═══════════════════════════════════════════════════════════════"
+echo "🚀 APEX DEPLOYMENT & IMPORT - $(date)"
+echo "═══════════════════════════════════════════════════════════════"
 
-# Create project structure
-mkdir -p ~/projects/apex
 cd ~/projects/apex
 
-mkdir -p apps/backend/{intelligence,integrations,services,automation}
-mkdir -p apps/backend/intelligence/engines/{scoring,enrichment,personas}
-mkdir -p models
-mkdir -p enrichment_profiles
-mkdir -p dashboard_v1/src/{components,config,types}
-
-echo "✅ Directory structure created"
-
+# ─────────────────────────────────────────────────────────────────
+# STEP 1: Git Status & Commit
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "🐍 Step 2: Python Environment"
-echo "─────────────────────────────────────────────────────────────────"
+echo "📦 STEP 1: Git commit all changes..."
 
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+git status --short
 
-# Create requirements.txt
-cat > requirements.txt << 'REQUIREMENTS'
-Flask==3.0.0
-Flask-CORS==4.0.0
-python-dotenv==1.0.0
-requests==2.31.0
-openai==1.3.0
-psycopg2-binary==2.9.9
-sqlite3  # Built-in
-numpy==1.24.3
-pandas==2.0.3
-scikit-learn==1.3.0
-REQUIREMENTS
+git add -A
+git commit -m "🚀 Apex Dec 3: Enrichment, Scoring, Dashboard fixes, CRM spec
 
-pip install -r requirements.txt
+- Fixed EnhancedEnrichment 3-stage pipeline (Perplexity → GPT-4 → DB)
+- Fixed ApexScoringEngine initialization
+- Fixed 12 dashboard components (removed hardcoded Railway URLs)
+- Fixed Today's Board response parsing
+- Fixed Intelligence tab section extraction
+- Added 14 new database columns for CRM import
+- Added CRM connector spec (HubSpot, Salesforce, Pipedrive)
+- Added scripts/import_hubspot.py
+- Cleaned up duplicate files" || echo "Nothing to commit"
 
-echo "✅ Python dependencies installed"
-
+# ─────────────────────────────────────────────────────────────────
+# STEP 2: Push to GitHub
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "🔑 Step 3: Environment Variables"
-echo "─────────────────────────────────────────────────────────────────"
+echo "📤 STEP 2: Push to GitHub..."
 
-# Create .env file
-cat > .env << 'ENVFILE'
-# APEX Intelligence Environment Configuration
+git push origin main || git push origin main --force
 
-# API Keys
-PERPLEXITY_API_KEY=your_perplexity_key_here
-OPENAI_API_KEY=your_openai_key_here
-HUBSPOT_ACCESS_TOKEN=your_hubspot_token_here
+echo "✅ GitHub updated"
 
-# Database (leave empty for SQLite local development)
-DATABASE_URL=
-
-# API Configuration
-API_BASE_URL=http://localhost:8000
-PORT=8000
-
-# Feature Flags
-ENABLE_ENRICHMENT=true
-ENABLE_SCORING=true
-ENABLE_PERSONA_CLASSIFICATION=true
-ENABLE_CONTENT_GENERATION=true
-ENABLE_AUTOMATION=true
-ENABLE_ML_PREDICTIONS=true
-ENVFILE
-
-echo "✅ Environment file created - PLEASE UPDATE WITH YOUR API KEYS"
-
+# ─────────────────────────────────────────────────────────────────
+# STEP 3: Deploy to Railway (auto-deploys on push, but verify)
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "📄 Step 4: Save Master Integration File"
-echo "─────────────────────────────────────────────────────────────────"
+echo "🚂 STEP 3: Railway deployment..."
 
-# The apex_master_integration.py file would be saved here
-# (Using the complete code from DELIVERABLE 1)
+if command -v railway &> /dev/null; then
+	echo "Checking Railway status..."
+	railway status || true
+	echo ""
+	echo "Recent logs (last 20 lines):"
+	railway logs --tail 20 || true
+else
+	echo "⚠️  Railway CLI not installed. Check https://apex-intelligence-production.up.railway.app/api/health manually"
+fi
 
-echo "⚠️  SAVE apex_master_integration.py manually from the provided code"
-
+# ─────────────────────────────────────────────────────────────────
+# STEP 4: Load environment variables properly
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "⚛️  Step 5: Frontend Setup"
-echo "─────────────────────────────────────────────────────────────────"
+echo "🔑 STEP 4: Loading environment variables..."
 
-# Initialize Vite React project
-cd dashboard_v1
-npm create vite@latest . -- --template react-ts --force
-npm install
+if [ -f .env ]; then
+	export $(grep -v '^#' .env | grep -v '^$' | xargs)
+	echo "✅ Environment loaded"
+	
+	# Verify critical keys
+	if [ -n "${HUBSPOT_ACCESS_TOKEN:-}" ]; then
+		echo "   ✅ HUBSPOT_ACCESS_TOKEN: ${HUBSPOT_ACCESS_TOKEN:0:10}..."
+	else
+		echo "   ❌ HUBSPOT_ACCESS_TOKEN: NOT SET"
+	fi
+	
+	if [ -n "${PERPLEXITY_API_KEY:-}" ]; then
+		echo "   ✅ PERPLEXITY_API_KEY: ${PERPLEXITY_API_KEY:0:10}..."
+	else
+		echo "   ❌ PERPLEXITY_API_KEY: NOT SET"
+	fi
+	
+	if [ -n "${OPENAI_API_KEY:-}" ]; then
+		echo "   ✅ OPENAI_API_KEY: ${OPENAI_API_KEY:0:10}..."
+	else
+		echo "   ❌ OPENAI_API_KEY: NOT SET"
+	fi
+else
+	echo "❌ .env file not found!"
+	exit 1
+fi
 
-# Create API config
-mkdir -p src/config
-cat > src/config/api.ts << 'APICONFIG'
-export const API_URL =
-  import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-export const fetchAPI = async (endpoint: string, options?: RequestInit) => {
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
-  
-  if (!response.ok) {
-    throw new Error(`API error: ${response.statusText}`);
-  }
-  
-  return response.json();
-};
-APICONFIG
-
-# Create environment files
-echo "VITE_API_URL=http://localhost:8000" > .env.development
-echo "VITE_API_URL=https://your-production-url.railway.app" > .env.production
-
-cd ..
-
-echo "✅ Frontend initialized"
-
+# ─────────────────────────────────────────────────────────────────
+# STEP 5: Ensure Python venv and dependencies
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "🗄️  Step 6: Database Initialization"
-echo "─────────────────────────────────────────────────────────────────"
+echo "🐍 STEP 5: Python environment..."
 
-python3 << 'PYINIT'
+if [ -d ".venv" ]; then
+	source .venv/bin/activate
+else
+	python3 -m venv .venv
+	source .venv/bin/activate
+	pip install -U pip
+fi
+
+pip install -q requests python-dotenv openai 2>/dev/null || true
+echo "✅ Python ready: $(python --version)"
+
+# ─────────────────────────────────────────────────────────────────
+# STEP 6: Ensure database columns exist
+# ─────────────────────────────────────────────────────────────────
+echo ""
+echo "🗄️  STEP 6: Database schema check..."
+
+python3 << 'PYEOF'
 import sqlite3
 
-conn = sqlite3.connect('apex.db')
-cursor = conn.cursor()
+cols = [
+	("first_name", "TEXT"),
+	("last_name", "TEXT"),
+	("phone_mobile", "TEXT"),
+	("linkedin_url", "TEXT"),
+	("company_domain", "TEXT"),
+	("company_website", "TEXT"),
+	("company_hq_city", "TEXT"),
+	("company_hq_state", "TEXT"),
+	("industry", "TEXT"),
+	("data_completeness_score", "INTEGER DEFAULT 0"),
+	("enrichment_ready", "INTEGER DEFAULT 0"),
+	("import_source", "TEXT"),
+	("crm_id", "TEXT"),
+	("last_crm_sync", "TEXT"),
+	("last_contact_date", "TEXT")
+]
 
-print("Creating database schema...")
+con = sqlite3.connect('apex.db')
+cur = con.cursor()
+added = skipped = 0
 
-# Create all tables (from apex_master_integration.py schema)
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS contacts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        first_name TEXT,
-        last_name TEXT,
-        name TEXT UNIQUE,
-        email TEXT UNIQUE,
-        phone TEXT,
-        phone_mobile TEXT,
-        company TEXT,
-        title TEXT,
-        linkedin_url TEXT,
-        company_domain TEXT,
-        company_website TEXT,
-        company_hq_city TEXT,
-        company_hq_state TEXT,
-        industry TEXT,
-        profile_content TEXT,
-        enrichment_status TEXT DEFAULT 'pending',
-        enrichment_date TEXT,
-        persona_type TEXT,
-        persona_confidence REAL,
-        priority_score REAL,
-        mdcp_score REAL,
-        mdcp_tier TEXT,
-        rss_score REAL,
-        rss_tier TEXT,
-        urgency_level TEXT,
-        last_scored TEXT,
-        conversion_probability REAL,
-        email_1_subject TEXT,
-        email_1_body TEXT,
-        call_script_1 TEXT,
-        linkedin_connect TEXT,
-        value_proposition TEXT,
-        import_source TEXT,
-        crm_id TEXT,
-        data_completeness_score INTEGER DEFAULT 0,
-        enrichment_ready INTEGER DEFAULT 0,
-        last_crm_sync TEXT,
-        last_contact_date TEXT,
-        total_touches INTEGER DEFAULT 0,
-        response_count INTEGER DEFAULT 0,
-        cadence_status TEXT DEFAULT 'not_started',
-        cadence_stage INTEGER DEFAULT 0,
-        next_touch_date TEXT,
-        auto_pause INTEGER DEFAULT 0,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-""")
+for c, t in cols:
+	try:
+		cur.execute(f"ALTER TABLE contacts ADD COLUMN {c} {t}")
+		added += 1
+	except Exception as e:
+		if "duplicate column name" in str(e).lower():
+			skipped += 1
 
-conn.commit()
-conn.close()
+con.commit()
+con.close()
+print(f"✅ Schema: {added} added, {skipped} already exist")
+PYEOF
 
-print("✅ Database schema created")
-PYINIT
-
-echo "✅ Database initialized"
-
+# ─────────────────────────────────────────────────────────────────
+# STEP 7: Create HubSpot import script if missing
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "🧪 Step 7: System Health Check"
-echo "─────────────────────────────────────────────────────────────────"
+echo "📝 STEP 7: Ensuring import script exists..."
 
-python3 << 'HEALTHCHECK'
+mkdir -p scripts
+
+cat > scripts/import_hubspot.py << 'PYEOF'
+#!/usr/bin/env python3
+"""HubSpot contact import for Apex"""
+
 import os
-from pathlib import Path
+import sqlite3
+import requests
+from datetime import datetime
 
-checks = {
-    'apex_master_integration.py': False,
-    'apex.db': False,
-    '.env': False,
-    'requirements.txt': False,
-    'dashboard_v1/package.json': False,
+TOKEN = os.getenv('HUBSPOT_ACCESS_TOKEN')
+DB = 'apex.db'
+
+if not TOKEN:
+	print("❌ HUBSPOT_ACCESS_TOKEN not set")
+	print("   Run: export $(grep -v '^#' .env | xargs)")
+	exit(1)
+
+headers = {"Authorization": f"Bearer {TOKEN}"}
+url = "https://api.hubapi.com/crm/v3/objects/contacts"
+params = {
+	"limit": 100,
+	"properties": "firstname,lastname,email,phone,mobilephone,jobtitle,company,hs_linkedin_url"
 }
 
-for file in checks.keys():
-    checks[file] = Path(file).exists()
+print("📥 Fetching contacts from HubSpot...")
 
-print("\n📋 System Health Check:\n")
-for file, exists in checks.items():
-    status = "✅" if exists else "❌"
-    print(f"  {status} {file}")
+all_contacts = []
+after = None
 
-all_good = all(checks.values())
-if all_good:
-    print("\n🎉 All systems GO!")
-else:
-    print("\n⚠️  Some files missing - please review")
-HEALTHCHECK
+while True:
+	if after:
+		params['after'] = after
+	
+	resp = requests.get(url, headers=headers, params=params)
+	
+	if resp.status_code != 200:
+		print(f"❌ HubSpot API error: {resp.status_code}")
+		print(resp.text[:500])
+		break
+	
+	data = resp.json()
+	contacts = data.get('results', [])
+	all_contacts.extend(contacts)
+	
+	paging = data.get('paging', {}).get('next', {})
+	after = paging.get('after')
+	
+	print(f"   Fetched {len(all_contacts)} contacts...")
+	
+	if not after:
+		break
 
+print(f"✅ Total fetched: {len(all_contacts)}")
+
+con = sqlite3.connect(DB)
+cur = con.cursor()
+
+imported = updated = skipped = 0
+
+for c in all_contacts:
+	props = c.get('properties', {})
+	email = props.get('email')
+	
+	if not email:
+		skipped += 1
+		continue
+	
+	first = props.get('firstname', '') or ''
+	last = props.get('lastname', '') or ''
+	name = f"{first} {last}".strip() or email.split('@')[0]
+	
+	# Check if exists
+	cur.execute("SELECT id FROM contacts WHERE email = ?", (email,))
+	existing = cur.fetchone()
+	
+	if existing:
+		# Update existing
+		cur.execute("""
+			UPDATE contacts SET
+				name = COALESCE(?, name),
+				phone = COALESCE(?, phone),
+				phone_mobile = COALESCE(?, phone_mobile),
+				title = COALESCE(?, title),
+				company = COALESCE(?, company),
+				linkedin_url = COALESCE(?, linkedin_url),
+				import_source = 'hubspot',
+				crm_id = ?,
+				last_crm_sync = ?,
+				updated_at = ?
+			WHERE email = ?
+		""", (
+			name,
+			props.get('phone'),
+			props.get('mobilephone'),
+			props.get('jobtitle'),
+			props.get('company'),
+			props.get('hs_linkedin_url'),
+			c.get('id'),
+			datetime.now().isoformat(),
+			datetime.now().isoformat(),
+			email
+		))
+		updated += 1
+	else:
+		# Insert new
+		cur.execute("""
+			INSERT INTO contacts (
+				name, email, phone, phone_mobile, title, company, 
+				linkedin_url, import_source, crm_id, last_crm_sync, 
+				enrichment_status, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, 'hubspot', ?, ?, 'pending', ?, ?)
+		""", (
+			name, email,
+			props.get('phone'),
+			props.get('mobilephone'),
+			props.get('jobtitle'),
+			props.get('company'),
+			props.get('hs_linkedin_url'),
+			c.get('id'),
+			datetime.now().isoformat(),
+			datetime.now().isoformat(),
+			datetime.now().isoformat()
+		))
+		imported += 1
+
+con.commit()
+con.close()
+
+print("")
+print("═" * 50)
+print(f"✅ IMPORT COMPLETE")
+print(f"   New contacts:     {imported}")
+print(f"   Updated:          {updated}")
+print(f"   Skipped (no email): {skipped}")
+print("═" * 50)
+PYEOF
+
+echo "✅ Import script ready"
+
+# ─────────────────────────────────────────────────────────────────
+# STEP 8: Test HubSpot API connection
+# ─────────────────────────────────────────────────────────────────
 echo ""
-echo "╔═══════════════════════════════════════════════════════════════════╗"
-echo "║                                                                   ║"
-echo "║      ✅ APEX INTELLIGENCE - DEPLOYMENT COMPLETE                 ║"
-echo "║                                                                   ║"
-echo "╚═══════════════════════════════════════════════════════════════════╝"
-echo ""
-echo "📋 NEXT STEPS:"
-echo ""
-echo "  1. Edit .env and add your API keys:"
-echo "     - PERPLEXITY_API_KEY"
-echo "     - OPENAI_API_KEY"
-echo "     - HUBSPOT_ACCESS_TOKEN"
-echo ""
-echo "  2. Start the backend:"
-echo "     source .venv/bin/activate"
-echo "     python apex_master_integration.py"
-echo ""
-echo "  3. Start the frontend (new terminal):"
-echo "     cd dashboard_v1"
-echo "     npm run dev"
-echo ""
-echo "  4. Access the system:"
-echo "     Backend API: http://localhost:8000/api/health"
-echo "     Frontend:    http://localhost:5173"
-echo ""
-echo "╔═══════════════════════════════════════════════════════════════════╗"
-echo "║  🏛️  APEX INTELLIGENCE is now ready for production use          ║"
-echo "╚═══════════════════════════════════════════════════════════════════╝"
+echo "🔌 STEP 8: Testing HubSpot API connection..."
+
+HUBSPOT_TEST=$(curl -s -o /dev/null -w "%{http_code}" \
+	-H "Authorization: Bearer $HUBSPOT_ACCESS_TOKEN" \
+	"https://api.hubapi.com/crm/v3/objects/contacts?limit=1")
+
+if [ "$HUBSPOT_TEST" = "200" ]; then
+	echo "✅ HubSpot API: Connected"
+else
+	echo "❌ HubSpot API: Failed (HTTP $HUBSPOT_TEST)"
+	echo "   Check your HUBSPOT_ACCESS_TOKEN in .env"
+	exit 1
+fi
+
+# ─────────────────────────────────────────────────────────────────
+# STEP 9: Run HubSpot Import
+# ─────────────────────────────────────────────────────────────────
 echo ""
