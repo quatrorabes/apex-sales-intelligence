@@ -3,7 +3,7 @@
  * Handles contact enrichment API calls
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_ENDPOINTS } from '../config/api';
 
 export interface EnrichmentStatus {
   contact_id: number;
@@ -17,7 +17,7 @@ export interface EnrichmentStatus {
 
 export interface EnrichmentResponse {
   success: boolean;
-  message: string;
+  message?: string;
   contact_id: number;
   status: string;
   data?: {
@@ -33,7 +33,7 @@ class EnrichmentService {
    * Trigger enrichment for a single contact
    */
   async enrichContact(contactId: number): Promise<EnrichmentResponse> {
-    const response = await fetch(`${API_BASE}/api/contacts/${contactId}/enrich`, {
+    const response = await fetch(API_ENDPOINTS.enrichContact(contactId), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -51,33 +51,10 @@ class EnrichmentService {
    * Get enrichment status for a contact
    */
   async getEnrichmentStatus(contactId: number): Promise<EnrichmentStatus> {
-    const response = await fetch(`${API_BASE}/api/contacts/${contactId}/enrichment-status`);
+    const response = await fetch(API_ENDPOINTS.enrichmentStatus(contactId));
 
     if (!response.ok) {
       throw new Error(`Failed to get status: ${response.statusText}`);
-    }
-
-    return response.json();
-  }
-
-  /**
-   * Batch enrich multiple contacts
-   */
-  async enrichBatch(contactIds: number[]): Promise<{
-    success: boolean;
-    queued: number;
-    message: string;
-  }> {
-    const response = await fetch(`${API_BASE}/api/contacts/enrich-batch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ contact_ids: contactIds }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Batch enrichment failed: ${response.statusText}`);
     }
 
     return response.json();

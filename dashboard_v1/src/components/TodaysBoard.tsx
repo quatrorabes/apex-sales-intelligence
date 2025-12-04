@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ProspectCard } from './ProspectCard';
 import { KPICard } from './KPICard';
-import api from '../services/api';
+import { API_ENDPOINTS } from '../config/api';
 
 interface Contact {
   id: number;
@@ -60,7 +60,9 @@ export default function TodaysBoard() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch('http://localhost:8000/api/todays-board');
+      
+      console.log('Fetching board from:', API_ENDPOINTS.todaysBoard);
+      const response = await fetch(API_ENDPOINTS.todaysBoard);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -107,7 +109,7 @@ export default function TodaysBoard() {
         <div className="bg-red-900 bg-opacity-20 border border-red-500 rounded-card p-6 max-w-2xl mx-auto">
           <h3 className="text-red-400 font-semibold mb-2 text-lg">⚠️ Error Loading Board</h3>
           <p className="text-red-300 text-sm mb-2">{error}</p>
-          <p className="text-red-400 text-xs mb-4">Make sure the backend is running on http://localhost:8000</p>
+          <p className="text-red-400 text-xs mb-4">Make sure the backend is running on {API_ENDPOINTS.todaysBoard}</p>
           <button
             onClick={fetchBoard}
             className="px-6 py-3 bg-gradient-to-r from-gold to-gold-hover text-midnight-950 font-semibold rounded-xl hover:shadow-gold-glow transition-all"

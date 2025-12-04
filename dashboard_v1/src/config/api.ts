@@ -1,7 +1,17 @@
-// Centralized API configuration for Dashboard_v1
-// Reads from environment variables with local fallback
+/**
+ * APEX API Configuration
+ * Centralized API endpoint management
+ */
 
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-// Helper for building API endpoints
-export const apiEndpoint = (path: string): string => `${API_URL}${path}`;
+export const API_ENDPOINTS = {
+  health: `${API_BASE_URL}/api/health`,
+  contacts: `${API_BASE_URL}/api/contacts`,
+  todaysBoard: `${API_BASE_URL}/api/todays-board`,
+  enrichContact: (id: number) => `${API_BASE_URL}/api/contacts/${id}/enrich`,
+  enrichmentStatus: (id: number) => `${API_BASE_URL}/api/contacts/${id}/enrichment-status`,
+  hubspotImport: `${API_BASE_URL}/api/hubspot/import`,
+};
+
+export default API_BASE_URL;
