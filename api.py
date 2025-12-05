@@ -1,17 +1,4 @@
-"""
-APEX Sales Intelligence API
-Railway-compatible deployment
-"""
-import os
-import sys
 
-# Get port from environment (Railway sets this)
-PORT = int(os.environ.get('PORT', 8000))
-
-- Cold Call Queue
-- User Profile Management
-=============================================================================
-"""
 
 import os
 import sys
