@@ -1542,3 +1542,178 @@ if __name__ == '__main__':
     debug = os.environ.get('FLASK_DEBUG', '0') == '1'
     print(f"🚀 Starting APEX API on port {port}")
     app.run(host='0.0.0.0', port=port, debug=debug)
+
+
+# ============= CRM IMPORT ENDPOINTS =============
+
+@app.route('/api/import/hubspot', methods=['POST'])
+def import_hubspot():
+    """Import contacts from HubSpot."""
+    from apps.backend.integrations.crm_import import HubSpotImporter, ImportManager
+    
+    data = request.json or {}
+    api_key = data.get('api_key') or os.getenv('HUBSPOT_API_KEY')
+    access_token = data.get('access_token') or os.getenv('HUBSPOT_ACCESS_TOKEN')
+    max_contacts = data.get('limit', 500)
+    
+    if not api_key and not access_token:
+        return jsonify({'error': 'HubSpot API key or access token required'}), 400
+    
+    try:
+        importer = HubSpotImporter(api_key=api_key, access_token=access_token)
+        raw_contacts = importer.fetch_all_contacts(max_contacts=max_contacts)
+        
+        # Normalize contacts
+        normalized = [importer.normalize_contact(c) for c in raw_contacts]
+        
+        # Save to database
+        conn = get_db()
+        manager = ImportManager(conn)
+        result = manager.save_contacts(normalized)
+        conn.close()
+        
+        return jsonify({
+            'source': 'hubspot',
+            'fetched': len(raw_contacts),
+            **result
+        })
+        
+    except Exception as e:
+        logger.error(f"HubSpot import error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/import/salesforce', methods=['POST'])
+def import_salesforce():
+    """Import contacts from Salesforce."""
+    from apps.backend.integrations.crm_import import SalesforceImporter, ImportManager
+    
+    data = request.json or {}
+    username = data.get('username') or os.getenv('SALESFORCE_USERNAME')
+    password = data.get('password') or os.getenv('SALESFORCE_PASSWORD')
+    security_token = data.get('security_token') or os.getenv('SALESFORCE_SECURITY_TOKEN')
+    max_contacts = data.get('limit', 500)
+    
+    if not username or not password:
+        return jsonify({'error': 'Salesforce credentials required'}), 400
+    
+    try:
+        importer = SalesforceImporter(
+            username=username,
+            password=password,
+            security_token=security_token
+        )
+        raw_contacts = importer.fetch_contacts(limit=max_contacts)
+        
+        # Normalize contacts
+        normalized = [importer.normalize_contact(c) for c in raw_contacts]
+        
+        # Save to database
+        conn = get_db()
+        manager = ImportManager(conn)
+        result = manager.save_contacts(normalized)
+        conn.close()
+        
+        return jsonify({
+            'source': 'salesforce',
+            'fetched': len(raw_contacts),
+            **result
+        })
+        
+    except Exception as e:
+        logger.error(f"Salesforce import error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/import/pipedrive', methods=['POST'])
+def import_pipedrive():
+    """Import contacts from Pipedrive."""
+    from apps.backend.integrations.crm_import import PipedriveImporter, ImportManager
+    
+    data = request.json or {}
+    api_token = data.get('api_token') or os.getenv('PIPEDRIVE_API_TOKEN')
+    max_contacts = data.get('limit', 500)
+    
+    if not api_token:
+        return jsonify({'error': 'Pipedrive API token required'}), 400
+    
+    try:
+        importer = PipedriveImporter(api_token=api_token)
+        raw_contacts = importer.fetch_all_contacts(max_contacts=max_contacts)
+        
+        # Normalize contacts
+        normalized = [importer.normalize_contact(c) for c in raw_contacts]
+        
+        # Save to database
+        conn = get_db()
+        manager = ImportManager(conn)
+        result = manager.save_contacts(normalized)
+        conn.close()
+        
+        return jsonify({
+            'source': 'pipedrive',
+            'fetched': len(raw_contacts),
+            **result
+        })
+        
+    except Exception as e:
+        logger.error(f"Pipedrive import error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/import/csv', methods=['POST'])
+def import_csv():
+    """Import contacts from CSV."""
+    from apps.backend.integrations.crm_import import CSVImporter, ImportManager
+    
+    data = request.json or {}
+    csv_content = data.get('csv_content', '')
+    field_mapping = data.get('field_mapping')
+    
+    if not csv_content:
+        return jsonify({'error': 'CSV content required'}), 400
+    
+    try:
+        importer = CSVImporter()
+        normalized = importer.parse_csv(csv_content, custom_mapping=field_mapping)
+        
+        # Save to database
+        conn = get_db()
+        manager = ImportManager(conn)
+        result = manager.save_contacts(normalized)
+        conn.close()
+        
+        return jsonify({
+            'source': 'csv',
+            'field_mapping': importer.field_mapping,
+            **result,
+            **importer.get_result()
+        })
+        
+    except Exception as e:
+        logger.error(f"CSV import error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/import/status', methods=['GET'])
+def import_status():
+    """Get import connection status for all CRMs."""
+    status = {
+        'hubspot': {
+            'configured': bool(os.getenv('HUBSPOT_API_KEY') or os.getenv('HUBSPOT_ACCESS_TOKEN')),
+            'type': 'oauth' if os.getenv('HUBSPOT_ACCESS_TOKEN') else 'api_key'
+        },
+        'salesforce': {
+            'configured': bool(os.getenv('SALESFORCE_USERNAME') and os.getenv('SALESFORCE_PASSWORD')),
+            'type': 'credentials'
+        },
+        'pipedrive': {
+            'configured': bool(os.getenv('PIPEDRIVE_API_TOKEN')),
+            'type': 'api_token'
+        },
+        'csv': {
+            'configured': True,
+            'type': 'file_upload'
+        }
+    }
+    return jsonify(status)
