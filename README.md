@@ -1,78 +1,139 @@
-# APEX Sales Intelligence Platform
+# 🚀 APEX Sales Intelligence
 
-AI-powered contact enrichment and scoring system for Commercial Real Estate professionals.
+AI-powered sales intelligence platform for lead enrichment, scoring, and outreach automation.
+
+![Version](https://img.shields.io/badge/version-4.0.0-purple)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
 
-- **HubSpot Integration**: Import and sync contacts
-- **AI Enrichment**: Automated research using Perplexity AI
-- **CRE-Focused Scoring**: MDCP + RSS scoring optimized for Commercial Real Estate
-- **Intelligent Filtering**: Target only relevant CRE professionals
-- **Cadence Management**: Automated outreach sequences
-- **Dashboard**: React-based analytics and management interface
+### 📊 Dashboard
+- **Landing Page** — Personalized greeting with quick stats
+- **Today's Board** — Prioritized leads by match score
+- **4 Contact Views** — Table, Cards, Kanban (drag & drop), Compact
+- **Global Search** — `⌘K` to search contacts and pages instantly
 
-## Tech Stack
+### 🧠 Intelligence Engines
+- **Match Scoring** — FIT + RELEVANCE + TIMING algorithm
+- **Why Me Generator** — AI-generated personalized hooks
+- **Email Drafter** — 5 templates + 3-email sequences
+- **LinkedIn Generator** — Connection requests + InMails
+- **Smart Lists** — 6 auto-segmented lists
 
-- **Backend**: Python/Flask API
-- **Frontend**: React/TypeScript with Vite
-- **Database**: SQLite
-- **AI**: Perplexity API, OpenAI
-- **Integrations**: HubSpot CRM
+### 📈 Analytics
+- Tier distribution visualization
+- Score breakdown charts
+- Cold call funnel metrics
+- Top companies by volume
+
+## Quick Start
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- OpenAI API key
+
+### Installation
+
+Clone the repo
+git clone https://github.com/YOUR_USERNAME/apex.git
+cd apex
+
+Backend setup
+python -m venv venv
+source venv/bin/activate # or venv\Scripts\activate on Windows
+pip install -r requirements.txt
+
+Create .env file
+cat > .env << 'ENVFILE'
+OPENAI_API_KEY=your_key_here
+DATABASE_URL=/path/to/apex/apex.db
+ENVFILE
+
+Frontend setup
+cd dashboard_v1
+npm install
+
+text
+
+### Running
+
+Terminal 1: Backend
+cd ~/projects/apex
+python api.py
+
+Terminal 2: Frontend
+cd ~/projects/apex/dashboard_v1
+npm run dev
+
+text
+
+Open [http://localhost:3000](http://localhost:3000)
 
 ## Project Structure
 
 apex/
-├── api.py # Main Flask API
+├── api.py # Flask API server
+├── apex.db # SQLite database
+├── requirements.txt # Python dependencies
+├── .env # Environment variables (not committed)
+│
 ├── apps/
 │ └── backend/
 │ └── intelligence/
-│ └── engines/
-│ ├── enrichment/ # Contact enrichment logic
-│ └── scoring/ # CRE-specific scoring engines
-├── dashboard_v1/ # React frontend
-│ ├── src/
-│ │ ├── components/ # React components
-│ │ └── App.tsx # Main app
-│ └── package.json
-├── apex.db # SQLite database (git-ignored)
-└── .env # Environment variables (git-ignored)
+│ ├── scoring/ # Match scoring engine
+│ ├── why_me/ # Why Me generator
+│ ├── cold_call/ # Cold call queue
+│ └── outreach/ # Email & LinkedIn generators
+│
+└── dashboard_v1/ # React frontend
+├── src/
+│ ├── components/ # React components
+│ ├── App.tsx # Main app with routing
+│ └── main.tsx # Entry point
+├── package.json
+└── tailwind.config.js
 
 text
 
-## Setup
-
-1. Clone the repository
-2. Create virtual environment: `python -m venv venv`
-3. Install Python dependencies: `pip install -r requirements.txt`
-4. Install React dependencies: `cd dashboard_v1 && npm install`
-5. Copy `.env.example` to `.env` and add your API keys
-6. Run migrations: `python migrate.py`
-7. Start API: `python api.py`
-8. Start frontend: `cd dashboard_v1 && npm run dev`
-
-## Environment Variables
-
-Required in `.env`:
-- `HUBSPOT_TOKEN`: HubSpot private app token
-- `PERPLEXITY_API_KEY`: Perplexity AI key
-- `OPENAI_API_KEY`: OpenAI API key
-- `APEX_SCORING_PROFILE`: CRE_MORTGAGE, CRE_BROKERAGE, or COMMERCIAL_BANKING
-
-## Scoring Profiles
-
-The system uses industry-specific scoring profiles:
-- **CRE_MORTGAGE**: Commercial mortgage brokers and lenders
-- **CRE_BROKERAGE**: Commercial real estate brokers
-- **COMMERCIAL_BANKING**: Commercial relationship managers
-
 ## API Endpoints
 
-- `POST /api/hubspot/import`: Import contacts from HubSpot
-- `POST /api/contacts/:id/enrich`: Enrich a contact
-- `POST /api/contacts/:id/score`: Score a contact
-- `POST /api/contacts/score-batch`: Batch scoring
-- `GET /api/apex/scores`: Get all scored contacts
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/todays-board` | Dashboard data |
+| GET | `/api/contacts` | List all contacts |
+| GET | `/api/contacts/:id` | Get single contact |
+| POST | `/api/contacts/:id/enrich` | Enrich contact |
+| POST | `/api/contacts/:id/score` | Score contact |
+| POST | `/api/contacts/:id/why-me` | Generate Why Me |
+| POST | `/api/contacts/:id/generate-email` | Generate email |
+| POST | `/api/contacts/:id/generate-linkedin` | Generate LinkedIn message |
+| PUT | `/api/contacts/:id/tier` | Update match tier |
+| GET | `/api/analytics` | Pipeline analytics |
+| GET | `/api/smart-lists` | Smart list definitions |
+| POST | `/api/batch/rescore` | Batch re-score |
+| POST | `/api/batch/enrich` | Batch enrich |
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `⌘K` / `Ctrl+K` | Open global search |
+| `↑↓` | Navigate results |
+| `Enter` | Select/Open |
+| `Escape` | Close modal |
+
+## Tech Stack
+
+- **Frontend**: React 18, TypeScript, Tailwind CSS, Vite
+- **Backend**: Python, Flask, SQLite
+- **AI**: OpenAI GPT-4o
+- **Icons**: Lucide React
 
 ## License
 
-Proprietary - All Rights Reserved
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+Built with ☕ for closers
