@@ -1717,3 +1717,85 @@ def import_status():
         }
     }
     return jsonify(status)
+
+
+# ============= UPDATED IMPORT WITH VALIDATION =============
+
+@app.route('/api/import/hubspot/validated', methods=['POST'])
+def import_hubspot_validated():
+    """Import contacts from HubSpot with full validation."""
+    from apps.backend.integrations.crm_import import HubSpotImporter, ImportManager
+    
+    data = request.json or {}
+    api_key = data.get('api_key') or os.getenv('HUBSPOT_API_KEY')
+    access_token = data.get('access_token') or os.getenv('HUBSPOT_ACCESS_TOKEN')
+    max_contacts = data.get('limit', 500)
+    
+    # Validation options
+    require_email = data.get('require_email', True)
+    require_company = data.get('require_company', True)
+    require_name = data.get('require_name', True)
+    filter_dnc = data.get('filter_dnc', True)
+    filter_unsubscribed = data.get('filter_unsubscribed', True)
+    
+    if not api_key and not access_token:
+        return jsonify({'error': 'HubSpot API key or access token required'}), 400
+    
+    try:
+        importer = HubSpotImporter(api_key=api_key, access_token=access_token)
+        importer.set_validation_rules(
+            require_email=require_email,
+            require_company=require_company,
+            require_name=require_name,
+            filter_dnc=filter_dnc,
+            filter_unsubscribed=filter_unsubscribed
+        )
+        
+        raw_contacts = importer.fetch_all_contacts(max_contacts=max_contacts)
+        
+        # Validate and normalize
+        valid_contacts = []
+        for raw in raw_contacts:
+            normalized, reason = importer.validate_and_normalize(raw)
+            if normalized:
+                valid_contacts.append(normalized)
+        
+        # Save to database
+        conn = get_db()
+        manager = ImportManager(conn)
+        result = manager.save_contacts(valid_contacts, skip_validation=True)
+        conn.close()
+        
+        return jsonify({
+            'source': 'hubspot',
+            'fetched': len(raw_contacts),
+            'validated': len(valid_contacts),
+            **result,
+            **importer.get_result()
+        })
+        
+    except Exception as e:
+        logger.error(f"HubSpot import error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/import/settings', methods=['GET'])
+def get_import_settings():
+    """Get default import validation settings."""
+    return jsonify({
+        'validation_rules': {
+            'require_email': True,
+            'require_company': True,
+            'require_name': True,
+            'filter_dnc': True,
+            'filter_unsubscribed': True,
+        },
+        'dnc_statuses': [
+            'unqualified', 'do not contact', 'dnc', 'unsubscribed',
+            'opted out', 'bounced', 'invalid', 'spam', 'blacklist',
+            'not interested', 'lost', 'competitor', 'wrong contact'
+        ],
+        'invalid_email_domains': [
+            'example.com', 'test.com', 'mailinator.com', 'tempmail.*'
+        ]
+    })
