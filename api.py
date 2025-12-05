@@ -1,12 +1,13 @@
-#!/usr/bin/env python3
 """
-=============================================================================
-APEX API SERVER v4.0
-=============================================================================
-Features:
-- Enrichment Pipeline (Perplexity + GPT)
-- Match-Based Scoring Engine
-- Why Me Generator
+APEX Sales Intelligence API
+Railway-compatible deployment
+"""
+import os
+import sys
+
+# Get port from environment (Railway sets this)
+PORT = int(os.environ.get('PORT', 8000))
+
 - Cold Call Queue
 - User Profile Management
 =============================================================================
@@ -830,7 +831,6 @@ if __name__ == '__main__':
     logger.info(f"🔌 Port: {PORT}")
     logger.info(f"🧠 Modules: Scoring={SCORING_AVAILABLE}, WhyMe={WHY_ME_AVAILABLE}, ColdCall={COLD_CALL_AVAILABLE}")
     logger.info("=" * 60)
-    app.run(host='0.0.0.0', port=PORT, debug=True)
 
 
 # ============= EMAIL GENERATION =============
@@ -1536,3 +1536,9 @@ def import_contacts():
     conn.close()
     
     return jsonify({'success': success, 'failed': failed})
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+    print(f"🚀 Starting APEX API on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=debug)
