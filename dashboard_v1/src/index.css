@@ -2,49 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-midnight-950 text-text-primary;
-    font-family: 'Inter', system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-  
-  h1, h2, h3, h4, h5, h6 {
-    @apply text-text-primary font-semibold;
-  }
-  
-  /* Custom scrollbar */
-  ::-webkit-scrollbar {
-    width: 8px;
-  }
-  
-  ::-webkit-scrollbar-track {
-    @apply bg-midnight-900;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    @apply bg-midnight-600 rounded-full;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-midnight-500;
-  }
-}
-
-@layer utilities {
-  /* Text shadow for glowing scores */
-  .text-shadow-glow {
-    text-shadow: 0 0 8px rgba(229, 184, 76, 0.4);
-  }
-  
-  /* Breathing animation for AI processing */
-  .breathing {
-    animation: breathing 3s ease-in-out infinite;
-  }
-  
-  /* Card enter animation */
-  .card-enter {
-    animation: cardEnter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
+body {
+  background-color: #050B0F;
+  color: #F3F4F6;
 }

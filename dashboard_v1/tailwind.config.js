@@ -1,105 +1,65 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
+  darkMode: 'class',
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      colors: {
-        // Warm Midnight Background Palette
-        midnight: {
-          950: '#0A0A0A',  // Page background
-          900: '#141414',  // Cards, panels
-          800: '#1C1C1C',  // Elevated, hover
-          700: '#262626',  // Secondary elevations
-          600: '#2A2A2A',  // Borders
-          500: '#3D3D3D',  // Hover borders
-        },
-        
-        // Primary Accent — Gold (Hot Scores, CTAs)
-        gold: {
-          DEFAULT: '#E5B84C',
-          hover: '#D4A853',
-          muted: 'rgba(229, 184, 76, 0.15)',
-          glow: 'rgba(229, 184, 76, 0.25)',
-        },
-        
-        // Secondary Accent — Deep Blue (AI Elements)
-        blue: {
-          DEFAULT: '#3B82F6',  // Vibrant deep blue
-          muted: 'rgba(59, 130, 246, 0.15)',
-        },
-        
-        // Legacy violet alias (for backwards compatibility)
-        violet: {
-          DEFAULT: '#3B82F6',
-          muted: 'rgba(59, 130, 246, 0.15)',
-        },
-        
-        // Status Colors
-        lime: '#BFFF00',      // Success, positive
-        coral: '#F97316',     // Warning, warm scores
-        red: '#EF4444',       // Urgent, errors
-        magenta: '#E879F9',   // Special highlights
-        
-        // Text Hierarchy
-        text: {
-          primary: '#FAFAFA',
-          secondary: '#A3A3A3',
-          tertiary: '#737373',
-        },
-      },
-      
-      boxShadow: {
-        'gold-glow': '0 0 20px rgba(229, 184, 76, 0.15)',
-        'blue-glow': '0 0 20px rgba(59, 130, 246, 0.2)',
-        'card-hover': '0 8px 24px rgba(0, 0, 0, 0.4)',
-        'brutal': '4px 4px 0px rgba(0, 0, 0, 0.8)',
-      },
-      
-      borderRadius: {
-        'card': '16px',
-        'card-sm': '12px',
-      },
-      
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        sans: [
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"SF Pro Text"',
+          'Inter',
+          'sans-serif',
+        ],
       },
-      
-      animation: {
-        'breathing': 'breathing 3s ease-in-out infinite',
-        'score-tick': 'scoreTick 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        'card-enter': 'cardEnter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      colors: {
+        bg: {
+          app: '#050608',
+          sidebar: '#111319',
+          surface: '#151821',
+          surfaceAlt: '#1a1e28',
+          surfaceElevated: '#1e2230',
+        },
+        textc: {
+          primary: '#F5F7FB',
+          secondary: '#A2A8B8',
+          muted: '#6B7180',
+          onAccent: '#F9FBFF',
+        },
+        accent: {
+          blue: '#4B8AFF',
+          indigo: '#5865F2',
+          orange: '#FF9A4A',
+          pink: '#F27AD6',
+          violet: '#A56BFF',
+          danger: '#FF6A4F',
+          info: '#3B82F6',
+        },
+        borderc: {
+          subtle: 'rgba(255,255,255,0.04)',
+          medium: 'rgba(255,255,255,0.08)',
+          strong: 'rgba(255,255,255,0.12)',
+        },
       },
-      
-      keyframes: {
-        breathing: {
-          '0%, 100%': { opacity: '0.6' },
-          '50%': { opacity: '1' },
-        },
-        scoreTick: {
-          '0%': { transform: 'scale(1)' },
-          '50%': { transform: 'scale(1.1)' },
-          '100%': { transform: 'scale(1)' },
-        },
-        cardEnter: {
-          '0%': { 
-            opacity: '0',
-            transform: 'translateY(10px) scale(0.95)'
-          },
-          '100%': { 
-            opacity: '1',
-            transform: 'translateY(0) scale(1)'
-          },
-        },
+      borderRadius: {
+        xs: '0.5rem',
+        sm: '0.75rem',
+        md: '1rem',
+        lg: '1.125rem',
       },
-      
-      transitionTimingFunction: {
-        'spring': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+      boxShadow: {
+        card: '0 6px 18px rgba(0,0,0,0.55)',
+        panel: '0 12px 30px rgba(0,0,0,0.6)',
+        elevated: '0 22px 60px rgba(0,0,0,0.85)',
+        glowOrange: '0 0 24px rgba(255,154,74,0.45)',
+        glowBlue: '0 0 24px rgba(75,138,255,0.4)',
+      },
+      backgroundImage: {
+        'card-subtle': 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(4,5,7,0.92))',
       },
     },
   },
   plugins: [],
-}
+};

@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """
-Apex API Server - PRODUCTION VERSION
-Fixed Why Me? tab integration + All endpoints
+=============================================================================
+APEX API SERVER v4.0
+=============================================================================
+Features:
+- Enrichment Pipeline (Perplexity + GPT)
+- Match-Based Scoring Engine
+- Why Me Generator
+- Cold Call Queue
+- User Profile Management
+=============================================================================
 """
 
 import os
 import sys
 import json
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 from dotenv import load_dotenv
 import requests
@@ -20,561 +28,1232 @@ from openai import OpenAI
 # ============= SETUP =============
 load_dotenv('/Users/chrisrabenold/projects/apex/.env')
 
-BACKEND_PATH = '/Users/chrisrabenold/projects/apex/apps/backend'
-if BACKEND_PATH not in sys.path:
-    sys.path.insert(0, BACKEND_PATH)
+# Add paths for modules
+sys.path.insert(0, '/Users/chrisrabenold/projects/apex/apps/backend/intelligence/scoring')
+sys.path.insert(0, '/Users/chrisrabenold/projects/apex/apps/backend/intelligence/why_me')
+sys.path.insert(0, '/Users/chrisrabenold/projects/apex/apps/backend/intelligence/cold_call')
 
-GENERATORS_PATH = os.path.join(BACKEND_PATH, 'intelligence/engines/outreach/generators')
-if GENERATORS_PATH not in sys.path:
-    sys.path.insert(0, GENERATORS_PATH)
-
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# API Keys
-HUBSPOT_TOKEN = os.getenv('HUBSPOT_ACCESS_TOKEN') or os.getenv('HUBSPOT_API_KEY')
 PERPLEXITY_API_KEY = os.getenv('PERPLEXITY_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-logger.info(f"HubSpot Token: {HUBSPOT_TOKEN[:20] if HUBSPOT_TOKEN else 'NONE'}...")
-logger.info(f"Perplexity Key: {'✅ Found' if PERPLEXITY_API_KEY else '❌ Missing'}")
-logger.info(f"OpenAI Key: {'✅ Found' if OPENAI_API_KEY else '❌ Missing'}")
+logger.info(f"Perplexity Key: {'✅' if PERPLEXITY_API_KEY else '❌'}")
+logger.info(f"OpenAI Key: {'✅' if OPENAI_API_KEY else '❌'}")
 
-# ============= TRY TO IMPORT ENRICHMENT =============
-ENRICHMENT_AVAILABLE = False
-try:
-    from intelligence.engines.enrichment.enhanced_enrichment import EnhancedEnrichment
-    ENRICHMENT_AVAILABLE = True
-    logger.info("✅ Enrichment engine loaded")
-except ImportError as e:
-    logger.warning(f"⚠️ Could not load enrichment engine: {e}")
-
-# ============= TRY TO IMPORT SCORING =============
-SCORING_AVAILABLE = False
-try:
-    from intelligence.engines.scoring.apex_intelligence_engine import ApexScoringEngine
-    from intelligence.engines.scoring.scoring_wrapper import (
-        score_contact_from_db,
-        bulk_score_contacts,
-        get_apex_scores
-    )
-    SCORING_AVAILABLE = True
-    logger.info("✅ Scoring engines loaded")
-except ImportError as e:
-    logger.error(f"❌ Scoring engines not available: {e}")
-    logger.warning("⚠️ Using fallback scoring")
-
-    # Fallback scoring functions
-    def score_contact_from_db(conn, contact_id, trigger='manual'):
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
-        row = cursor.fetchone()
-        if not row:
-            return {'error': 'Contact not found'}
-
-        columns = [desc[0] for desc in cursor.description]
-        contact = dict(zip(columns, row))
-
-        score = 50
-        if contact.get('email'): score += 10
-        if contact.get('phone'): score += 10
-        if contact.get('company'): score += 10
-        if contact.get('title'): score += 10
-        if contact.get('linkedin_url'): score += 10
-
-        tier = 'HOT' if score >= 80 else 'WARM' if score >= 70 else 'QUALIFIED'
-        urgency = 'IMMEDIATE' if score >= 80 else 'HIGH' if score >= 70 else 'MEDIUM'
-
-        cursor.execute('''
-            UPDATE contacts 
-            SET mdcp_score = ?, mdcp_tier = ?,
-                rss_score = ?, rss_tier = ?,
-                priority_score = ?, urgency_level = ?,
-                recommended_action = ?,
-                calculation_version = 'fallback_v1',
-                last_scored = ?
-            WHERE id = ?
-        ''', (score, tier, score, tier, score, urgency,
-              f'{urgency} priority contact',
-              datetime.now().isoformat(), contact_id))
-        conn.commit()
-
-        return {
-            'success': True,
-            'contact_id': contact_id,
-            'scores': {
-                'mdcp_score': score,
-                'mdcp_tier': tier,
-                'rss_score': score,
-                'rss_tier': tier,
-                'priority_score': score,
-                'urgency_level': urgency
-            }
-        }
-
-    def bulk_score_contacts(conn, contact_ids, trigger='batch'):
-        results = []
-        for cid in contact_ids:
-            try:
-                result = score_contact_from_db(conn, cid, trigger)
-                results.append(result)
-            except Exception as e:
-                results.append({'contact_id': cid, 'error': str(e)})
-        return results
-
-    def get_apex_scores(conn):
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT id, name, company, email, lead_type, lifecycle_stage,
-                   mdcp_score as mdcp_total, mdcp_tier,
-                   rss_score as rss_total, rss_tier,
-                   priority_score, urgency_level,
-                   recommended_action, last_scored
-            FROM contacts
-            WHERE mdcp_score IS NOT NULL
-            ORDER BY priority_score DESC
-        ''')
-        columns = [desc[0] for desc in cursor.description]
-        contacts = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        return {
-            'status': 'success',
-            'count': len(contacts),
-            'contacts': contacts
-        }
-
-# ============= TRY TO IMPORT CADENCE ENGINES =============
-try:
-    from intelligence.engines.outreach.auto_sequence_engine import AutoSequenceEngine
-    from intelligence.engines.scoring.cadence_router import CadenceRouter
-    logger.info("✅ Cadence engines loaded")
-except ImportError as e:
-    logger.warning(f"⚠️ Cadence engines not available: {e}")
-    AutoSequenceEngine = None
-    CadenceRouter = None
-
-# Initialize Flask
-app = Flask(__name__)
-CORS(app)
-
-# Configuration
 DATABASE = '/Users/chrisrabenold/projects/apex/apex.db'
 PORT = 8000
 
-# ============= DATABASE HELPERS =============
+# ============= IMPORT MODULES =============
+try:
+    from scoring_engine import ApexScoringEngine
+    SCORING_AVAILABLE = True
+    logger.info("✅ Scoring Engine loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Scoring Engine not available: {e}")
+    SCORING_AVAILABLE = False
+
+try:
+    from why_me_engine import WhyMeEngine
+    WHY_ME_AVAILABLE = True
+    logger.info("✅ Why Me Engine loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Why Me Engine not available: {e}")
+    WHY_ME_AVAILABLE = False
+
+try:
+    from cold_call_engine import ColdCallEngine
+    COLD_CALL_AVAILABLE = True
+    logger.info("✅ Cold Call Engine loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Cold Call Engine not available: {e}")
+    COLD_CALL_AVAILABLE = False
+
+
+# ============= DATABASE =============
 def get_db():
-    """Get database connection"""
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
-def ensure_scoring_columns():
-    """Ensure all scoring columns exist"""
+
+def ensure_tables():
+    """Ensure all required tables and columns exist."""
     conn = get_db()
     cursor = conn.cursor()
-
-    columns_to_add = [
-        ('mdcp_score', 'REAL'),
-        ('mdcp_tier', 'TEXT'),
-        ('rss_score', 'REAL'),
-        ('rss_tier', 'TEXT'),
-        ('priority_score', 'REAL'),
-        ('urgency_level', 'TEXT'),
-        ('recommended_action', 'TEXT'),
-        ('calculation_version', 'TEXT'),
-        ('last_scored', 'TEXT'),
-        ('lead_type', 'TEXT')
+    
+    # Contact columns
+    contact_cols = [
+        ('mdcp_score', 'REAL'), ('mdcp_tier', 'TEXT'),
+        ('match_score', 'REAL'), ('match_tier', 'TEXT'),
+        ('fit_score', 'REAL'), ('relevance_score', 'REAL'), ('timing_score', 'REAL'),
+        ('enrichment_status', 'TEXT'), ('enrichment_data', 'TEXT'),
+        ('enriched', 'INTEGER'), ('enriched_at', 'TEXT'), ('last_scored', 'TEXT'),
+        ('why_me_data', 'TEXT'), ('why_me_generated_at', 'TEXT'),
     ]
-
-    for col_name, col_type in columns_to_add:
+    for col, typ in contact_cols:
         try:
-            cursor.execute(f'ALTER TABLE contacts ADD COLUMN {col_name} {col_type}')
-            logger.info(f"✅ Added column: {col_name}")
-        except sqlite3.OperationalError:
+            cursor.execute(f'ALTER TABLE contacts ADD COLUMN {col} {typ}')
+        except:
             pass
-
-    conn.commit()
-    conn.close()
-    logger.info("✅ Database schema checked")
-
-def ensure_user_preferences_table():
-    """Ensure user_preferences table exists for Why Me? functionality"""
-    conn = get_db()
-    cursor = conn.cursor()
-
+    
+    # User profile table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_preferences (
+        CREATE TABLE IF NOT EXISTS user_profile (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT UNIQUE NOT NULL DEFAULT 'default_user',
-            products TEXT DEFAULT '[]',
-            services TEXT DEFAULT '[]',
-            value_propositions TEXT DEFAULT '[]',
-            target_customers TEXT DEFAULT '[]',
-            personal_differentiators TEXT DEFAULT '[]',
-            company_differentiators TEXT DEFAULT '[]',
-            scoring_profile TEXT DEFAULT 'DEFAULT',
-            custom_ideal_titles TEXT DEFAULT '[]',
-            custom_avoid_titles TEXT DEFAULT '[]',
-            ideal_company_size_min INTEGER,
-            ideal_company_size_max INTEGER,
-            ideal_industries TEXT DEFAULT '[]',
-            target_seniority_levels TEXT DEFAULT '[]',
-            exclude_c_suite BOOLEAN DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            user_id TEXT UNIQUE NOT NULL DEFAULT 'default',
+            full_name TEXT,
+            role TEXT,
+            company TEXT,
+            years_experience INTEGER,
+            geographic_markets TEXT,
+            primary_product TEXT,
+            products_services TEXT,
+            sweet_spot_min INTEGER,
+            sweet_spot_max INTEGER,
+            asset_types TEXT,
+            loan_types TEXT,
+            differentiators TEXT,
+            speed_advantage TEXT,
+            relationship_advantage TEXT,
+            specialization TEXT,
+            ideal_titles TEXT,
+            ideal_company_types TEXT,
+            ideal_deal_triggers TEXT,
+            avoid_titles TEXT,
+            avoid_company_types TEXT,
+            weight_title_match INTEGER DEFAULT 30,
+            weight_company_match INTEGER DEFAULT 25,
+            weight_deal_size_match INTEGER DEFAULT 20,
+            weight_geography_match INTEGER DEFAULT 15,
+            weight_timing INTEGER DEFAULT 10,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-
+    
+    # Proof points table
     cursor.execute('''
-        INSERT OR IGNORE INTO user_preferences (user_id) 
-        VALUES ('default_user')
+        CREATE TABLE IF NOT EXISTS proof_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT 'default',
+            deals_closed_12mo INTEGER,
+            total_volume_12mo REAL,
+            avg_close_days INTEGER,
+            approval_rate REAL,
+            notable_deals TEXT,
+            testimonials TEXT,
+            awards TEXT,
+            certifications TEXT,
+            lender_relationships TEXT,
+            exclusive_programs TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
     ''')
-
+    
+    # Cold call queue table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cold_call_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL DEFAULT 'default',
+            name TEXT NOT NULL,
+            phone TEXT,
+            mobile TEXT,
+            email TEXT,
+            linkedin_url TEXT,
+            company TEXT,
+            title TEXT,
+            source TEXT,
+            source_context TEXT,
+            notes TEXT,
+            quick_fit_score REAL,
+            quick_fit_reason TEXT,
+            priority INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'new',
+            attempts INTEGER DEFAULT 0,
+            last_attempt TEXT,
+            outcome TEXT,
+            contact_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Contact match table (for Why Me data)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contact_match (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contact_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL DEFAULT 'default',
+            match_score REAL,
+            fit_score REAL,
+            relevance_score REAL,
+            timing_score REAL,
+            match_tier TEXT,
+            hook TEXT,
+            proof_points_matched TEXT,
+            why_now TEXT,
+            suggested_opening TEXT,
+            talking_points TEXT,
+            objection_handlers TEXT,
+            connection_angles TEXT,
+            generated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(contact_id, user_id)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
-    logger.info("✅ User preferences table checked")
 
-# Run DB setup
-ensure_scoring_columns()
-ensure_user_preferences_table()
+ensure_tables()
 
-# ============= API ROUTES =============
+
+# ============= ENRICHMENT ENGINE =============
+class EnhancedEnrichment:
+    def __init__(self):
+        self.perplexity_key = PERPLEXITY_API_KEY
+        self.openai_key = OPENAI_API_KEY
+        self.output_dir = '/Users/chrisrabenold/projects/apex/enrichment_profiles'
+        if not self.perplexity_key:
+            raise ValueError("Missing Perplexity API key")
+        os.makedirs(self.output_dir, exist_ok=True)
+
+    def enrich_contact(self, contact: dict) -> dict:
+        try:
+            return self.build_profile(contact)
+        except Exception as e:
+            logger.error(f"❌ Enrichment failed: {e}")
+            traceback.print_exc()
+            return {'success': False, 'error': str(e)}
+
+    def build_profile(self, contact: dict) -> dict:
+        name = contact.get('name') or f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
+        title = contact.get('title', '')
+        company = contact.get('company', '')
+
+        logger.info(f"🔍 ENRICHING: {name} at {company}")
+
+        # PERSON RESEARCH
+        person_query = f"""Research {name}, {title} at {company}.
+Find: Current role, career history, education, achievements, LinkedIn activity, speaking engagements, board positions, management style."""
+        person = self.call_perplexity(person_query)
+
+        # COMPANY RESEARCH
+        company_query = f"""Research {company} as a business.
+Find: Overview, founding, HQ, employees, revenue, business model, products/services, target markets, competitors, recent news, culture, leadership."""
+        company_res = self.call_perplexity(company_query)
+
+        # SALES INTELLIGENCE
+        sales_query = f"""Sales opportunity analysis for {name}, {title} at {company}.
+Find: Industry trends, pain points, regulatory challenges, technology trends, buying triggers, budget cycles, competitive pressures."""
+        sales = self.call_perplexity(sales_query)
+
+        combined = f"""=== PERSON RESEARCH: {name} ===
+
+{person or 'No data available'}
+
+=== COMPANY RESEARCH: {company} ===
+
+{company_res or 'No data available'}
+
+=== SALES INTELLIGENCE ===
+
+{sales or 'No data available'}
+"""
+
+        # PERSONALITY ANALYSIS
+        personality = self.get_personality_analysis(combined, name, title, company)
+        final = combined + "\n\n" + (personality or '')
+
+        # Save
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{self.output_dir}/profile_{contact.get('id', 'unknown')}_{timestamp}.txt"
+            with open(filename, 'w') as f:
+                f.write(f"# Profile: {name}\n# Generated: {timestamp}\n")
+                f.write("=" * 80 + "\n\n")
+                f.write(final)
+        except:
+            pass
+
+        return {'success': True, 'profile_text': final, 'character_count': len(final)}
+
+    def call_perplexity(self, query: str) -> str:
+        try:
+            response = requests.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers={"Authorization": f"Bearer {self.perplexity_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "sonar",
+                    "messages": [
+                        {"role": "system", "content": "Professional research analyst. Be thorough and factual."},
+                        {"role": "user", "content": query}
+                    ],
+                    "temperature": 0.1
+                },
+                timeout=90
+            )
+            if response.status_code == 200:
+                return response.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+            return None
+        except Exception as e:
+            logger.error(f"Perplexity error: {e}")
+            return None
+
+    def get_personality_analysis(self, research: str, name: str, title: str, company: str) -> str:
+        if not self.openai_key:
+            return None
+        prompt = f"""Based on research about {name}, {title} at {company}, provide personality analysis:
+
+RESEARCH:
+{research[:8000]}
+
+Provide:
+=== PERSONALITY ANALYSIS ===
+
+## Myers-Briggs (MBTI) Assessment
+**Inferred Type:** [XXXX]
+**Confidence:** [High/Medium/Low]
+
+## DISC Profile Assessment
+**Primary Style:** [D/I/S/C] - [Name]
+**Secondary Style:** [D/I/S/C] - [Name]
+
+## Communication Playbook
+### ✅ DO: How to Engage
+### ❌ DON'T: What to Avoid
+### 🎯 Best Opening Approach"""
+
+        try:
+            client = OpenAI(api_key=self.openai_key)
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "Expert personality analyst."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=1500
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"GPT error: {e}")
+            return None
+
+
+# ============= FLASK APP =============
+app = Flask(__name__)
+CORS(app)
+
 
 @app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
+def health():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'enrichment_available': ENRICHMENT_AVAILABLE,
-        'scoring_available': SCORING_AVAILABLE
+        'modules': {
+            'scoring': SCORING_AVAILABLE,
+            'why_me': WHY_ME_AVAILABLE,
+            'cold_call': COLD_CALL_AVAILABLE,
+        }
     })
 
-# ============= CONTACTS ENDPOINTS =============
 
+# ============= CONTACTS =============
 @app.route('/api/contacts', methods=['GET'])
 def get_contacts():
-    """Get all contacts with optional filtering and pagination"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        status = request.args.get('status')
-        limit = request.args.get('limit', 50, type=int)
-        offset = request.args.get('offset', 0, type=int)
-        
-        # Build query
-        query = 'SELECT * FROM contacts'
-        count_query = 'SELECT COUNT(*) FROM contacts'
-        params = []
-        count_params = []
-        
-        if status:
-            query += ' WHERE enrichment_status = ?'
-            count_query += ' WHERE enrichment_status = ?'
-            params.append(status)
-            count_params.append(status)
-            
-        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
-        params.extend([limit, offset])
-        
-        cursor.execute(query, params)
-        contacts = [dict(row) for row in cursor.fetchall()]
-        
-        # Get total count
-        cursor.execute(count_query, count_params)
-        total = cursor.fetchone()[0]
-        
-        conn.close()
-        
-        return jsonify({
-            'contacts': contacts,
-            'total': total,
-            'page': (offset // limit) + 1,
-            'hasMore': offset + limit < total
-        })
-    
-    except Exception as e:
-        logger.error(f"❌ Error fetching contacts: {e}")
-        return jsonify({'error': str(e)}), 500
+    conn = get_db()
+    cursor = conn.cursor()
+    limit = request.args.get('limit', 50, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    cursor.execute('SELECT * FROM contacts ORDER BY match_score DESC NULLS LAST, id DESC LIMIT ? OFFSET ?', (limit, offset))
+    contacts = [dict(row) for row in cursor.fetchall()]
+    cursor.execute('SELECT COUNT(*) FROM contacts')
+    total = cursor.fetchone()[0]
+    conn.close()
+    return jsonify({'contacts': contacts, 'total': total})
+
 
 @app.route('/api/contacts/<int:contact_id>', methods=['GET'])
 def get_contact(contact_id):
-    """Get a single contact by ID"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
-        contact = cursor.fetchone()
-        conn.close()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM contacts WHERE id = ?', (contact_id,))
+    contact = cursor.fetchone()
+    conn.close()
+    if contact:
+        return jsonify(dict(contact))
+    return jsonify({'error': 'Not found'}), 404
 
-        if contact:
-            return jsonify(dict(contact))
-        else:
-            return jsonify({'error': 'Contact not found'}), 404
 
-    except Exception as e:
-        logger.error(f"❌ Error fetching contact: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/contacts/<int:contact_id>', methods=['PATCH'])
-def update_contact(contact_id):
-    """Update contact fields (e.g., notes)"""
-    try:
-        data = request.get_json()
-        conn = get_db()
-        cursor = conn.cursor()
-
-        fields = []
-        values = []
-        for key, value in data.items():
-            if key != 'id':
-                fields.append(f"{key} = ?")
-                values.append(value)
-
-        if not fields:
-            return jsonify({'error': 'No fields to update'}), 400
-
-        values.append(contact_id)
-        query = f"UPDATE contacts SET {', '.join(fields)} WHERE id = ?"
-
-        cursor.execute(query, values)
-        conn.commit()
-        conn.close()
-
-        return jsonify({'success': True})
-
-    except Exception as e:
-        logger.error(f"❌ Error updating contact: {e}")
-        return jsonify({'error': str(e)}), 500
-
-# ============= ENRICHMENT ENDPOINTS =============
-
+# ============= ENRICHMENT =============
 @app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
 def enrich_contact(contact_id):
-    """Enrich a contact using enhanced enrichment"""
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
         row = cursor.fetchone()
-
         if not row:
             conn.close()
-            return jsonify({"success": False, "error": "Contact not found"}), 404
+            return jsonify({"error": "Not found"}), 404
 
         contact = dict(row)
-        
-        # Set status to processing immediately
-        cursor.execute("""
-            UPDATE contacts 
-            SET enrichment_status = 'processing'
-            WHERE id = ?
-        """, (contact_id,))
+        cursor.execute("UPDATE contacts SET enrichment_status = 'processing' WHERE id = ?", (contact_id,))
         conn.commit()
         conn.close()
-
-        if not ENRICHMENT_AVAILABLE:
-            return jsonify({
-                "success": False,
-                "error": "Enrichment engine not available"
-            }), 500
-
-        logger.info(f"🔍 Starting enrichment for {contact['firstname']} {contact['lastname']}")
 
         enricher = EnhancedEnrichment()
         result = enricher.enrich_contact(contact)
 
         if result and result.get('success'):
+            profile_text = result['profile_text']
+
+            # Score with new engine
+            scores = {}
+            if SCORING_AVAILABLE:
+                engine = ApexScoringEngine()
+                scores = engine.score_contact(contact, profile_text)
+
             conn = get_db()
             conn.execute("""
                 UPDATE contacts SET
-                profile_content = ?,
-                enriched = 1,
-                enriched_at = ?,
-                enrichment_status = 'completed'
+                    enrichment_data = ?,
+                    enriched = 1,
+                    enriched_at = ?,
+                    enrichment_status = 'completed',
+                    match_score = ?,
+                    match_tier = ?,
+                    fit_score = ?,
+                    relevance_score = ?,
+                    timing_score = ?,
+                    last_scored = ?
                 WHERE id = ?
             """, (
-                result['profile_text'],
+                profile_text,
+                datetime.now().isoformat(),
+                scores.get('match_score'),
+                scores.get('match_tier'),
+                scores.get('fit_score'),
+                scores.get('relevance_score'),
+                scores.get('timing_score'),
                 datetime.now().isoformat(),
                 contact_id
             ))
             conn.commit()
             conn.close()
 
-            logger.info(f"✅ Enrichment complete for contact {contact_id}")
             return jsonify({
                 'success': True,
                 'contact_id': contact_id,
-                'status': 'completed',
-                'profile_length': result['character_count']
-            }), 200
+                'profile_length': result['character_count'],
+                'scores': scores
+            })
         else:
-            # Mark as failed
             conn = get_db()
-            conn.execute("""
-                UPDATE contacts 
-                SET enrichment_status = 'failed'
-                WHERE id = ?
-            """, (contact_id,))
+            conn.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = ?", (contact_id,))
             conn.commit()
             conn.close()
-            
-            return jsonify({
-                'success': False,
-                'status': 'failed',
-                'error': 'Enrichment failed'
-            }), 500
+            return jsonify({'error': result.get('error', 'Failed')}), 500
 
     except Exception as e:
-        logger.error(f"❌ Enrichment error: {e}")
+        logger.error(f"Enrichment error: {e}")
         traceback.print_exc()
-        
-        # Mark as failed in DB
-        try:
-            conn = get_db()
-            conn.execute("""
-                UPDATE contacts 
-                SET enrichment_status = 'failed'
-                WHERE id = ?
-            """, (contact_id,))
-            conn.commit()
-            conn.close()
-        except:
-            pass
-            
-        return jsonify({
-            'success': False,
-            'status': 'failed',
-            'error': str(e)
-        }), 500
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/contacts/<int:contact_id>/enrichment-status', methods=['GET'])
 def get_enrichment_status(contact_id):
-    """Get enrichment status for a contact (for polling)"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, enrichment_status, enriched_at, 
-                   mdcp_score, priority_score, profile_content
-            FROM contacts 
-            WHERE id = ?
-        """, (contact_id,))
-        row = cursor.fetchone()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT enrichment_status, enriched_at FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'status': row['enrichment_status'] or 'pending', 'last_enriched': row['enriched_at']})
+
+
+# ============= SCORING =============
+@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
+def score_contact(contact_id):
+    if not SCORING_AVAILABLE:
+        return jsonify({'error': 'Scoring not available'}), 503
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
         conn.close()
+        return jsonify({'error': 'Not found'}), 404
 
-        if not row:
-            return jsonify({
-                'success': False,
-                'error': 'Contact not found'
-            }), 404
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
 
-        contact = dict(row)
-        status = contact.get('enrichment_status', 'none')
-        
-        # Extract "why_now" from profile_content if available
-        why_now = None
-        profile = contact.get('profile_content')
-        if profile and '## Sales Opportunities' in profile:
-            try:
-                why_section = profile.split('## Sales Opportunities')[1].split('##')[0]
-                # Take first 200 chars as why_now
-                why_now = why_section.strip()[:200] + '...'
-            except:
-                pass
+    engine = ApexScoringEngine()
+    scores = engine.score_contact(contact, enrichment)
 
-        return jsonify({
-            'contact_id': contact_id,
-            'status': status,
-            'last_enriched': contact.get('enriched_at'),
-            'mdcp_score': contact.get('mdcp_score'),
-            'priority_score': contact.get('priority_score'),
-            'why_now': why_now
-        }), 200
+    conn.execute("""
+        UPDATE contacts SET
+            match_score = ?, match_tier = ?,
+            fit_score = ?, relevance_score = ?, timing_score = ?,
+            last_scored = ?
+        WHERE id = ?
+    """, (
+        scores.get('match_score'), scores.get('match_tier'),
+        scores.get('fit_score'), scores.get('relevance_score'), scores.get('timing_score'),
+        datetime.now().isoformat(), contact_id
+    ))
+    conn.commit()
+    conn.close()
 
-    except Exception as e:
-        logger.error(f"❌ Error getting enrichment status: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    return jsonify({'success': True, 'scores': scores})
 
-@app.route('/api/contacts/<int:contact_id>/intelligence', methods=['GET'])
-def get_contact_intelligence(contact_id):
-    """Get full intelligence data for a contact"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
-        row = cursor.fetchone()
+
+# ============= WHY ME =============
+@app.route('/api/contacts/<int:contact_id>/why-me', methods=['GET'])
+def get_why_me(contact_id):
+    """Get existing Why Me data for a contact."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = ?", (contact_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify(dict(row))
+    return jsonify({'error': 'Not generated yet'}), 404
+
+
+@app.route('/api/contacts/<int:contact_id>/why-me', methods=['POST'])
+def generate_why_me(contact_id):
+    """Generate Why Me content for a contact."""
+    if not WHY_ME_AVAILABLE:
+        return jsonify({'error': 'Why Me engine not available'}), 503
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
         conn.close()
+        return jsonify({'error': 'Not found'}), 404
 
-        if not row:
-            return jsonify({
-                'success': False,
-                'error': 'Contact not found'
-            }), 404
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    conn.close()
 
-        contact_data = {
-            'id': row['id'],
-            'name': row['name'],
-            'firstname': row['firstname'],
-            'lastname': row['lastname'],
-            'email': row['email'],
-            'company': row['company'],
-            'title': row['title'],
-            'phone': row['phone'],
-            'linkedin_url': row['linkedin_url'],
-            'enrichment_status': row['enrichment_status'],
-            'mdcp_score': row['mdcp_score'],
-            'rss_score': row['rss_score'],
-            'priority_score': row['priority_score'],
-            'urgency_level': row['urgency_level'],
-            'mdcp_tier': row['mdcp_tier'],
-            'rss_tier': row['rss_tier']
-        }
+    engine = WhyMeEngine()
+    result = engine.generate(contact, enrichment)
+    engine.save_to_db(contact_id, result)
 
-        enrichment_data = {}
-        if row.get('enrichment_data'):
-            try:
-                enrichment_data = json.loads(row['enrichment_data'])
-            except:
-                pass
+    return jsonify({'success': True, 'why_me': result})
 
-        return jsonify({
-            'success': True,
-            'contact': contact_data,
-            'enrichment_data': enrichment_data
-        }), 200
 
-    except Exception as e:
-        logger.error(f"Error fetching intelligence: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+# ============= COLD CALL QUEUE =============
+@app.route('/api/cold-call/queue', methods=['GET'])
+def get_cold_queue():
+    if not COLD_CALL_AVAILABLE:
+        return jsonify({'error': 'Cold call engine not available'}), 503
 
-@app.route('/api/contacts/<int:contact_id>/reset-enrichment', methods=['POST'])
-def reset_enrichment(contact_id):
-    """Reset enrichment status"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE contacts 
-            SET enrichment_status = 'pending'
-            WHERE id = ?
-        """, (contact_id,))
-        conn.commit()
-        conn.close()
+    limit = request.args.get('limit', 50, type=int)
+    status = request.args.get('status')
 
-        return jsonify({'success': True})
+    engine = ColdCallEngine()
+    queue = engine.get_prioritized_queue(limit=limit, status=status)
+    stats = engine.get_queue_stats()
 
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'queue': queue, 'stats': stats})
 
-[... REST OF api.py REMAINS UNCHANGED ...]
+
+@app.route('/api/cold-call/queue', methods=['POST'])
+def add_to_cold_queue():
+    if not COLD_CALL_AVAILABLE:
+        return jsonify({'error': 'Cold call engine not available'}), 503
+
+    data = request.json
+    engine = ColdCallEngine()
+
+    # Single or batch add
+    if isinstance(data, list):
+        result = engine.add_batch(data)
+    else:
+        result = engine.add_to_queue(
+            name=data.get('name'),
+            phone=data.get('phone'),
+            mobile=data.get('mobile'),
+            email=data.get('email'),
+            linkedin_url=data.get('linkedin_url'),
+            company=data.get('company'),
+            title=data.get('title'),
+            source=data.get('source', 'manual'),
+            source_context=data.get('source_context'),
+            notes=data.get('notes')
+        )
+
+    return jsonify(result)
+
+
+@app.route('/api/cold-call/queue/<int:queue_id>/attempt', methods=['POST'])
+def log_cold_attempt(queue_id):
+    if not COLD_CALL_AVAILABLE:
+        return jsonify({'error': 'Cold call engine not available'}), 503
+
+    data = request.json or {}
+    engine = ColdCallEngine()
+    engine.log_attempt(queue_id, outcome=data.get('outcome'), notes=data.get('notes'))
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/cold-call/queue/<int:queue_id>/status', methods=['PUT'])
+def update_cold_status(queue_id):
+    if not COLD_CALL_AVAILABLE:
+        return jsonify({'error': 'Cold call engine not available'}), 503
+
+    data = request.json
+    engine = ColdCallEngine()
+    engine.update_status(queue_id, data.get('status'), notes=data.get('notes'))
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/cold-call/queue/<int:queue_id>/promote', methods=['POST'])
+def promote_cold_contact(queue_id):
+    if not COLD_CALL_AVAILABLE:
+        return jsonify({'error': 'Cold call engine not available'}), 503
+
+    engine = ColdCallEngine()
+    result = engine.promote_to_contact(queue_id)
+
+    return jsonify(result)
+
+
+# ============= USER PROFILE =============
+@app.route('/api/user/profile', methods=['GET'])
+def get_user_profile():
+    user_id = request.args.get('user_id', 'default')
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM user_profile WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify(dict(row))
+    return jsonify({'user_id': user_id, 'exists': False})
+
+
+@app.route('/api/user/profile', methods=['POST', 'PUT'])
+def save_user_profile():
+    data = request.json
+    user_id = data.get('user_id', 'default')
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Convert lists to JSON strings
+    json_fields = ['geographic_markets', 'products_services', 'asset_types', 'loan_types',
+                   'ideal_titles', 'ideal_company_types', 'ideal_deal_triggers',
+                   'avoid_titles', 'avoid_company_types']
+
+    for field in json_fields:
+        if field in data and isinstance(data[field], list):
+            data[field] = json.dumps(data[field])
+
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_profile 
+        (user_id, full_name, role, company, years_experience, geographic_markets,
+         primary_product, products_services, sweet_spot_min, sweet_spot_max,
+         asset_types, loan_types, differentiators, speed_advantage, 
+         relationship_advantage, specialization, ideal_titles, ideal_company_types,
+         ideal_deal_triggers, avoid_titles, avoid_company_types,
+         weight_title_match, weight_company_match, weight_deal_size_match,
+         weight_geography_match, weight_timing, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        user_id,
+        data.get('full_name'),
+        data.get('role'),
+        data.get('company'),
+        data.get('years_experience'),
+        data.get('geographic_markets'),
+        data.get('primary_product'),
+        data.get('products_services'),
+        data.get('sweet_spot_min'),
+        data.get('sweet_spot_max'),
+        data.get('asset_types'),
+        data.get('loan_types'),
+        data.get('differentiators'),
+        data.get('speed_advantage'),
+        data.get('relationship_advantage'),
+        data.get('specialization'),
+        data.get('ideal_titles'),
+        data.get('ideal_company_types'),
+        data.get('ideal_deal_triggers'),
+        data.get('avoid_titles'),
+        data.get('avoid_company_types'),
+        data.get('weight_title_match', 30),
+        data.get('weight_company_match', 25),
+        data.get('weight_deal_size_match', 20),
+        data.get('weight_geography_match', 15),
+        data.get('weight_timing', 10),
+        datetime.now().isoformat()
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'user_id': user_id})
+
+
+@app.route('/api/user/proof-points', methods=['GET'])
+def get_proof_points():
+    user_id = request.args.get('user_id', 'default')
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM proof_points WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return jsonify(dict(row))
+    return jsonify({'user_id': user_id, 'exists': False})
+
+
+@app.route('/api/user/proof-points', methods=['POST', 'PUT'])
+def save_proof_points():
+    data = request.json
+    user_id = data.get('user_id', 'default')
+
+    # Convert lists to JSON
+    json_fields = ['notable_deals', 'testimonials', 'awards', 'certifications',
+                   'lender_relationships', 'exclusive_programs']
+    for field in json_fields:
+        if field in data and isinstance(data[field], list):
+            data[field] = json.dumps(data[field])
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        INSERT OR REPLACE INTO proof_points
+        (user_id, deals_closed_12mo, total_volume_12mo, avg_close_days, approval_rate,
+         notable_deals, testimonials, awards, certifications, lender_relationships,
+         exclusive_programs, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        user_id,
+        data.get('deals_closed_12mo'),
+        data.get('total_volume_12mo'),
+        data.get('avg_close_days'),
+        data.get('approval_rate'),
+        data.get('notable_deals'),
+        data.get('testimonials'),
+        data.get('awards'),
+        data.get('certifications'),
+        data.get('lender_relationships'),
+        data.get('exclusive_programs'),
+        datetime.now().isoformat()
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'user_id': user_id})
+
+
+# ============= TODAY'S BOARD =============
+@app.route('/api/todays-board', methods=['GET'])
+def get_todays_board():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, name, email, phone, company, title,
+               match_score, match_tier, fit_score, relevance_score, timing_score,
+               enrichment_status, enriched_at
+        FROM contacts
+        WHERE match_score IS NOT NULL OR enrichment_status = 'completed'
+        ORDER BY match_score DESC NULLS LAST
+        LIMIT 100
+    """)
+    contacts = [dict(row) for row in cursor.fetchall()]
+
+    # Stats
+    cursor.execute("SELECT COUNT(*) FROM contacts")
+    total = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+    enriched = cursor.fetchone()[0]
+
+    # Cold call stats
+    cold_stats = {}
+    if COLD_CALL_AVAILABLE:
+        engine = ColdCallEngine()
+        cold_stats = engine.get_queue_stats()
+
+    conn.close()
+
+    high = [c for c in contacts if c.get('match_tier') == 'HIGH']
+    medium = [c for c in contacts if c.get('match_tier') == 'MEDIUM']
+    low = [c for c in contacts if c.get('match_tier') == 'LOW']
+
+    return jsonify({
+        'success': True,
+        'date': datetime.now().strftime('%B %d, %Y'),
+        'time': datetime.now().strftime('%I:%M %p'),
+        'stats': {
+            'total_contacts': total,
+            'enriched': enriched,
+            'high_match': len(high),
+            'medium_match': len(medium),
+            'low_match': len(low),
+            'cold_call_queue': cold_stats.get('total', 0),
+        },
+        'segments': {
+            'high': high[:12],
+            'medium': medium[:12],
+            'low': low[:12],
+        },
+        'top_priority': contacts[:20],
+        'cold_call_stats': cold_stats,
+    })
+
 
 if __name__ == '__main__':
+    logger.info("=" * 60)
+    logger.info("🚀 APEX API SERVER v4.0")
+    logger.info("=" * 60)
+    logger.info(f"📊 Database: {DATABASE}")
+    logger.info(f"🔌 Port: {PORT}")
+    logger.info(f"🧠 Modules: Scoring={SCORING_AVAILABLE}, WhyMe={WHY_ME_AVAILABLE}, ColdCall={COLD_CALL_AVAILABLE}")
+    logger.info("=" * 60)
     app.run(host='0.0.0.0', port=PORT, debug=True)
+
+
+# ============= EMAIL GENERATION =============
+try:
+    sys.path.insert(0, '/Users/chrisrabenold/projects/apex/apps/backend/intelligence/outreach')
+    from email_generator import EmailGenerator
+    EMAIL_AVAILABLE = True
+    logger.info("✅ Email Generator loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Email Generator not available: {e}")
+    EMAIL_AVAILABLE = False
+
+
+@app.route('/api/contacts/<int:contact_id>/generate-email', methods=['POST'])
+def generate_email_endpoint(contact_id):
+    """Generate personalized email draft."""
+    if not EMAIL_AVAILABLE:
+        return jsonify({'error': 'Email generator not available'}), 503
+    
+    data = request.json or {}
+    template = data.get('template', 'intro')
+    custom_context = data.get('context', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    
+    # Get Why Me data if exists
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = ?", (contact_id,))
+    match_row = cursor.fetchone()
+    conn.close()
+    
+    why_me_data = dict(match_row) if match_row else None
+    
+    generator = EmailGenerator()
+    result = generator.generate_email(contact, enrichment, why_me_data, template, custom_context)
+    
+    return jsonify({'success': True, 'email': result})
+
+
+@app.route('/api/contacts/<int:contact_id>/generate-sequence', methods=['POST'])
+def generate_sequence_endpoint(contact_id):
+    """Generate 3-email sequence."""
+    if not EMAIL_AVAILABLE:
+        return jsonify({'error': 'Email generator not available'}), 503
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = ?", (contact_id,))
+    match_row = cursor.fetchone()
+    conn.close()
+    
+    why_me_data = dict(match_row) if match_row else None
+    
+    generator = EmailGenerator()
+    sequence = generator.generate_sequence(contact, enrichment, why_me_data)
+    
+    return jsonify({'success': True, 'sequence': sequence})
+
+
+@app.route('/api/email-templates', methods=['GET'])
+def get_email_templates():
+    """Get available email templates."""
+    if not EMAIL_AVAILABLE:
+        return jsonify({'error': 'Email generator not available'}), 503
+    
+    return jsonify({'templates': EmailGenerator.TEMPLATES})
+
+
+# ============= ANALYTICS =============
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    """Get pipeline analytics."""
+    time_range = request.args.get('range', 'all')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Total contacts
+    cursor.execute("SELECT COUNT(*) FROM contacts")
+    total_contacts = cursor.fetchone()[0]
+    
+    # Enriched contacts
+    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+    enriched_contacts = cursor.fetchone()[0]
+    
+    # Scored contacts
+    cursor.execute("SELECT COUNT(*) FROM contacts WHERE match_score IS NOT NULL")
+    scored_contacts = cursor.fetchone()[0]
+    
+    # Tier distribution
+    cursor.execute("""
+        SELECT 
+            SUM(CASE WHEN match_tier = 'HIGH' THEN 1 ELSE 0 END) as high,
+            SUM(CASE WHEN match_tier = 'MEDIUM' THEN 1 ELSE 0 END) as medium,
+            SUM(CASE WHEN match_tier = 'LOW' THEN 1 ELSE 0 END) as low,
+            SUM(CASE WHEN match_tier = 'MINIMAL' OR match_tier IS NULL THEN 1 ELSE 0 END) as minimal
+        FROM contacts WHERE match_score IS NOT NULL
+    """)
+    tier_row = cursor.fetchone()
+    tier_distribution = {
+        'HIGH': tier_row[0] or 0,
+        'MEDIUM': tier_row[1] or 0,
+        'LOW': tier_row[2] or 0,
+        'MINIMAL': tier_row[3] or 0,
+    }
+    
+    # Average scores
+    cursor.execute("""
+        SELECT 
+            AVG(match_score) as match,
+            AVG(fit_score) as fit,
+            AVG(relevance_score) as relevance,
+            AVG(timing_score) as timing
+        FROM contacts WHERE match_score IS NOT NULL
+    """)
+    avg_row = cursor.fetchone()
+    avg_scores = {
+        'match': avg_row[0] or 0,
+        'fit': avg_row[1] or 0,
+        'relevance': avg_row[2] or 0,
+        'timing': avg_row[3] or 0,
+    }
+    
+    # Top companies
+    cursor.execute("""
+        SELECT company, COUNT(*) as cnt, AVG(match_score) as avg_score
+        FROM contacts 
+        WHERE company IS NOT NULL AND company != ''
+        GROUP BY company 
+        ORDER BY cnt DESC 
+        LIMIT 10
+    """)
+    top_companies = [{'company': r[0], 'count': r[1], 'avg_score': r[2]} for r in cursor.fetchall()]
+    
+    # Cold call stats
+    cold_stats = {'total': 0, 'new': 0, 'attempted': 0, 'connected': 0, 'meeting_set': 0, 'conversion_rate': 0}
+    try:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) as new,
+                SUM(CASE WHEN status = 'attempted' THEN 1 ELSE 0 END) as attempted,
+                SUM(CASE WHEN status = 'connected' THEN 1 ELSE 0 END) as connected,
+                SUM(CASE WHEN status = 'meeting_set' THEN 1 ELSE 0 END) as meeting_set
+            FROM cold_call_queue
+        """)
+        cc_row = cursor.fetchone()
+        if cc_row:
+            cold_stats = {
+                'total': cc_row[0] or 0,
+                'new': cc_row[1] or 0,
+                'attempted': cc_row[2] or 0,
+                'connected': cc_row[3] or 0,
+                'meeting_set': cc_row[4] or 0,
+            }
+            attempted = cold_stats['attempted'] + cold_stats['connected'] + cold_stats['meeting_set']
+            cold_stats['conversion_rate'] = (cold_stats['meeting_set'] / attempted * 100) if attempted > 0 else 0
+    except:
+        pass
+    
+    conn.close()
+    
+    enrichment_rate = (enriched_contacts / total_contacts * 100) if total_contacts > 0 else 0
+    
+    return jsonify({
+        'total_contacts': total_contacts,
+        'enriched_contacts': enriched_contacts,
+        'scored_contacts': scored_contacts,
+        'tier_distribution': tier_distribution,
+        'avg_scores': avg_scores,
+        'enrichment_rate': enrichment_rate,
+        'top_companies': top_companies,
+        'cold_call_stats': cold_stats,
+        'recent_activity': [],
+    })
+
+
+# ============= LINKEDIN MESSAGES =============
+try:
+    from linkedin_generator import LinkedInGenerator
+    LINKEDIN_AVAILABLE = True
+    logger.info("✅ LinkedIn Generator loaded")
+except Exception as e:
+    logger.warning(f"⚠️ LinkedIn Generator not available: {e}")
+    LINKEDIN_AVAILABLE = False
+
+
+@app.route('/api/contacts/<int:contact_id>/generate-linkedin', methods=['POST'])
+def generate_linkedin_endpoint(contact_id):
+    """Generate LinkedIn message."""
+    if not LINKEDIN_AVAILABLE:
+        return jsonify({'error': 'LinkedIn generator not available'}), 503
+    
+    data = request.json or {}
+    template = data.get('template', 'connection')
+    custom_context = data.get('context', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = ?", (contact_id,))
+    match_row = cursor.fetchone()
+    conn.close()
+    
+    why_me_data = dict(match_row) if match_row else None
+    
+    generator = LinkedInGenerator()
+    result = generator.generate(contact, enrichment, why_me_data, template, custom_context)
+    
+    return jsonify({'success': True, 'linkedin': result})
+
+
+@app.route('/api/linkedin-templates', methods=['GET'])
+def get_linkedin_templates():
+    """Get available LinkedIn templates."""
+    return jsonify({'templates': LinkedInGenerator.TEMPLATES if LINKEDIN_AVAILABLE else {}})
+
+
+# ============= SMART LISTS =============
+@app.route('/api/smart-lists', methods=['GET'])
+def get_smart_lists():
+    """Get smart list definitions and counts."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    lists = []
+    
+    # Hot Leads (HIGH tier, enriched recently)
+    cursor.execute("""
+        SELECT COUNT(*) FROM contacts 
+        WHERE match_tier = 'HIGH' AND enrichment_status = 'completed'
+    """)
+    lists.append({
+        'id': 'hot_leads',
+        'name': 'Hot Leads',
+        'description': 'High match score, enriched and ready',
+        'icon': 'flame',
+        'color': 'red',
+        'count': cursor.fetchone()[0],
+        'filter': {'match_tier': 'HIGH', 'enrichment_status': 'completed'}
+    })
+    
+    # Ready to Contact (enriched, has phone or email)
+    cursor.execute("""
+        SELECT COUNT(*) FROM contacts 
+        WHERE enrichment_status = 'completed' 
+        AND (phone IS NOT NULL OR email IS NOT NULL)
+        AND match_score >= 50
+    """)
+    lists.append({
+        'id': 'ready_to_contact',
+        'name': 'Ready to Contact',
+        'description': 'Has contact info, scored 50+',
+        'icon': 'phone',
+        'color': 'green',
+        'count': cursor.fetchone()[0],
+        'filter': {'enrichment_status': 'completed', 'min_score': 50, 'has_contact': True}
+    })
+    
+    # Needs Enrichment (not enriched yet)
+    cursor.execute("""
+        SELECT COUNT(*) FROM contacts 
+        WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
+    """)
+    lists.append({
+        'id': 'needs_enrichment',
+        'name': 'Needs Enrichment',
+        'description': 'Not yet enriched',
+        'icon': 'zap',
+        'color': 'yellow',
+        'count': cursor.fetchone()[0],
+        'filter': {'enrichment_status': ['pending', None]}
+    })
+    
+    # High Fit Low Timing (good fit but no urgency)
+    cursor.execute("""
+        SELECT COUNT(*) FROM contacts 
+        WHERE fit_score >= 70 AND timing_score < 30
+    """)
+    lists.append({
+        'id': 'nurture_list',
+        'name': 'Nurture List',
+        'description': 'Great fit, needs nurturing (low timing)',
+        'icon': 'clock',
+        'color': 'blue',
+        'count': cursor.fetchone()[0],
+        'filter': {'min_fit': 70, 'max_timing': 30}
+    })
+    
+    # Decision Makers (title-based)
+    cursor.execute("""
+        SELECT COUNT(*) FROM contacts 
+        WHERE (lower(title) LIKE '%ceo%' OR lower(title) LIKE '%president%' 
+               OR lower(title) LIKE '%owner%' OR lower(title) LIKE '%principal%'
+               OR lower(title) LIKE '%managing director%')
+        AND enrichment_status = 'completed'
+    """)
+    lists.append({
+        'id': 'decision_makers',
+        'name': 'Decision Makers',
+        'description': 'C-suite and principals',
+        'icon': 'crown',
+        'color': 'purple',
+        'count': cursor.fetchone()[0],
+        'filter': {'title_contains': ['ceo', 'president', 'owner', 'principal', 'managing director']}
+    })
+    
+    # Recently Enriched (last 7 days)
+    cursor.execute("""
+        SELECT COUNT(*) FROM contacts 
+        WHERE enriched_at >= datetime('now', '-7 days')
+    """)
+    lists.append({
+        'id': 'recently_enriched',
+        'name': 'Recently Enriched',
+        'description': 'Enriched in last 7 days',
+        'icon': 'sparkles',
+        'color': 'cyan',
+        'count': cursor.fetchone()[0],
+        'filter': {'enriched_since': '7d'}
+    })
+    
+    conn.close()
+    
+    return jsonify({'lists': lists})
+
+
+@app.route('/api/smart-lists/<list_id>/contacts', methods=['GET'])
+def get_smart_list_contacts(list_id):
+    """Get contacts for a smart list."""
+    conn = get_db()
+    cursor = conn.cursor()
+    limit = request.args.get('limit', 50, type=int)
+    
+    if list_id == 'hot_leads':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE match_tier = 'HIGH' AND enrichment_status = 'completed'
+            ORDER BY match_score DESC LIMIT ?
+        """, (limit,))
+    elif list_id == 'ready_to_contact':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE enrichment_status = 'completed' 
+            AND (phone IS NOT NULL OR email IS NOT NULL)
+            AND match_score >= 50
+            ORDER BY match_score DESC LIMIT ?
+        """, (limit,))
+    elif list_id == 'needs_enrichment':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
+            LIMIT ?
+        """, (limit,))
+    elif list_id == 'nurture_list':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE fit_score >= 70 AND timing_score < 30
+            ORDER BY fit_score DESC LIMIT ?
+        """, (limit,))
+    elif list_id == 'decision_makers':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE (lower(title) LIKE '%ceo%' OR lower(title) LIKE '%president%' 
+                   OR lower(title) LIKE '%owner%' OR lower(title) LIKE '%principal%'
+                   OR lower(title) LIKE '%managing director%')
+            AND enrichment_status = 'completed'
+            ORDER BY match_score DESC LIMIT ?
+        """, (limit,))
+    elif list_id == 'recently_enriched':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE enriched_at >= datetime('now', '-7 days')
+            ORDER BY enriched_at DESC LIMIT ?
+        """, (limit,))
+    else:
+        conn.close()
+        return jsonify({'error': 'Unknown list'}), 404
+    
+    contacts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify({'contacts': contacts, 'list_id': list_id, 'count': len(contacts)})
+
+
+# ============= CONTACT TIER UPDATE =============
+@app.route('/api/contacts/<int:contact_id>/tier', methods=['PUT'])
+def update_contact_tier(contact_id):
+    """Update contact match tier (for drag-drop)."""
+    data = request.json or {}
+    new_tier = data.get('tier')
+    
+    if new_tier not in ['HIGH', 'MEDIUM', 'LOW', 'MINIMAL']:
+        return jsonify({'error': 'Invalid tier'}), 400
+    
+    conn = get_db()
+    conn.execute("UPDATE contacts SET match_tier = ? WHERE id = ?", (new_tier, contact_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'tier': new_tier})

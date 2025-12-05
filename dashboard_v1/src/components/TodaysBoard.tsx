@@ -1,312 +1,365 @@
-import { useEffect, useState, useCallback } from 'react';
-import { ProspectCard } from './ProspectCard';
-import { KPICard } from './KPICard';
-import { API_ENDPOINTS } from '../config/api';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { 
+    Zap, Users, Target, TrendingUp, RefreshCw, Loader2,
+    Phone, Sparkles, ChevronRight, Building2, Star,
+    Clock, Filter, BarChart3, ArrowUpRight, Settings
+} from 'lucide-react';
+
+const API_URL = 'http://localhost:8000';
 
 interface Contact {
-  id: number;
-  name: string;
-  company: string;
-  email: string;
-  title: string;
-  urgency_tier?: string;
-  urgency_label?: string;
-  why_now?: string;
-  contact_type?: string;
-  mdcp_score?: number;
-  priority_score?: number;
-  enrichment_status?: 'pending' | 'processing' | 'completed' | 'failed';
-  last_enriched?: string;
+    id: number;
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    phone?: string;
+    company?: string;
+    title?: string;
+    match_score?: number;
+    match_tier?: string;
+    fit_score?: number;
+    relevance_score?: number;
+    timing_score?: number;
+    enrichment_status?: string;
+    enriched_at?: string;
 }
 
 interface BoardData {
-  success: boolean;
-  date: string;
-  time: string;
-  total_actions: number;
-  recommendation: string;
-  relationships: {
-    total: number;
-    urgent_count: number;
-    warm_count: number;
-    nurture_count: number;
-    stable_count: number;
-    tiers: {
-      urgent: Contact[];
-      warm: Contact[];
-      nurture: Contact[];
-      stable: Contact[];
+    success: boolean;
+    date: string;
+    time: string;
+    stats: {
+        total_contacts: number;
+        enriched: number;
+        high_match: number;
+        medium_match: number;
+        low_match: number;
+        cold_call_queue: number;
     };
-  };
-  new_prospects: {
-    total: number;
-    hot_count: number;
-    qualified_count: number;
-    potential_count: number;
-    tiers: {
-      hot: Contact[];
-      qualified: Contact[];
-      potential: Contact[];
+    segments: {
+        high: Contact[];
+        medium: Contact[];
+        low: Contact[];
     };
-  };
+    top_priority: Contact[];
+    cold_call_stats: {
+        total?: number;
+        new?: number;
+        meeting_set?: number;
+    };
 }
 
 export default function TodaysBoard() {
-  const [board, setBoard] = useState<BoardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+    const [data, setData] = useState<BoardData | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [batchScoring, setBatchScoring] = useState(false);
+    const [showOnboarding, setShowOnboarding] = useState(false);
 
-  const fetchBoard = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('Fetching board from:', API_ENDPOINTS.todaysBoard);
-      const response = await fetch(API_ENDPOINTS.todaysBoard);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log('Today\'s Board API Response:', data);
-      setBoard(data);
-    } catch (err) {
-      console.error('Failed to fetch Today\'s Board:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load board');
-    } finally {
-      setLoading(false);
+    useEffect(() => {
+        fetchBoard();
+        checkOnboarding();
+    }, []);
+
+    const checkOnboarding = async () => {
+        try {
+            const res = await fetch(`${API_URL}/api/user/profile?user_id=default`);
+            const profile = await res.json();
+            if (!profile.full_name) {
+                setShowOnboarding(true);
+            }
+        } catch (e) {
+            // Ignore
+        }
+    };
+
+    const fetchBoard = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const res = await fetch(`${API_URL}/api/todays-board`);
+            if (!res.ok) throw new Error('Failed to fetch');
+            const json = await res.json();
+            setData(json);
+        } catch (e) {
+            setError('Failed to connect to API');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const batchRescore = async () => {
+        setBatchScoring(true);
+        try {
+            const res = await fetch(`${API_URL}/api/batch/rescore`, { method: 'POST' });
+            const result = await res.json();
+            alert(`Re-scored ${result.scored} contacts!`);
+            fetchBoard();
+        } catch (e) {
+            alert('Batch scoring failed');
+        } finally {
+            setBatchScoring(false);
+        }
+    };
+
+    const getDisplayName = (c: Contact) => {
+        if (c.name) return c.name;
+        return `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown';
+    };
+
+    const tierColors: Record<string, string> = {
+        HIGH: 'border-l-green-500 bg-green-500/5',
+        MEDIUM: 'border-l-yellow-500 bg-yellow-500/5',
+        LOW: 'border-l-orange-500 bg-orange-500/5',
+    };
+
+    const tierBadgeColors: Record<string, string> = {
+        HIGH: 'bg-green-500/20 text-green-400',
+        MEDIUM: 'bg-yellow-500/20 text-yellow-400',
+        LOW: 'bg-orange-500/20 text-orange-400',
+    };
+
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-[#0f1114] flex items-center justify-center">
+                <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+            </div>
+        );
     }
-  }, []);
 
-  useEffect(() => {
-    fetchBoard();
-    const interval = setInterval(fetchBoard, 300000); // Refresh every 5 min
-    return () => clearInterval(interval);
-  }, [fetchBoard]);
+    if (error) {
+        return (
+            <div className="min-h-screen bg-[#0f1114] flex items-center justify-center">
+                <div className="text-center">
+                    <p className="text-red-400 mb-4">{error}</p>
+                    <button onClick={fetchBoard} className="px-4 py-2 bg-purple-600 rounded-lg">
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
-  const handleEnrichComplete = useCallback(() => {
-    // Refresh board data after enrichment
-    setTimeout(() => {
-      fetchBoard();
-    }, 1000);
-  }, [fetchBoard]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-midnight-950">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold mx-auto mb-4"></div>
-          <p className="text-text-secondary">Loading Today's Board...</p>
-        </div>
-      </div>
+    const ContactCard = ({ contact, showScore = true }: { contact: Contact; showScore?: boolean }) => (
+        <Link
+            to={`/contacts/${contact.id}`}
+            className={`block p-4 rounded-lg border-l-4 hover:bg-gray-800/50 transition ${tierColors[contact.match_tier || 'LOW']}`}
+        >
+            <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-white truncate">{getDisplayName(contact)}</h4>
+                    <p className="text-gray-400 text-sm truncate">{contact.title}</p>
+                    <p className="text-blue-400 text-sm truncate flex items-center gap-1">
+                        <Building2 size={12} /> {contact.company}
+                    </p>
+                </div>
+                {showScore && contact.match_score !== undefined && (
+                    <div className="text-right ml-3">
+                        <div className="text-2xl font-bold text-white">{Math.round(contact.match_score)}</div>
+                        <span className={`text-xs px-2 py-0.5 rounded ${tierBadgeColors[contact.match_tier || 'LOW']}`}>
+                            {contact.match_tier}
+                        </span>
+                    </div>
+                )}
+            </div>
+            {/* Score breakdown mini */}
+            {contact.fit_score !== undefined && (
+                <div className="flex gap-3 mt-2 text-xs text-gray-500">
+                    <span>FIT: {Math.round(contact.fit_score)}</span>
+                    <span>REL: {Math.round(contact.relevance_score || 0)}</span>
+                    <span>TIME: {Math.round(contact.timing_score || 0)}</span>
+                </div>
+            )}
+        </Link>
     );
-  }
 
-  if (error) {
     return (
-      <div className="p-6 bg-midnight-950 min-h-screen">
-        <div className="bg-red-900 bg-opacity-20 border border-red-500 rounded-card p-6 max-w-2xl mx-auto">
-          <h3 className="text-red-400 font-semibold mb-2 text-lg">⚠️ Error Loading Board</h3>
-          <p className="text-red-300 text-sm mb-2">{error}</p>
-          <p className="text-red-400 text-xs mb-4">Make sure the backend is running on {API_ENDPOINTS.todaysBoard}</p>
-          <button
-            onClick={fetchBoard}
-            className="px-6 py-3 bg-gradient-to-r from-gold to-gold-hover text-midnight-950 font-semibold rounded-xl hover:shadow-gold-glow transition-all"
-          >
-            Retry
-          </button>
+        <div className="min-h-screen bg-[#0f1114] text-white">
+            {/* Header */}
+            <div className="bg-[#1a1d21] border-b border-gray-800 px-6 py-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold flex items-center gap-2">
+                            <Zap className="text-yellow-400" /> Today's Board
+                        </h1>
+                        <p className="text-gray-400 text-sm">{data?.date} • {data?.time}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={batchRescore}
+                            disabled={batchScoring}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg flex items-center gap-2 text-sm"
+                        >
+                            {batchScoring ? <Loader2 size={16} className="animate-spin" /> : <BarChart3 size={16} />}
+                            Re-score All
+                        </button>
+                        <button onClick={fetchBoard} className="p-2 hover:bg-gray-800 rounded-lg text-gray-400">
+                            <RefreshCw size={20} />
+                        </button>
+                        <Link to="/contacts" className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center gap-2 text-sm">
+                            <Users size={16} /> All Contacts
+                        </Link>
+                        <Link to="/analytics" className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-2 text-sm"><BarChart3 size={16} /> Analytics</Link>
+                        <Link to="/cold-call" className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg flex items-center gap-2 text-sm">
+                            <Phone size={16} /> Cold Call Queue
+                        </Link>
+                    </div>
+                </div>
+            </div>
+
+            {/* Stats Row */}
+            <div className="px-6 py-4 border-b border-gray-800 bg-[#1a1d21]/50">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
+                        <p className="text-gray-400 text-sm">Total Contacts</p>
+                        <p className="text-2xl font-bold">{data?.stats.total_contacts || 0}</p>
+                    </div>
+                    <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
+                        <p className="text-gray-400 text-sm">Enriched</p>
+                        <p className="text-2xl font-bold text-purple-400">{data?.stats.enriched || 0}</p>
+                    </div>
+                    <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
+                        <p className="text-green-400 text-sm">High Match</p>
+                        <p className="text-2xl font-bold">{data?.stats.high_match || 0}</p>
+                    </div>
+                    <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
+                        <p className="text-yellow-400 text-sm">Medium Match</p>
+                        <p className="text-2xl font-bold">{data?.stats.medium_match || 0}</p>
+                    </div>
+                    <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
+                        <p className="text-orange-400 text-sm">Low Match</p>
+                        <p className="text-2xl font-bold">{data?.stats.low_match || 0}</p>
+                    </div>
+                    <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
+                        <p className="text-blue-400 text-sm">Cold Queue</p>
+                        <p className="text-2xl font-bold">{data?.stats.cold_call_queue || 0}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Onboarding Banner */}
+            {showOnboarding && (
+                <div className="mx-6 mt-4 bg-purple-900/30 border border-purple-700 rounded-lg p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <Settings className="text-purple-400" />
+                        <div>
+                            <p className="text-white font-medium">Complete your profile</p>
+                            <p className="text-gray-400 text-sm">Set up your products and ideal client to enable personalized scoring</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => window.location.reload()}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-sm"
+                    >
+                        Set Up Now
+                    </button>
+                </div>
+            )}
+
+            {/* Main Content */}
+            <div className="p-6">
+                <div className="grid lg:grid-cols-3 gap-6">
+                    {/* HIGH PRIORITY */}
+                    <div className="bg-[#1e2228] rounded-xl border border-gray-800 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-green-400">
+                                <Star size={18} />
+                                <h2 className="font-semibold">High Priority</h2>
+                            </div>
+                            <span className="bg-green-500/20 text-green-400 px-2 py-0.5 rounded text-sm">
+                                {data?.segments.high.length || 0}
+                            </span>
+                        </div>
+                        <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto">
+                            {data?.segments.high.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">No high priority contacts</p>
+                            ) : (
+                                data?.segments.high.map(c => <ContactCard key={c.id} contact={c} />)
+                            )}
+                        </div>
+                    </div>
+
+                    {/* MEDIUM PRIORITY */}
+                    <div className="bg-[#1e2228] rounded-xl border border-gray-800 overflow-hidden">
+                        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-yellow-400">
+                                <Target size={18} />
+                                <h2 className="font-semibold">Medium Priority</h2>
+                            </div>
+                            <span className="bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded text-sm">
+                                {data?.segments.medium.length || 0}
+                            </span>
+                        </div>
+                        <div className="p-3 space-y-2 max-h-[500px] overflow-y-auto">
+                            {data?.segments.medium.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">No medium priority contacts</p>
+                            ) : (
+                                data?.segments.medium.map(c => <ContactCard key={c.id} contact={c} />)
+                            )}
+                        </div>
+                    </div>
+
+                    {/* LOW / QUICK ACTIONS */}
+                    <div className="space-y-6">
+                        {/* Quick Actions */}
+                        <div className="bg-[#1e2228] rounded-xl border border-gray-800 p-4">
+                            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
+                                <Zap size={18} className="text-yellow-400" /> Quick Actions
+                            </h3>
+                            <div className="space-y-2">
+                                <Link
+                                    to="/cold-call"
+                                    className="w-full p-3 bg-[#0f1114] hover:bg-gray-800 rounded-lg flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Phone size={18} className="text-purple-400" />
+                                        <div>
+                                            <p className="text-white font-medium">Cold Call Queue</p>
+                                            <p className="text-gray-500 text-sm">{data?.cold_call_stats?.new || 0} new to call</p>
+                                        </div>
+                                    </div>
+                                    <ChevronRight size={18} className="text-gray-600 group-hover:text-white transition" />
+                                </Link>
+                                <Link
+                                    to="/contacts"
+                                    className="w-full p-3 bg-[#0f1114] hover:bg-gray-800 rounded-lg flex items-center justify-between group"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <Users size={18} className="text-blue-400" />
+                                        <div>
+                                            <p className="text-white font-medium">All Contacts</p>
+                                            <p className="text-gray-500 text-sm">{data?.stats.total_contacts || 0} total</p>
+                                        </div>
+                                    </div>
+                                    <ChevronRight size={18} className="text-gray-600 group-hover:text-white transition" />
+                                </Link>
+                            </div>
+                        </div>
+
+                        {/* Low Priority */}
+                        <div className="bg-[#1e2228] rounded-xl border border-gray-800 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-orange-400">
+                                    <Clock size={18} />
+                                    <h2 className="font-semibold">Low Priority</h2>
+                                </div>
+                                <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded text-sm">
+                                    {data?.segments.low.length || 0}
+                                </span>
+                            </div>
+                            <div className="p-3 space-y-2 max-h-[300px] overflow-y-auto">
+                                {data?.segments.low.length === 0 ? (
+                                    <p className="text-gray-500 text-center py-4">No low priority contacts</p>
+                                ) : (
+                                    data?.segments.low.slice(0, 5).map(c => <ContactCard key={c.id} contact={c} />)
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
     );
-  }
-
-  if (!board) return null;
-
-  // Extract contacts from the API structure
-  const urgentContacts = board.relationships?.tiers?.urgent || [];
-  const warmContacts = board.relationships?.tiers?.warm || [];
-  const nurtureContacts = board.relationships?.tiers?.nurture || [];
-  const stableContacts = board.relationships?.tiers?.stable || [];
-  
-  const hotProspects = board.new_prospects?.tiers?.hot || [];
-  const qualifiedProspects = board.new_prospects?.tiers?.qualified || [];
-  const potentialProspects = board.new_prospects?.tiers?.potential || [];
-
-  // Calculate KPI metrics
-  const totalHot = (board.relationships?.urgent_count || 0) + (board.new_prospects?.hot_count || 0);
-  const pipelineValue = Math.round((totalHot * 45000) / 1000) / 1000; // Rough estimate
-  const enrichedCount = [...urgentContacts, ...hotProspects, ...warmContacts].filter(c => c.why_now).length;
-  const totalContacts = urgentContacts.length + hotProspects.length + warmContacts.length;
-  const enrichmentRate = totalContacts > 0 ? Math.round((enrichedCount / totalContacts) * 100) : 0;
-
-  return (
-    <div className="min-h-screen bg-midnight-950 p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-text-primary mb-2">📋 Today's Board</h1>
-          <p className="text-text-secondary text-lg">{board.date} • {board.time}</p>
-          <div className="mt-4 bg-blue-muted border-l-4 border-blue px-6 py-4 rounded-lg">
-            <p className="text-blue font-semibold">{board.recommendation}</p>
-          </div>
-        </div>
-
-        {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-          <KPICard
-            label="Total Actions Today"
-            value={board.total_actions}
-            trend={{ value: 15, isPositive: true }}
-            delay={0}
-          />
-          <KPICard
-            label="Hot Prospects"
-            value={totalHot}
-            delay={0.1}
-          />
-          <KPICard
-            label="Est. Pipeline"
-            value={`$${pipelineValue}M`}
-            trend={{ value: 23, isPositive: true }}
-            delay={0.2}
-          />
-          <KPICard
-            label="AI Enrichment"
-            value={`${enrichmentRate}%`}
-            trend={{ value: enrichmentRate - 75, isPositive: enrichmentRate >= 75 }}
-            delay={0.3}
-          />
-        </div>
-
-        {/* Urgent Relationships */}
-        {urgentContacts.length > 0 && (
-          <section className="mb-12">
-            <div className="flex items-center gap-3 mb-6">
-              <h2 className="text-2xl font-bold text-red">🔥 URGENT</h2>
-              <span className="text-text-secondary">
-                {urgentContacts.length} Relationship{urgentContacts.length !== 1 ? 's' : ''} Going Cold
-              </span>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {urgentContacts.map(contact => (
-                <ProspectCard
-                  key={contact.id}
-                  id={contact.id}
-                  name={contact.name}
-                  company={contact.company}
-                  email={contact.email}
-                  score={contact.mdcp_score || contact.priority_score || 50}
-                  aiReason={contact.why_now}
-                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
-                  lastEnriched={contact.last_enriched}
-                  tags={[contact.urgency_label || 'Urgent', contact.contact_type || 'Relationship'].filter(Boolean)}
-                  onClick={() => window.location.href = `/contacts/${contact.id}`}
-                  onEnrichComplete={handleEnrichComplete}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Hot Prospects */}
-        {hotProspects.length > 0 && (
-          <section className="mb-12">
-            <div className="flex items-center gap-3 mb-6">
-              <h2 className="text-2xl font-bold text-gold">🎯 HOT PROSPECTS</h2>
-              <span className="text-text-secondary">
-                {hotProspects.length} Ready to Call
-              </span>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {hotProspects.map(contact => (
-                <ProspectCard
-                  key={contact.id}
-                  id={contact.id}
-                  name={contact.name}
-                  company={contact.company}
-                  email={contact.email}
-                  score={contact.mdcp_score || contact.priority_score || 85}
-                  aiReason={contact.why_now}
-                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
-                  lastEnriched={contact.last_enriched}
-                  tags={['Hot', 'New Prospect', contact.contact_type].filter(Boolean)}
-                  onClick={() => window.location.href = `/contacts/${contact.id}`}
-                  onEnrichComplete={handleEnrichComplete}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Warm Relationships */}
-        {warmContacts.length > 0 && (
-          <section className="mb-12">
-            <div className="flex items-center gap-3 mb-6">
-              <h2 className="text-2xl font-bold text-coral">⏰ THIS WEEK</h2>
-              <span className="text-text-secondary">
-                {warmContacts.length} Warm Relationship{warmContacts.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {warmContacts.slice(0, 6).map(contact => (
-                <ProspectCard
-                  key={contact.id}
-                  id={contact.id}
-                  name={contact.name}
-                  company={contact.company}
-                  email={contact.email}
-                  score={contact.mdcp_score || contact.priority_score || 70}
-                  aiReason={contact.why_now}
-                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
-                  lastEnriched={contact.last_enriched}
-                  tags={[contact.urgency_label || 'Warm', 'Relationship'].filter(Boolean)}
-                  onClick={() => window.location.href = `/contacts/${contact.id}`}
-                  onEnrichComplete={handleEnrichComplete}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Qualified Prospects */}
-        {qualifiedProspects.length > 0 && (
-          <section className="mb-12">
-            <div className="flex items-center gap-3 mb-6">
-              <h2 className="text-2xl font-bold text-blue">✅ QUALIFIED</h2>
-              <span className="text-text-secondary">
-                {qualifiedProspects.length} Prospect{qualifiedProspects.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {qualifiedProspects.slice(0, 6).map(contact => (
-                <ProspectCard
-                  key={contact.id}
-                  id={contact.id}
-                  name={contact.name}
-                  company={contact.company}
-                  email={contact.email}
-                  score={contact.mdcp_score || contact.priority_score || 75}
-                  aiReason={contact.why_now}
-                  enrichmentStatus={contact.enrichment_status || (contact.why_now ? 'completed' : 'none')}
-                  lastEnriched={contact.last_enriched}
-                  tags={['Qualified', contact.contact_type || 'Prospect'].filter(Boolean)}
-                  onClick={() => window.location.href = `/contacts/${contact.id}`}
-                  onEnrichComplete={handleEnrichComplete}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Empty State */}
-        {board.total_actions === 0 && (
-          <div className="text-center py-20 bg-midnight-900 rounded-card border border-midnight-600">
-            <p className="text-text-secondary text-xl mb-2">No actions for today</p>
-            <p className="text-text-tertiary text-sm">Enrich and score contacts to populate your board</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
