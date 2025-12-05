@@ -6,17 +6,7 @@ export default defineConfig({
   server: {
     port: 3000,
   },
-  preview: {
-    port: 3000,
-  },
   build: {
     outDir: 'dist',
-    sourcemap: false,
-  },
-  define: {
-    // Use env var in production, localhost in dev
-    'import.meta.env.VITE_API_URL': JSON.stringify(
-      process.env.VITE_API_URL || 'http://localhost:8000'
-    ),
   },
 })
