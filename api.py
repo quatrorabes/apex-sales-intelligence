@@ -1257,3 +1257,282 @@ def update_contact_tier(contact_id):
     conn.close()
     
     return jsonify({'success': True, 'tier': new_tier})
+
+
+# ============= AI COMMAND BAR =============
+@app.route('/api/ai/command', methods=['POST'])
+def ai_command():
+    """Process natural language commands."""
+    data = request.json or {}
+    command = data.get('command', '').lower()
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Parse command and execute
+    result = {'type': 'insight', 'message': 'Command processed'}
+    
+    # Contact searches
+    if any(word in command for word in ['show', 'find', 'get', 'list']):
+        query = "SELECT * FROM contacts WHERE 1=1"
+        params = []
+        
+        # Title filters
+        if 'ceo' in command:
+            query += " AND lower(title) LIKE '%ceo%'"
+        elif 'president' in command:
+            query += " AND lower(title) LIKE '%president%'"
+        elif 'director' in command:
+            query += " AND lower(title) LIKE '%director%'"
+        elif 'manager' in command:
+            query += " AND lower(title) LIKE '%manager%'"
+        elif 'decision maker' in command:
+            query += " AND (lower(title) LIKE '%ceo%' OR lower(title) LIKE '%president%' OR lower(title) LIKE '%owner%')"
+        
+        # Tier filters
+        if 'high priority' in command or 'high score' in command:
+            query += " AND match_tier = 'HIGH'"
+        elif 'top' in command:
+            query += " AND match_score IS NOT NULL ORDER BY match_score DESC LIMIT 10"
+        
+        # Industry/company filters
+        if 'bank' in command:
+            query += " AND (lower(company) LIKE '%bank%' OR lower(company) LIKE '%capital%')"
+        elif 'real estate' in command:
+            query += " AND (lower(company) LIKE '%real%' OR lower(company) LIKE '%property%' OR lower(company) LIKE '%realty%')"
+        elif 'tech' in command:
+            query += " AND (lower(company) LIKE '%tech%' OR lower(company) LIKE '%software%' OR lower(company) LIKE '%digital%')"
+        
+        if 'ORDER BY' not in query:
+            query += " ORDER BY match_score DESC LIMIT 20"
+        
+        cursor.execute(query, params)
+        contacts = [dict(row) for row in cursor.fetchall()]
+        
+        result = {
+            'type': 'contacts',
+            'message': f"Found {len(contacts)} matching contacts",
+            'data': contacts
+        }
+    
+    # Pipeline health
+    elif 'pipeline' in command or 'health' in command:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN match_tier = 'HIGH' THEN 1 ELSE 0 END) as high,
+                SUM(CASE WHEN enrichment_status = 'completed' THEN 1 ELSE 0 END) as enriched,
+                AVG(match_score) as avg_score
+            FROM contacts
+        """)
+        row = cursor.fetchone()
+        result = {
+            'type': 'insight',
+            'message': f"Pipeline: {row['total']} contacts, {row['high']} high priority, {row['enriched']} enriched",
+            'data': dict(row)
+        }
+    
+    # Who to call
+    elif 'call' in command and ('who' in command or 'should' in command):
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE phone IS NOT NULL AND match_tier = 'HIGH'
+            ORDER BY match_score DESC LIMIT 5
+        """)
+        contacts = [dict(row) for row in cursor.fetchall()]
+        result = {
+            'type': 'contacts',
+            'message': f"Here are your top {len(contacts)} contacts to call today:",
+            'data': contacts
+        }
+    
+    conn.close()
+    return jsonify(result)
+
+
+# ============= ACTIVITIES =============
+@app.route('/api/contacts/<int:contact_id>/activities', methods=['GET'])
+def get_contact_activities(contact_id):
+    """Get activity timeline for a contact."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    activities = []
+    
+    # Get contact for basic info
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    contact = cursor.fetchone()
+    
+    if contact:
+        contact = dict(contact)
+        
+        # Enrichment activity
+        if contact.get('enriched_at'):
+            activities.append({
+                'type': 'enrichment',
+                'title': 'Contact Enriched',
+                'description': 'AI research completed',
+                'timestamp': contact['enriched_at'],
+            })
+        
+        # Score activity
+        if contact.get('last_scored'):
+            activities.append({
+                'type': 'score',
+                'title': 'Match Score Updated',
+                'description': f"Scored {contact.get('match_score', 0):.0f} ({contact.get('match_tier', 'N/A')})",
+                'timestamp': contact['last_scored'],
+                'metadata': {
+                    'score': contact.get('match_score'),
+                    'tier': contact.get('match_tier'),
+                }
+            })
+        
+        # Created activity
+        if contact.get('created_at'):
+            activities.append({
+                'type': 'status_change',
+                'title': 'Contact Added',
+                'description': 'Added to pipeline',
+                'timestamp': contact['created_at'],
+            })
+    
+    # Sort by timestamp desc
+    activities.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+    
+    conn.close()
+    return jsonify({'activities': activities})
+
+
+# ============= MEETING PREP =============
+@app.route('/api/contacts/<int:contact_id>/meeting-prep', methods=['POST'])
+def generate_meeting_prep(contact_id):
+    """Generate meeting prep document."""
+    data = request.json or {}
+    meeting_type = data.get('meeting_type', 'discovery')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    name = contact.get('name') or f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+    enrichment = contact.get('enrichment_data') or ''
+    
+    # If no OpenAI, return structured fallback
+    if not os.getenv('OPENAI_API_KEY'):
+        return jsonify({'prep': {
+            'contact_summary': f"{name} is {contact.get('title', 'a professional')} at {contact.get('company', 'their company')}.",
+            'company_overview': f"{contact.get('company', 'The company')} operates in their industry.",
+            'talking_points': [
+                "Discuss their current challenges",
+                "Understand their goals for this year",
+                "Share relevant case studies",
+            ],
+            'questions_to_ask': [
+                "What's your biggest priority right now?",
+                "How are you currently handling this?",
+                "What would success look like?",
+            ],
+            'potential_objections': [
+                {'objection': "We're not looking right now", 'response': "I understand. What would need to change for this to become a priority?"},
+                {'objection': "We already have a solution", 'response': "Great! How's that working for you? Any gaps?"},
+            ],
+            'ice_breakers': ["Recent company news", "Industry trends", "Mutual connections"],
+            'goal': f"Schedule a follow-up meeting with {name}",
+            'next_steps': ["Send recap email", "Schedule follow-up", "Share relevant materials"],
+            'generated_at': datetime.now().isoformat(),
+        }})
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI()
+        
+        prompt = f"""Generate a comprehensive meeting prep document for a {meeting_type} call.
+
+CONTACT:
+- Name: {name}
+- Title: {contact.get('title', '')}
+- Company: {contact.get('company', '')}
+
+ENRICHMENT DATA:
+{enrichment[:4000]}
+
+Return JSON with these exact keys:
+- contact_summary (2-3 sentences about the person)
+- company_overview (2-3 sentences about the company)
+- talking_points (array of 4-5 key points to discuss)
+- questions_to_ask (array of 5-6 discovery questions)
+- potential_objections (array of objects with 'objection' and 'response' keys)
+- ice_breakers (array of 3-4 conversation starters)
+- goal (single sentence meeting objective)
+- next_steps (array of 3-4 recommended actions)"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Sales meeting prep expert. Return valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.7,
+        )
+        
+        prep = json.loads(response.choices[0].message.content)
+        prep['generated_at'] = datetime.now().isoformat()
+        
+        return jsonify({'prep': prep})
+        
+    except Exception as e:
+        logger.error(f"Meeting prep error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============= CONTACT IMPORT =============
+@app.route('/api/contacts/import', methods=['POST'])
+def import_contacts():
+    """Bulk import contacts."""
+    data = request.json or {}
+    contacts = data.get('contacts', [])
+    
+    if not contacts:
+        return jsonify({'error': 'No contacts provided'}), 400
+    
+    conn = get_db()
+    success = 0
+    failed = 0
+    
+    for c in contacts:
+        try:
+            # Handle name field
+            name = c.get('name', '')
+            first_name = c.get('first_name', '')
+            last_name = c.get('last_name', '')
+            
+            if not name and not first_name:
+                failed += 1
+                continue
+            
+            conn.execute("""
+                INSERT INTO contacts (name, first_name, last_name, email, phone, company, title, linkedin_url, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                name, first_name, last_name,
+                c.get('email'), c.get('phone'), c.get('company'),
+                c.get('title'), c.get('linkedin_url'),
+                datetime.now().isoformat()
+            ))
+            success += 1
+        except Exception as e:
+            logger.error(f"Import error: {e}")
+            failed += 1
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': success, 'failed': failed})
