@@ -1,132 +1,44 @@
-# =============================================================================
-# APEX PROJECT .gitignore
-# =============================================================================
-
-# -----------------------------------------
-# Python
-# -----------------------------------------
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-coverage.xml
-*.cover
-*.log
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# -----------------------------------------
-# Node / React
-# -----------------------------------------
+# Dependencies
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
+
+# Build outputs
 dist/
 build/
-.cache/
-.parcel-cache/
-.next/
-.nuxt/
-.output/
 .vite/
 
-# -----------------------------------------
-# Environment & Secrets
-# -----------------------------------------
+# Environment
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env*.local
-*.pem
-secrets.json
-credentials.json
+.env.production
 
-# -----------------------------------------
-# IDEs & Editors
-# -----------------------------------------
-.idea/
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
-.project
-.classpath
-.settings/
-*.sublime-workspace
-*.sublime-project
 
-# -----------------------------------------
-# OS Files
-# -----------------------------------------
+# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
-desktop.ini
 
-# -----------------------------------------
-# Database
-# -----------------------------------------
-*.db
-*.sqlite
-*.sqlite3
-!schema.sql
+# Backup files (CRITICAL)
+*copy*.tsx
+*copy*.ts
+*copy*.jsx
+*copy*.js
+*.backup
+*.bak
+*.old
+*~
 
-# -----------------------------------------
-# Logs & Temp
-# -----------------------------------------
+# Logs
 logs/
 *.log
-tmp/
-temp/
-.temp/
-.tmp/
 
-# -----------------------------------------
 # Testing
-# -----------------------------------------
 coverage/
 .nyc_output/
-test-results/
-playwright-report/
-
-# -----------------------------------------
-# Misc
-# -----------------------------------------
-*.bak
-*.backup
-*.old
-.cache/
-*.pid
-*.seed
-*.pid.lock
