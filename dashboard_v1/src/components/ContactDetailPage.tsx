@@ -3,6 +3,7 @@ import { ChevronLeft, Zap, User, Building2, AlertCircle, TrendingUp, Sparkles, C
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useParams, useNavigate } from 'react-router-dom';
+import { extractSection, parseNumberedSections, parseMBTI, parseDISC, parseCommPlaybook } from '../utils/enrichmentParser';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 

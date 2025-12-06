@@ -1,0 +1,104 @@
+{
+  "companyName": "Harvest Small Business Finance",
+  "tagline": "We help small business secure financing to purchase or refinance commercial real estate loans through SBA and conventional owner occupied financing",
+  "website": "www.harvestsbf.com",
+  "products": [
+    {
+      "description": "90% SBA CRE financing",
+      "id": "nihpne2l4",
+      "keyFeatures": [
+        "90% financing",
+        "low down payment"
+      ],
+      "name": "SBA 504 & 7(a)",
+      "priceRange": "$500k - $5000k",
+      "targetAudience": "commercial brokers, bankers, small business owners"
+    },
+    {
+      "description": "Owner-user financing, non-SBA",
+      "id": "t0udn0c6s",
+      "keyFeatures": [
+        "non-sba",
+        "cash out"
+      ],
+      "name": "Conventional",
+      "priceRange": "$500k - $5000k",
+      "targetAudience": "commercial brokers, bankers, small business owners"
+    }
+  ],
+  "valueProps": [
+    {
+      "description": "We understand tight timelines and those who need to tell their story. fast close",
+      "headline": "Surety of Execution ",
+      "id": "2lhsv2q1u",
+      "proofPoint": "Closed a restaurant, projection basis, 90% LTV"
+    }
+  ],
+  "icp": {
+    "budgetRange": "500000",
+    "companySize": {
+      "label": "Mid-Market",
+      "max": 1000,
+      "min": 200
+    },
+    "industries": [
+      "Financial Services",
+      "Real Estate"
+    ],
+    "painPoints": [
+      "Slow sales cycle"
+    ],
+    "regions": [
+      "United States"
+    ],
+    "techStack": [
+      "HubSpot"
+    ],
+    "titles": [
+      "VP Sales"
+    ]
+  },
+  "painPoints": [
+    {
+      "id": "qjt4axs86",
+      "impact": "90% approval rate",
+      "problem": "Declined loan",
+      "solution": "We understand how to get deals done by understanding the borrower's business"
+    },
+    {
+      "id": "q0l6gcqpq",
+      "impact": "the deal gets done.",
+      "problem": "need to close fast",
+      "solution": "nimble credit and closing"
+    }
+  ],
+  "proofPoints": [
+    {
+      "description": "See linkedin story",
+      "id": "dzyfr8i5e",
+      "metric": "",
+      "source": "",
+      "title": "Case Study 1",
+      "type": "case_study"
+    },
+    {
+      "description": "email data points",
+      "id": "ktc69wdq1",
+      "metric": "",
+      "source": "",
+      "title": "90% approval",
+      "type": "metric"
+    }
+  ],
+  "competitors": [
+    {
+      "id": "lbqvu666c",
+      "name": "New Day Finance",
+      "ourAdvantage": "lower rates",
+      "weaknesses": [
+        "expensive"
+      ]
+    }
+  ],
+  "lastUpdated": "2025-12-05T22:48:25.380Z"
+}

@@ -7,6 +7,7 @@ import ContactDetail from './components/ContactDetail';
 import ColdCallQueue from './components/ColdCallQueue';
 import Analytics from './components/Analytics';
 import SmartLists from './components/SmartLists';
+import Settings from './components/Settings';
 import GlobalSearch from './components/GlobalSearch';
 import CommandBar from './components/CommandBar';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
@@ -101,6 +102,7 @@ function AppContent() {
                 <Route path="/cold-call" element={<ColdCallQueue />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/smart-lists" element={<SmartLists />} />
+                <Route path="/settings" element={<Settings />} />
             </Routes>
         </>
     );
