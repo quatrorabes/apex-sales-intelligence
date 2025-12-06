@@ -2590,6 +2590,8 @@ def import_contacts():
 # =============================================================================
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    port = int(os.getenv('PORT', 8000))
+    port = int(os.getenv('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False)
 # Deployment: Fri Dec  5 18:13:57 PST 2025
 # Deployment: Fri Dec  5 18:14:11 PST 2025
