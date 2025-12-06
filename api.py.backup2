@@ -1031,10 +1031,10 @@ Generate exactly 3 emails:
 Tone: {tone}
 
 For each email provide:
-- subject: Subject line
-- body: Email body (no greeting, just the content)
-- cta: Clear call-to-action
-- send_day: Recommended day to send (Day 1, Day 4, Day 7)
+    - subject: Subject line
+    - body: Email body (no greeting, just the content)
+    - cta: Clear call-to-action
+    - send_day: Recommended day to send (Day 1, Day 4, Day 7)
 
 Return as JSON array with 3 objects."""
 
@@ -1134,25 +1134,25 @@ def get_outreach_system_prompt(channel: str, tone: str) -> str:
 {tone_guide.get(tone, tone_guide['professional'])}
 
 Rules:
-- Keep messages under 300 characters for connection requests
-- Keep InMails under 500 characters
-- Be personalized and relevant
-- No generic templates
-- Include ONE clear call-to-action
-- Sound human, not salesy"""
+    - Keep messages under 300 characters for connection requests
+    - Keep InMails under 500 characters
+    - Be personalized and relevant
+    - No generic templates
+    - Include ONE clear call-to-action
+    - Sound human, not salesy"""
     
     else:  # email
         return f"""You are an expert B2B cold email copywriter.
 {tone_guide.get(tone, tone_guide['professional'])}
 
 Rules:
-- Subject lines under 50 characters, curiosity-driven
-- Emails under 150 words
-- Personalized opening line (not "I hope this finds you well")
-- ONE clear value proposition
-- ONE clear call-to-action
-- No attachments or heavy formatting
-- Sound human and relevant"""
+    - Subject lines under 50 characters, curiosity-driven
+    - Emails under 150 words
+    - Personalized opening line (not "I hope this finds you well")
+    - ONE clear value proposition
+    - ONE clear call-to-action
+    - No attachments or heavy formatting
+    - Sound human and relevant"""
 
 
 def build_outreach_prompt(contact, enrichment, playbook, icp_match, why_us, personality, user_profile, template, tone, channel, custom_context):
@@ -2501,22 +2501,22 @@ def generate_meeting_prep(contact_id):
         prompt = f"""Generate a comprehensive meeting prep document for a {meeting_type} call.
 
 CONTACT:
-- Name: {name}
-- Title: {contact.get('title', '')}
-- Company: {contact.get('company', '')}
+    - Name: {name}
+    - Title: {contact.get('title', '')}
+    - Company: {contact.get('company', '')}
 
 ENRICHMENT DATA:
 {enrichment[:4000]}
 
 Return JSON with these exact keys:
-- contact_summary (2-3 sentences about the person)
-- company_overview (2-3 sentences about the company)
-- talking_points (array of 4-5 key points to discuss)
-- questions_to_ask (array of 5-6 discovery questions)
-- potential_objections (array of objects with 'objection' and 'response' keys)
-- ice_breakers (array of 3-4 conversation starters)
-- goal (single sentence meeting objective)
-- next_steps (array of 3-4 recommended actions)"""
+    - contact_summary (2-3 sentences about the person)
+    - company_overview (2-3 sentences about the company)
+    - talking_points (array of 4-5 key points to discuss)
+    - questions_to_ask (array of 5-6 discovery questions)
+    - potential_objections (array of objects with 'objection' and 'response' keys)
+    - ice_breakers (array of 3-4 conversation starters)
+    - goal (single sentence meeting objective)
+    - next_steps (array of 3-4 recommended actions)"""
 
         response = client.chat.completions.create(
             model="gpt-4o",
