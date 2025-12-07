@@ -700,6 +700,130 @@ def export_contacts():
         return jsonify({'contacts': contacts, 'count': len(contacts)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+# ============= BATCH OPERATIONS (Frontend) =============
+@app.route('/api/batch/enrich', methods=['POST'])
+def batch_enrich():
+    try:
+        data = request.get_json() or {}
+        contact_ids = data.get('contact_ids', [])
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if contact_ids:
+            for cid in contact_ids[:50]:
+                cursor.execute("UPDATE contacts SET enrichment_status = 'queued' WHERE id = %s", (cid,))
+        else:
+            cursor.execute("UPDATE contacts SET enrichment_status = 'queued' WHERE enrichment_status IS NULL OR enrichment_status = 'pending' LIMIT 50")
+        
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'message': 'Batch enrichment queued'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/batch/rescore', methods=['POST'])
+def batch_rescore():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Simple batch scoring
+        cursor.execute("""
+            UPDATE contacts SET 
+                match_score = 50 + 
+                    CASE WHEN enrichment_status = 'completed' THEN 20 ELSE 0 END +
+                    CASE WHEN company IS NOT NULL THEN 10 ELSE 0 END +
+                    CASE WHEN title IS NOT NULL THEN 10 ELSE 0 END +
+                    CASE WHEN email IS NOT NULL THEN 10 ELSE 0 END,
+                match_tier = CASE 
+                    WHEN match_score >= 80 THEN 'HIGH'
+                    WHEN match_score >= 50 THEN 'MEDIUM'
+                    ELSE 'LOW'
+                END,
+                last_scored = NOW()
+        """)
+        conn.commit()
+        count = cursor.rowcount
+        conn.close()
+        
+        return jsonify({'success': True, 'rescored': count})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= CONTACT TIER =============
+@app.route('/api/contacts/<int:contact_id>/tier', methods=['PUT'])
+def update_contact_tier(contact_id):
+    try:
+        data = request.get_json()
+        tier = data.get('tier', 'MEDIUM')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE contacts SET match_tier = %s WHERE id = %s", (tier, contact_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'tier': tier})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= COLD CALL QUEUE ACTIONS =============
+@app.route('/api/cold-call/queue/<int:contact_id>/attempt', methods=['POST'])
+def log_call_attempt(contact_id):
+    try:
+        data = request.get_json() or {}
+        outcome = data.get('outcome', 'attempted')
+        notes = data.get('notes', '')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts SET 
+                times_contacted = COALESCE(times_contacted, 0) + 1,
+                last_contacted = NOW()
+            WHERE id = %s
+        """, (contact_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'outcome': outcome})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cold-call/queue/<int:contact_id>/status', methods=['PUT'])
+def update_call_status(contact_id):
+    try:
+        data = request.get_json() or {}
+        status = data.get('status', 'pending')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE contacts SET cadence_status = %s WHERE id = %s", (status, contact_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'status': status})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cold-call/queue/<int:contact_id>/promote', methods=['POST'])
+def promote_contact(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts SET 
+                match_tier = 'HIGH',
+                match_score = GREATEST(COALESCE(match_score, 0), 80)
+            WHERE id = %s
+        """, (contact_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'promoted': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ============= RUN =============
 if __name__ == '__main__':
