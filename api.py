@@ -415,7 +415,7 @@ def todays_board():
         contacts = [dict(row) for row in rows] if rows else []
         cursor.close()
         conn.close()
-        return jsonify({"contacts": contacts, "count": len(contacts)})
+        return jsonify({"contacts": contacts, "count": len(contacts), "total_contacts": len(contacts)})
     except Exception as e:
         return jsonify({"contacts": [], "error": str(e)})
 
