@@ -42,3 +42,8 @@ logs/
 # Testing
 coverage/
 .nyc_output/
+api.py.FULL_BACKUP_*
+api.py.restored
+api\ copy*.py
+*.pyc
+__pycache__/
