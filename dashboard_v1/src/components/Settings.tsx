@@ -334,7 +334,7 @@ export default function Settings() {
   const loadPlaybook = async () => {
     try {
       // Try backend first
-      const res = await fetch('http://localhost:8000/api/settings/playbook');
+      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/settings/playbook');
       if (res.ok) {
         const data = await res.json();
         if (data && Object.keys(data).length > 0) {
@@ -383,7 +383,7 @@ export default function Settings() {
 
     // Try to save to backend
     try {
-      const res = await fetch('http://localhost:8000/api/settings/playbook', {
+      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/settings/playbook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)

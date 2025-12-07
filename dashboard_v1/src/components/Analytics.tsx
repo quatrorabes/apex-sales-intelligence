@@ -6,7 +6,7 @@ import {
     ArrowUp, ArrowDown, Minus
 } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://apex-backend-production-production.up.railway.app';
 
 interface AnalyticsData {
     total_contacts: number;

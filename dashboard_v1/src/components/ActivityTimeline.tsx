@@ -5,7 +5,7 @@ import {
     Linkedin, FileText, Star
 } from 'lucide-react';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = 'https://apex-backend-production-production.up.railway.app';
 
 interface Activity {
     id: number;

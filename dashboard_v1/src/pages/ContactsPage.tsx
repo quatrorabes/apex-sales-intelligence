@@ -29,7 +29,7 @@ export default function ContactsPage() {
 
     const fetchContacts = async () => {
         try {
-            const response = await fetch('http://localhost:8000/api/contacts');
+            const response = await fetch('https://apex-backend-production-production.up.railway.app/api/contacts');
             const data = await response.json();
             setContacts(data.contacts || data);
         } catch (error) {
@@ -44,7 +44,7 @@ export default function ContactsPage() {
         setGeneratingId(contactId);
         
         try {
-            const response = await fetch(`http://localhost:8000/api/contacts/${contactId}/generate-persona`, {
+            const response = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contactId}/generate-persona`, {
                 method: 'POST'
             });
             
@@ -52,7 +52,7 @@ export default function ContactsPage() {
                 const data = await response.json();
                 // Open landscape PDF in new tab
                 if (data.files?.pdf_landscape) {
-                    window.open(`http://localhost:8000/api/download?path=${encodeURIComponent(data.files.pdf_landscape)}`, '_blank');
+                    window.open(`https://apex-backend-production-production.up.railway.app/api/download?path=${encodeURIComponent(data.files.pdf_landscape)}`, '_blank');
                 }
             }
         } catch (error) {

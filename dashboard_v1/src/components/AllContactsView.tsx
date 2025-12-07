@@ -30,7 +30,7 @@ export default function AllContactsView() {
     const fetchContacts = async () => {
         try {
             setLoading(true);
-            const response = await fetch('http://localhost:8000/api/contacts?limit=200');
+            const response = await fetch('https://apex-backend-production-production.up.railway.app/api/contacts?limit=200');
             const data = await response.json();
             setContacts(data.contacts || []);
         } catch (error) {

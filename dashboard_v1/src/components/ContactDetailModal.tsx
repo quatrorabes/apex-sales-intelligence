@@ -26,7 +26,7 @@ export default function ContactDetailModal({ contactId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/api/contacts/${contactId}`)
+    fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contactId}`)
       .then(r => r.json())
       .then(setContact)
       .finally(() => setLoading(false));
