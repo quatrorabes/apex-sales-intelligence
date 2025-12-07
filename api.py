@@ -73,16 +73,12 @@ def get_db():
     conn.cursor_factory = RealDictCursor
     return conn
 
-
-def try:
-    try:
+# Initialize database (safely)
+try:
     ensure_tables()
 except Exception as e:
-    logger.error(f"Database migration error (non-fatal): {e}")
-    # Continue anyway - tables may already exist
-except Exception as e:
-    logger.error(f"Database migration error (non-fatal): {e}")
-    # Continue anyway - tables may already exist:
+    logger.warning(f"DB init note: {e}")
+
     """Ensure all required tables and columns exist."""
     conn = get_db()
     cursor = conn.cursor()
