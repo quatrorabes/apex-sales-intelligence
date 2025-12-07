@@ -472,3 +472,84 @@ def get_contact_detail(contact_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ==================== ADDITIONAL ENDPOINTS ====================
+
+@app.route('/api/todays-board')
+def todays_board():
+    """Get today's prioritized contacts"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE mdcp_score IS NOT NULL 
+            ORDER BY mdcp_score DESC 
+            LIMIT 20
+        """)
+        contacts = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return jsonify({"contacts": [dict(c) for c in contacts] if contacts else [], "date": datetime.utcnow().isoformat()})
+    except Exception as e:
+        return jsonify({"contacts": [], "error": str(e)})
+
+@app.route('/api/user/profile')
+def get_user_profile():
+    """Get user profile"""
+    user_id = request.args.get('user_id', 'default')
+    return jsonify({
+        "user_id": user_id,
+        "full_name": "Sales User",
+        "company": "Your Company",
+        "role": "Sales Representative",
+        "onboarding_complete": True
+    })
+
+@app.route('/api/user/profile', methods=['POST'])
+def save_user_profile():
+    """Save user profile"""
+    data = request.json
+    return jsonify({"success": True, "profile": data})
+
+@app.route('/api/smart-lists')
+def get_smart_lists():
+    """Get smart lists"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Hot leads
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE mdcp_score >= 80")
+        hot = cursor.fetchone()['count'] if cursor.fetchone() else 0
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "lists": [
+                {"id": 1, "name": "Hot Leads", "count": hot, "criteria": "mdcp_score >= 80"},
+                {"id": 2, "name": "Needs Enrichment", "count": 0, "criteria": "enrichment_status = pending"},
+                {"id": 3, "name": "Recently Active", "count": 0, "criteria": "last_activity < 7 days"}
+            ]
+        })
+    except Exception as e:
+        return jsonify({"lists": [], "error": str(e)})
+
+@app.route('/api/contacts/<int:contact_id>/detail')
+def get_contact_detail(contact_id):
+    """Get detailed contact info"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not contact:
+            return jsonify({"error": "Contact not found"}), 404
+        return jsonify(dict(contact))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
