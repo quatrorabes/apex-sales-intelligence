@@ -1870,6 +1870,726 @@ def get_cadence_stats():
 
 
 
+    logger.info("=" * 60)
+    logger.info("🚀 APEX API SERVER v4.0")
+    logger.info("=" * 60)
+    logger.info(f"📊 Database: {DATABASE}")
+    logger.info(f"🔌 Port: {PORT}")
+    logger.info(f"🧠 Modules: Scoring={SCORING_AVAILABLE}, WhyMe={WHY_ME_AVAILABLE}, ColdCall={COLD_CALL_AVAILABLE}")
+    logger.info("=" * 60)
+
+
+# ============= EMAIL GENERATION =============
+try:
+    sys.path.insert(0, '/Users/chrisrabenold/projects/apex/apps/backend/intelligence/outreach')
+    from email_generator import EmailGenerator
+    EMAIL_AVAILABLE = True
+    logger.info("✅ Email Generator loaded")
+except Exception as e:
+    logger.warning(f"⚠️ Email Generator not available: {e}")
+    EMAIL_AVAILABLE = False
+
+
+@app.route('/api/contacts/<int:contact_id>/generate-email', methods=['POST'])
+def generate_email_endpoint(contact_id):
+    """Generate personalized email draft."""
+    if not EMAIL_AVAILABLE:
+        return jsonify({'error': 'Email generator not available'}), 503
+    
+    data = request.json or {}
+    template = data.get('template', 'intro')
+    custom_context = data.get('context', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    
+    # Get Why Me data if exists
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = %s", (contact_id,))
+    match_row = cursor.fetchone()
+    conn.close()
+    
+    why_me_data = dict(match_row) if match_row else None
+    
+    generator = EmailGenerator()
+    result = generator.generate_email(contact, enrichment, why_me_data, template, custom_context)
+    
+    return jsonify({'success': True, 'email': result})
+
+
+@app.route('/api/contacts/<int:contact_id>/generate-sequence', methods=['POST'])
+def generate_sequence_endpoint(contact_id):
+    """Generate 3-email sequence."""
+    if not EMAIL_AVAILABLE:
+        return jsonify({'error': 'Email generator not available'}), 503
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = %s", (contact_id,))
+    match_row = cursor.fetchone()
+    conn.close()
+    
+    why_me_data = dict(match_row) if match_row else None
+    
+    generator = EmailGenerator()
+    sequence = generator.generate_sequence(contact, enrichment, why_me_data)
+    
+    return jsonify({'success': True, 'sequence': sequence})
+
+
+@app.route('/api/email-templates', methods=['GET'])
+def get_email_templates():
+    """Get available email templates."""
+    if not EMAIL_AVAILABLE:
+        return jsonify({'error': 'Email generator not available'}), 503
+    
+    return jsonify({'templates': EmailGenerator.TEMPLATES})
+
+
+# ============= ANALYTICS =============
+@app.route('/api/analytics', methods=['GET'])
+def get_analytics():
+    """Get pipeline analytics."""
+    time_range = request.args.get('range', 'all')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Total contacts
+    cursor.execute("SELECT COUNT(*) as count FROM contacts")
+    total_contacts = cursor.fetchone()["count"]
+    
+    # Enriched contacts
+    cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
+    enriched_contacts = cursor.fetchone()["count"]
+    
+    # Scored contacts
+    cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE match_score IS NOT NULL")
+    scored_contacts = cursor.fetchone()["count"]
+    
+    # Tier distribution
+    cursor.execute("""
+        SELECT 
+            SUM(CASE WHEN match_tier = 'HIGH' THEN 1 ELSE 0 END) as high,
+            SUM(CASE WHEN match_tier = 'MEDIUM' THEN 1 ELSE 0 END) as medium,
+            SUM(CASE WHEN match_tier = 'LOW' THEN 1 ELSE 0 END) as low,
+            SUM(CASE WHEN match_tier = 'MINIMAL' OR match_tier IS NULL THEN 1 ELSE 0 END) as minimal
+        FROM contacts WHERE match_score IS NOT NULL
+    """)
+    tier_row = cursor.fetchone()
+    tier_distribution = {
+        'HIGH': tier_row[0] or 0,
+        'MEDIUM': tier_row[1] or 0,
+        'LOW': tier_row[2] or 0,
+        'MINIMAL': tier_row[3] or 0,
+    }
+    
+    # Average scores
+    cursor.execute("""
+        SELECT 
+            AVG(match_score) as match,
+            AVG(fit_score) as fit,
+            AVG(relevance_score) as relevance,
+            AVG(timing_score) as timing
+        FROM contacts WHERE match_score IS NOT NULL
+    """)
+    avg_row = cursor.fetchone()
+    avg_scores = {
+        'match': avg_row[0] or 0,
+        'fit': avg_row[1] or 0,
+        'relevance': avg_row[2] or 0,
+        'timing': avg_row[3] or 0,
+    }
+    
+    # Top companies
+    cursor.execute("""
+        SELECT company, COUNT(*) as cnt, AVG(match_score) as avg_score
+        FROM contacts 
+        WHERE company IS NOT NULL AND company != ''
+        GROUP BY company 
+        ORDER BY cnt DESC 
+        LIMIT 10
+    """)
+    top_companies = [{'company': r[0], 'count': r[1], 'avg_score': r[2]} for r in cursor.fetchall()]
+    
+    # Cold call stats
+    cold_stats = {'total': 0, 'new': 0, 'attempted': 0, 'connected': 0, 'meeting_set': 0, 'conversion_rate': 0}
+    try:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END) as new,
+                SUM(CASE WHEN status = 'attempted' THEN 1 ELSE 0 END) as attempted,
+                SUM(CASE WHEN status = 'connected' THEN 1 ELSE 0 END) as connected,
+                SUM(CASE WHEN status = 'meeting_set' THEN 1 ELSE 0 END) as meeting_set
+            FROM cold_call_queue
+        """)
+        cc_row = cursor.fetchone()
+        if cc_row:
+            cold_stats = {
+                'total': cc_row[0] or 0,
+                'new': cc_row[1] or 0,
+                'attempted': cc_row[2] or 0,
+                'connected': cc_row[3] or 0,
+                'meeting_set': cc_row[4] or 0,
+            }
+            attempted = cold_stats['attempted'] + cold_stats['connected'] + cold_stats['meeting_set']
+            cold_stats['conversion_rate'] = (cold_stats['meeting_set'] / attempted * 100) if attempted > 0 else 0
+    except:
+        pass
+    
+    conn.close()
+    
+    enrichment_rate = (enriched_contacts / total_contacts * 100) if total_contacts > 0 else 0
+    
+    return jsonify({
+        'total_contacts': total_contacts,
+        'enriched_contacts': enriched_contacts,
+        'scored_contacts': scored_contacts,
+        'tier_distribution': tier_distribution,
+        'avg_scores': avg_scores,
+        'enrichment_rate': enrichment_rate,
+        'top_companies': top_companies,
+        'cold_call_stats': cold_stats,
+        'recent_activity': [],
+    })
+
+
+# ============= LINKEDIN MESSAGES =============
+try:
+    from linkedin_generator import LinkedInGenerator
+    LINKEDIN_AVAILABLE = True
+    logger.info("✅ LinkedIn Generator loaded")
+except Exception as e:
+    logger.warning(f"⚠️ LinkedIn Generator not available: {e}")
+    LINKEDIN_AVAILABLE = False
+
+
+@app.route('/api/contacts/<int:contact_id>/generate-linkedin', methods=['POST'])
+def generate_linkedin_endpoint(contact_id):
+    """Generate LinkedIn message."""
+    if not LINKEDIN_AVAILABLE:
+        return jsonify({'error': 'LinkedIn generator not available'}), 503
+    
+    data = request.json or {}
+    template = data.get('template', 'connection')
+    custom_context = data.get('context', '')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    enrichment = contact.get('enrichment_data') or ''
+    
+    cursor.execute("SELECT * FROM contact_match WHERE contact_id = %s", (contact_id,))
+    match_row = cursor.fetchone()
+    conn.close()
+    
+    why_me_data = dict(match_row) if match_row else None
+    
+    generator = LinkedInGenerator()
+    result = generator.generate(contact, enrichment, why_me_data, template, custom_context)
+    
+    return jsonify({'success': True, 'linkedin': result})
+
+
+@app.route('/api/linkedin-templates', methods=['GET'])
+def get_linkedin_templates():
+    """Get available LinkedIn templates."""
+    return jsonify({'templates': LinkedInGenerator.TEMPLATES if LINKEDIN_AVAILABLE else {}})
+
+
+# ============= SMART LISTS =============
+@app.route('/api/smart-lists', methods=['GET'])
+def get_smart_lists():
+    """Get smart list definitions and counts."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    lists = []
+    
+    # Hot Leads (HIGH tier, enriched recently)
+    cursor.execute("""
+        SELECT COUNT(*) as count FROM contacts 
+        WHERE match_tier = 'HIGH' AND enrichment_status = 'completed'
+    """)
+    lists.append({
+        'id': 'hot_leads',
+        'name': 'Hot Leads',
+        'description': 'High match score, enriched and ready',
+        'icon': 'flame',
+        'color': 'red',
+        'count': cursor.fetchone()["count"],
+        'filter': {'match_tier': 'HIGH', 'enrichment_status': 'completed'}
+    })
+    
+    # Ready to Contact (enriched, has phone or email)
+    cursor.execute("""
+        SELECT COUNT(*) as count FROM contacts 
+        WHERE enrichment_status = 'completed' 
+        AND (phone IS NOT NULL OR email IS NOT NULL)
+        AND match_score >= 50
+    """)
+    lists.append({
+        'id': 'ready_to_contact',
+        'name': 'Ready to Contact',
+        'description': 'Has contact info, scored 50+',
+        'icon': 'phone',
+        'color': 'green',
+        'count': cursor.fetchone()["count"],
+        'filter': {'enrichment_status': 'completed', 'min_score': 50, 'has_contact': True}
+    })
+    
+    # Needs Enrichment (not enriched yet)
+    cursor.execute("""
+        SELECT COUNT(*) as count FROM contacts 
+        WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
+    """)
+    lists.append({
+        'id': 'needs_enrichment',
+        'name': 'Needs Enrichment',
+        'description': 'Not yet enriched',
+        'icon': 'zap',
+        'color': 'yellow',
+        'count': cursor.fetchone()["count"],
+        'filter': {'enrichment_status': ['pending', None]}
+    })
+    
+    # High Fit Low Timing (good fit but no urgency)
+    cursor.execute("""
+        SELECT COUNT(*) as count FROM contacts 
+        WHERE fit_score >= 70 AND timing_score < 30
+    """)
+    lists.append({
+        'id': 'nurture_list',
+        'name': 'Nurture List',
+        'description': 'Great fit, needs nurturing (low timing)',
+        'icon': 'clock',
+        'color': 'blue',
+        'count': cursor.fetchone()["count"],
+        'filter': {'min_fit': 70, 'max_timing': 30}
+    })
+    
+    # Decision Makers (title-based)
+    cursor.execute("""
+        SELECT COUNT(*) as count FROM contacts 
+        WHERE (lower(title) LIKE '%ceo%' OR lower(title) LIKE '%president%' 
+               OR lower(title) LIKE '%owner%' OR lower(title) LIKE '%principal%'
+               OR lower(title) LIKE '%managing director%')
+        AND enrichment_status = 'completed'
+    """)
+    lists.append({
+        'id': 'decision_makers',
+        'name': 'Decision Makers',
+        'description': 'C-suite and principals',
+        'icon': 'crown',
+        'color': 'purple',
+        'count': cursor.fetchone()["count"],
+        'filter': {'title_contains': ['ceo', 'president', 'owner', 'principal', 'managing director']}
+    })
+    
+    # Recently Enriched (last 7 days)
+    cursor.execute("""
+        SELECT COUNT(*) as count FROM contacts 
+        WHERE enriched_at >= datetime('now', '-7 days')
+    """)
+    lists.append({
+        'id': 'recently_enriched',
+        'name': 'Recently Enriched',
+        'description': 'Enriched in last 7 days',
+        'icon': 'sparkles',
+        'color': 'cyan',
+        'count': cursor.fetchone()["count"],
+        'filter': {'enriched_since': '7d'}
+    })
+    
+    conn.close()
+    
+    return jsonify({'lists': lists})
+
+
+@app.route('/api/smart-lists/<list_id>/contacts', methods=['GET'])
+def get_smart_list_contacts(list_id):
+    """Get contacts for a smart list."""
+    conn = get_db()
+    cursor = conn.cursor()
+    limit = request.args.get('limit', 50, type=int)
+    
+    if list_id == 'hot_leads':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE match_tier = 'HIGH' AND enrichment_status = 'completed'
+            ORDER BY match_score DESC LIMIT %s
+        """, (limit,))
+    elif list_id == 'ready_to_contact':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE enrichment_status = 'completed' 
+            AND (phone IS NOT NULL OR email IS NOT NULL)
+            AND match_score >= 50
+            ORDER BY match_score DESC LIMIT %s
+        """, (limit,))
+    elif list_id == 'needs_enrichment':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
+            LIMIT %s
+        """, (limit,))
+    elif list_id == 'nurture_list':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE fit_score >= 70 AND timing_score < 30
+            ORDER BY fit_score DESC LIMIT %s
+        """, (limit,))
+    elif list_id == 'decision_makers':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE (lower(title) LIKE '%ceo%' OR lower(title) LIKE '%president%' 
+                   OR lower(title) LIKE '%owner%' OR lower(title) LIKE '%principal%'
+                   OR lower(title) LIKE '%managing director%')
+            AND enrichment_status = 'completed'
+            ORDER BY match_score DESC LIMIT %s
+        """, (limit,))
+    elif list_id == 'recently_enriched':
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE enriched_at >= datetime('now', '-7 days')
+            ORDER BY enriched_at DESC LIMIT ?
+        """, (limit,))
+    else:
+        conn.close()
+        return jsonify({'error': 'Unknown list'}), 404
+    
+    contacts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return jsonify({'contacts': contacts, 'list_id': list_id, 'count': len(contacts)})
+
+
+# ============= CONTACT TIER UPDATE =============
+@app.route('/api/contacts/<int:contact_id>/tier', methods=['PUT'])
+def update_contact_tier(contact_id):
+    """Update contact match tier (for drag-drop)."""
+    data = request.json or {}
+    new_tier = data.get('tier')
+    
+    if new_tier not in ['HIGH', 'MEDIUM', 'LOW', 'MINIMAL']:
+        return jsonify({'error': 'Invalid tier'}), 400
+    
+    conn = get_db()
+    conn.execute("UPDATE contacts SET match_tier = %s WHERE id = %s", (new_tier, contact_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'tier': new_tier})
+
+
+# ============= AI COMMAND BAR =============
+@app.route('/api/ai/command', methods=['POST'])
+def ai_command():
+    """Process natural language commands."""
+    data = request.json or {}
+    command = data.get('command', '').lower()
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Parse command and execute
+    result = {'type': 'insight', 'message': 'Command processed'}
+    
+    # Contact searches
+    if any(word in command for word in ['show', 'find', 'get', 'list']):
+        query = "SELECT * FROM contacts WHERE 1=1"
+        params = []
+        
+        # Title filters
+        if 'ceo' in command:
+            query += " AND lower(title) LIKE '%ceo%'"
+        elif 'president' in command:
+            query += " AND lower(title) LIKE '%president%'"
+        elif 'director' in command:
+            query += " AND lower(title) LIKE '%director%'"
+        elif 'manager' in command:
+            query += " AND lower(title) LIKE '%manager%'"
+        elif 'decision maker' in command:
+            query += " AND (lower(title) LIKE '%ceo%' OR lower(title) LIKE '%president%' OR lower(title) LIKE '%owner%')"
+        
+        # Tier filters
+        if 'high priority' in command or 'high score' in command:
+            query += " AND match_tier = 'HIGH'"
+        elif 'top' in command:
+            query += " AND match_score IS NOT NULL ORDER BY match_score DESC LIMIT 10"
+        
+        # Industry/company filters
+        if 'bank' in command:
+            query += " AND (lower(company) LIKE '%bank%' OR lower(company) LIKE '%capital%')"
+        elif 'real estate' in command:
+            query += " AND (lower(company) LIKE '%real%' OR lower(company) LIKE '%property%' OR lower(company) LIKE '%realty%')"
+        elif 'tech' in command:
+            query += " AND (lower(company) LIKE '%tech%' OR lower(company) LIKE '%software%' OR lower(company) LIKE '%digital%')"
+        
+        if 'ORDER BY' not in query:
+            query += " ORDER BY match_score DESC LIMIT 20"
+        
+        cursor.execute(query, params)
+        contacts = [dict(row) for row in cursor.fetchall()]
+        
+        result = {
+            'type': 'contacts',
+            'message': f"Found {len(contacts)} matching contacts",
+            'data': contacts
+        }
+    
+    # Pipeline health
+    elif 'pipeline' in command or 'health' in command:
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN match_tier = 'HIGH' THEN 1 ELSE 0 END) as high,
+                SUM(CASE WHEN enrichment_status = 'completed' THEN 1 ELSE 0 END) as enriched,
+                AVG(match_score) as avg_score
+            FROM contacts
+        """)
+        row = cursor.fetchone()
+        result = {
+            'type': 'insight',
+            'message': f"Pipeline: {row['total']} contacts, {row['high']} high priority, {row['enriched']} enriched",
+            'data': dict(row)
+        }
+    
+    # Who to call
+    elif 'call' in command and ('who' in command or 'should' in command):
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE phone IS NOT NULL AND match_tier = 'HIGH'
+            ORDER BY match_score DESC LIMIT 5
+        """)
+        contacts = [dict(row) for row in cursor.fetchall()]
+        result = {
+            'type': 'contacts',
+            'message': f"Here are your top {len(contacts)} contacts to call today:",
+            'data': contacts
+        }
+    
+    conn.close()
+    return jsonify(result)
+
+
+# ============= ACTIVITIES =============
+@app.route('/api/contacts/<int:contact_id>/activities', methods=['GET'])
+def get_contact_activities(contact_id):
+    """Get activity timeline for a contact."""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    activities = []
+    
+    # Get contact for basic info
+    cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+    contact = cursor.fetchone()
+    
+    if contact:
+        contact = dict(contact)
+        
+        # Enrichment activity
+        if contact.get('enriched_at'):
+            activities.append({
+                'type': 'enrichment',
+                'title': 'Contact Enriched',
+                'description': 'AI research completed',
+                'timestamp': contact['enriched_at'],
+            })
+        
+        # Score activity
+        if contact.get('last_scored'):
+            activities.append({
+                'type': 'score',
+                'title': 'Match Score Updated',
+                'description': f"Scored {contact.get('match_score', 0):.0f} ({contact.get('match_tier', 'N/A')})",
+                'timestamp': contact['last_scored'],
+                'metadata': {
+                    'score': contact.get('match_score'),
+                    'tier': contact.get('match_tier'),
+                }
+            })
+        
+        # Created activity
+        if contact.get('created_at'):
+            activities.append({
+                'type': 'status_change',
+                'title': 'Contact Added',
+                'description': 'Added to pipeline',
+                'timestamp': contact['created_at'],
+            })
+    
+    # Sort by timestamp desc
+    activities.sort(key=lambda x: x['timestamp'] or '', reverse=True)
+    
+    conn.close()
+    return jsonify({'activities': activities})
+
+
+# ============= MEETING PREP =============
+@app.route('/api/contacts/<int:contact_id>/meeting-prep', methods=['POST'])
+def generate_meeting_prep(contact_id):
+    """Generate meeting prep document."""
+    data = request.json or {}
+    meeting_type = data.get('meeting_type', 'discovery')
+    
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        return jsonify({'error': 'Contact not found'}), 404
+    
+    contact = dict(row)
+    name = contact.get('name') or f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+    enrichment = contact.get('enrichment_data') or ''
+    
+    # If no OpenAI, return structured fallback
+    if not os.getenv('OPENAI_API_KEY'):
+        return jsonify({'prep': {
+            'contact_summary': f"{name} is {contact.get('title', 'a professional')} at {contact.get('company', 'their company')}.",
+            'company_overview': f"{contact.get('company', 'The company')} operates in their industry.",
+            'talking_points': [
+                "Discuss their current challenges",
+                "Understand their goals for this year",
+                "Share relevant case studies",
+            ],
+            'questions_to_ask': [
+                "What's your biggest priority right now?",
+                "How are you currently handling this?",
+                "What would success look like?",
+            ],
+            'potential_objections': [
+                {'objection': "We're not looking right now", 'response': "I understand. What would need to change for this to become a priority?"},
+                {'objection': "We already have a solution", 'response': "Great! How's that working for you? Any gaps?"},
+            ],
+            'ice_breakers': ["Recent company news", "Industry trends", "Mutual connections"],
+            'goal': f"Schedule a follow-up meeting with {name}",
+            'next_steps': ["Send recap email", "Schedule follow-up", "Share relevant materials"],
+            'generated_at': datetime.now().isoformat(),
+        }})
+    
+    try:
+        from openai import OpenAI
+        client = OpenAI()
+        
+        prompt = f"""Generate a comprehensive meeting prep document for a {meeting_type} call.
+
+CONTACT:
+    - Name: {name}
+    - Title: {contact.get('title', '')}
+    - Company: {contact.get('company', '')}
+
+ENRICHMENT DATA:
+{enrichment[:4000]}
+
+Return JSON with these exact keys:
+    - contact_summary (2-3 sentences about the person)
+    - company_overview (2-3 sentences about the company)
+    - talking_points (array of 4-5 key points to discuss)
+    - questions_to_ask (array of 5-6 discovery questions)
+    - potential_objections (array of objects with 'objection' and 'response' keys)
+    - ice_breakers (array of 3-4 conversation starters)
+    - goal (single sentence meeting objective)
+    - next_steps (array of 3-4 recommended actions)"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Sales meeting prep expert. Return valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.7,
+        )
+        
+        prep = json.loads(response.choices[0].message.content)
+        prep['generated_at'] = datetime.now().isoformat()
+        
+        return jsonify({'prep': prep})
+        
+    except Exception as e:
+        logger.error(f"Meeting prep error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============= CONTACT IMPORT =============
+@app.route('/api/contacts/import', methods=['POST'])
+def import_contacts():
+    """Bulk import contacts."""
+    data = request.json or {}
+    contacts = data.get('contacts', [])
+    
+    if not contacts:
+        return jsonify({'error': 'No contacts provided'}), 400
+    
+    conn = get_db()
+    success = 0
+    failed = 0
+    
+    for c in contacts:
+        try:
+            # Handle name field
+            name = c.get('name', '')
+            first_name = c.get('first_name', '')
+            last_name = c.get('last_name', '')
+            
+            if not name and not first_name:
+                failed += 1
+                continue
+            
+            conn.execute("""
+                INSERT INTO contacts (name, first_name, last_name, email, phone, company, title, linkedin_url, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                name, first_name, last_name,
+                c.get('email'), c.get('phone'), c.get('company'),
+                c.get('title'), c.get('linkedin_url'),
+                datetime.now().isoformat()
+            ))
+            success += 1
+        except Exception as e:
+            logger.error(f"Import error: {e}")
+            failed += 1
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': success, 'failed': failed})
+
+
+
+
+# =============================================================================
+# RUN APP
+# =============================================================================
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
 # Deployment timestamp: 1765078883
