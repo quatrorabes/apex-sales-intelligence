@@ -437,7 +437,7 @@ def get_contacts():
     cursor = conn.cursor()
     limit = request.args.get('limit', 50, type=int)
     offset = request.args.get('offset', 0, type=int)
-    cursor.execute('SELECT * FROM contacts ORDER BY match_score DESC NULLS LAST, id DESC LIMIT ? OFFSET ?', (limit, offset))
+    cursor.execute('SELECT * FROM contacts ORDER BY match_score DESC NULLS LAST, id DESC LIMIT %s OFFSET %s', (limit, offset))
     contacts = [dict(row) for row in cursor.fetchall()]
     cursor.execute('SELECT COUNT(*) as count FROM contacts')
     total = cursor.fetchone()["count"]
@@ -493,17 +493,17 @@ def enrich_contact(contact_id):
             conn = get_db()
             conn.execute("""
                 UPDATE contacts SET
-                    enrichment_data = ?,
+                    enrichment_data = %s,
                     enriched = 1,
-                    enriched_at = ?,
+                    enriched_at = %s,
                     enrichment_status = 'completed',
-                    match_score = ?,
-                    match_tier = ?,
-                    fit_score = ?,
-                    relevance_score = ?,
-                    timing_score = ?,
-                    last_scored = ?
-                WHERE id = ?
+                    match_score = %s,
+                    match_tier = %s,
+                    fit_score = %s,
+                    relevance_score = %s,
+                    timing_score = %s,
+                    last_scored = %s
+                WHERE id = %s
             """, (
                 profile_text,
                 datetime.now().isoformat(),
@@ -541,7 +541,7 @@ def enrich_contact(contact_id):
 def get_enrichment_status(contact_id):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT enrichment_status, enriched_at FROM contacts WHERE id = ?", (contact_id,))
+    cursor.execute("SELECT enrichment_status, enriched_at FROM contacts WHERE id = %s", (contact_id,))
     row = cursor.fetchone()
     conn.close()
     if not row:
@@ -571,10 +571,10 @@ def score_contact(contact_id):
 
     conn.execute("""
         UPDATE contacts SET
-            match_score = ?, match_tier = ?,
-            fit_score = ?, relevance_score = ?, timing_score = ?,
-            last_scored = ?
-        WHERE id = ?
+            match_score = %s, match_tier = %s,
+            fit_score = %s, relevance_score = %s, timing_score = %s,
+            last_scored = %s
+        WHERE id = %s
     """, (
         scores.get('match_score'), scores.get('match_tier'),
         scores.get('fit_score'), scores.get('relevance_score'), scores.get('timing_score'),
@@ -1593,8 +1593,8 @@ def update_cadence(cadence_id):
     
     conn.execute('''
         UPDATE cadences 
-        SET name = ?, description = ?, steps = ?, updated_at = ?
-        WHERE id = ?
+        SET name = %s, description = %s, steps = %s, updated_at = %s
+        WHERE id = %s
     ''', (data.get('name'), data.get('description'), json.dumps(data.get('steps', [])), 
           datetime.now().isoformat(), cadence_id))
     
@@ -1630,7 +1630,7 @@ def enroll_in_cadence(contact_id):
     # Check if already enrolled
     cursor.execute('''
         SELECT id, status FROM cadence_enrollments 
-        WHERE contact_id = ? AND cadence_id = ?
+        WHERE contact_id = %s AND cadence_id = %s
     ''', (contact_id, cadence_id))
     existing = cursor.fetchone()
     
@@ -1642,9 +1642,9 @@ def enroll_in_cadence(contact_id):
             # Re-enroll
             cursor.execute('''
                 UPDATE cadence_enrollments 
-                SET status = 'active', current_step = 0, started_at = ?, 
+                SET status = 'active', current_step = 0, started_at = %s, 
                     next_action_date = date('now'), completed_at = NULL
-                WHERE id = ?
+                WHERE id = %s
             ''', (datetime.now().isoformat(), existing['id']))
             enrollment_id = existing['id']
     else:
@@ -1670,7 +1670,7 @@ def get_contact_enrollments(contact_id):
         SELECT e.*, c.name as cadence_name, c.steps as cadence_steps
         FROM cadence_enrollments e
         JOIN cadences c ON e.cadence_id = c.id
-        WHERE e.contact_id = ?
+        WHERE e.contact_id = %s
         ORDER BY e.started_at DESC
     ''', (contact_id,))
     
@@ -1701,7 +1701,7 @@ def advance_enrollment(enrollment_id):
         SELECT e.*, c.steps 
         FROM cadence_enrollments e
         JOIN cadences c ON e.cadence_id = c.id
-        WHERE e.id = ?
+        WHERE e.id = %s
     ''', (enrollment_id,))
     
     enrollment = cursor.fetchone()
@@ -1729,8 +1729,8 @@ def advance_enrollment(enrollment_id):
         # Cadence complete
         cursor.execute('''
             UPDATE cadence_enrollments 
-            SET current_step = ?, status = 'completed', completed_at = ?
-            WHERE id = ?
+            SET current_step = %s, status = 'completed', completed_at = %s
+            WHERE id = %s
         ''', (next_step, datetime.now().isoformat(), enrollment_id))
         status = 'completed'
     else:
@@ -1738,8 +1738,8 @@ def advance_enrollment(enrollment_id):
         days_until_next = steps[next_step]['day'] - steps[current_step]['day']
         cursor.execute('''
             UPDATE cadence_enrollments 
-            SET current_step = ?, next_action_date = date('now', '+' || ? || ' days')
-            WHERE id = ?
+            SET current_step = %s, next_action_date = date('now', '+' || ? || ' days')
+            WHERE id = %s
         ''', (next_step, days_until_next, enrollment_id))
         status = 'active'
     
@@ -1766,14 +1766,14 @@ def update_enrollment_status(enrollment_id):
     
     conn = get_db()
     
-    update_fields = ['status = ?', 'notes = ?']
+    update_fields = ['status = %s', 'notes = %s']
     params = [new_status, notes]
     
     if new_status == 'paused':
-        update_fields.append('paused_at = ?')
+        update_fields.append('paused_at = %s')
         params.append(datetime.now().isoformat())
     elif new_status in ['completed', 'replied', 'booked', 'not_interested']:
-        update_fields.append('completed_at = ?')
+        update_fields.append('completed_at = %s')
         params.append(datetime.now().isoformat())
     elif new_status == 'active':
         update_fields.append('paused_at = NULL')
@@ -1781,7 +1781,7 @@ def update_enrollment_status(enrollment_id):
     params.append(enrollment_id)
     
     conn.execute(f'''
-        UPDATE cadence_enrollments SET {', '.join(update_fields)} WHERE id = ?
+        UPDATE cadence_enrollments SET {', '.join(update_fields)} WHERE id = %s
     ''', params)
     
     conn.commit()
@@ -2319,7 +2319,7 @@ def get_smart_list_contacts(list_id):
         cursor.execute("""
             SELECT * FROM contacts 
             WHERE enriched_at >= datetime('now', '-7 days')
-            ORDER BY enriched_at DESC LIMIT ?
+            ORDER BY enriched_at DESC LIMIT %s
         """, (limit,))
     else:
         conn.close()
