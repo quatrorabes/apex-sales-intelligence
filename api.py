@@ -83,6 +83,7 @@ except Exception as e:
 def ensure_tables():
     """Ensure all required tables and columns exist."""
     conn = get_db()
+    conn.autocommit = True  # Each statement is its own transaction - prevents cascade failures
     cursor = conn.cursor()
     
     # Contact columns
