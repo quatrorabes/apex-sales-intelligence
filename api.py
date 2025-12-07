@@ -1875,161 +1875,161 @@ def get_cadence_stats():
 # These override/extend default endpoints to match ContactDetailPage.tsx
 # ============================================================================
 
-@app.route('/api/contacts/<int:contact_id>/icp-match', methods=['GET'])
-def get_icp_match_detail(contact_id):
-    """Frontend-compatible ICP match - returns nested structure"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT id, name, email, company, title,
-                   match_score, match_tier,
-                   fit_score, relevance_score, timing_score
-            FROM contacts WHERE id = %s
-        """, (contact_id,))
-        
-        contact = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if not contact:
-            return jsonify({"error": "Contact not found"}), 404
-        
-        score = float(contact.get('match_score') or 0)
-        tier = contact.get('match_tier') or 'UNSCORED'
-        
+# OLD_REMOVED: @app.route('/api/contacts/<int:contact_id>/icp-match', methods=['GET'])
+# OLD_REMOVED: def get_icp_match_detail(contact_id):
+# OLD_REMOVED:     """Frontend-compatible ICP match - returns nested structure"""
+# OLD_REMOVED:     try:
+# OLD_REMOVED:         conn = get_db()
+# OLD_REMOVED:         cursor = conn.cursor()
+# OLD_REMOVED:         
+# OLD_REMOVED:         cursor.execute("""
+# OLD_REMOVED:             SELECT id, name, email, company, title,
+# OLD_REMOVED:                    match_score, match_tier,
+# OLD_REMOVED:                    fit_score, relevance_score, timing_score
+# OLD_REMOVED:             FROM contacts WHERE id = %s
+# OLD_REMOVED:         """, (contact_id,))
+# OLD_REMOVED:         
+# OLD_REMOVED:         contact = cursor.fetchone()
+# OLD_REMOVED:         cursor.close()
+# OLD_REMOVED:         conn.close()
+# OLD_REMOVED:         
+# OLD_REMOVED:         if not contact:
+# OLD_REMOVED:             return jsonify({"error": "Contact not found"}), 404
+# OLD_REMOVED:         
+# OLD_REMOVED:         score = float(contact.get('match_score') or 0)
+# OLD_REMOVED:         tier = contact.get('match_tier') or 'UNSCORED'
+# OLD_REMOVED:         
         # Build match reasons
-        reasons = []
-        if contact.get('fit_score', 0) > 70:
-            reasons.append("Strong company/role fit")
-        if contact.get('relevance_score', 0) > 70:
-            reasons.append("High service relevance")
-        if contact.get('timing_score', 0) > 70:
-            reasons.append("Positive timing signals")
-        
-        title_lower = str(contact.get('title', '')).lower()
-        if any(kw in title_lower for kw in ['director', 'vp', 'chief', 'head', 'owner', 'president']):
-            reasons.append("Decision-maker title")
-        
-        if not reasons:
-            reasons = ["Matches basic ICP criteria"]
-        
+# OLD_REMOVED:         reasons = []
+# OLD_REMOVED:         if contact.get('fit_score', 0) > 70:
+# OLD_REMOVED:             reasons.append("Strong company/role fit")
+# OLD_REMOVED:         if contact.get('relevance_score', 0) > 70:
+# OLD_REMOVED:             reasons.append("High service relevance")
+# OLD_REMOVED:         if contact.get('timing_score', 0) > 70:
+# OLD_REMOVED:             reasons.append("Positive timing signals")
+# OLD_REMOVED:         
+# OLD_REMOVED:         title_lower = str(contact.get('title', '')).lower()
+# OLD_REMOVED:         if any(kw in title_lower for kw in ['director', 'vp', 'chief', 'head', 'owner', 'president']):
+# OLD_REMOVED:             reasons.append("Decision-maker title")
+# OLD_REMOVED:         
+# OLD_REMOVED:         if not reasons:
+# OLD_REMOVED:             reasons = ["Matches basic ICP criteria"]
+# OLD_REMOVED:         
         # Match level label
-        if score >= 85:
-            match_level = "EXCELLENT"
-        elif score >= 70:
-            match_level = "GOOD"
-        elif score >= 55:
-            match_level = "FAIR"
-        else:
-            match_level = "POOR"
-        
+# OLD_REMOVED:         if score >= 85:
+# OLD_REMOVED:             match_level = "EXCELLENT"
+# OLD_REMOVED:         elif score >= 70:
+# OLD_REMOVED:             match_level = "GOOD"
+# OLD_REMOVED:         elif score >= 55:
+# OLD_REMOVED:             match_level = "FAIR"
+# OLD_REMOVED:         else:
+# OLD_REMOVED:             match_level = "POOR"
+# OLD_REMOVED:         
         # Why-us-fit points
-        fit_points = [
-            {
-                "type": "valueprop",
-                "title": "Decision Maker Access",
-                "detail": f"{contact.get('name')} holds {contact.get('title', 'senior')} position",
-                "impact": "Direct path to buyer"
-            },
-            {
-                "type": "painpoint",
-                "title": "Company Profile Match",
-                "detail": f"{contact.get('company')} fits target profile",
-                "impact": "High solution need"
-            }
-        ]
-        
-        return jsonify({
-            "contactid": contact_id,
-            "icpmatch": {
-                "score": score,
-                "reasons": reasons,
-                "matchlevel": match_level
-            },
-            "whyusfit": {
-                "summary": f"{match_level.lower()} fit based on profile analysis.",
-                "points": fit_points
-            },
-            "playbookconfigured": True
-        })
-        
-    except Exception as e:
-        logger.error(f"ICP match error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/api/contacts/<int:contact_id>/activities', methods=['GET'])
-def get_contact_activities_detail(contact_id):
-    """Frontend-compatible activities endpoint"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT created_at, enriched_at, last_scored, last_contacted,
-                   times_contacted, cadence_started_at, cadence_status
-            FROM contacts WHERE id = %s
-        """, (contact_id,))
-        
-        contact = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if not contact:
-            return jsonify({"error": "Contact not found"}), 404
-        
-        activities = []
-        
-        if contact.get('created_at'):
-            activities.append({
-                "type": "created",
-                "timestamp": str(contact['created_at']),
-                "description": "Contact added to system"
-            })
-        
-        if contact.get('enriched_at'):
-            activities.append({
-                "type": "enrichment",
-                "timestamp": str(contact['enriched_at']),
-                "description": "Profile enriched with AI"
-            })
-        
-        if contact.get('last_scored'):
-            activities.append({
-                "type": "scoring",
-                "timestamp": str(contact['last_scored']),
-                "description": "Contact scored and tiered"
-            })
-        
-        if contact.get('last_contacted'):
-            times = contact.get('times_contacted', 0)
-            activities.append({
-                "type": "contact",
-                "timestamp": str(contact['last_contacted']),
-                "description": f"Contacted ({times}x total)"
-            })
-        
-        if contact.get('cadence_started_at'):
-            activities.append({
-                "type": "cadence",
-                "timestamp": str(contact['cadence_started_at']),
-                "description": f"Cadence: {contact.get('cadence_status', 'active')}"
-            })
-        
-        activities.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
-        
-        return jsonify({
-            "activities": activities,
-            "count": len(activities)
-        })
-        
-    except Exception as e:
-        logger.error(f"Activities error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
+# OLD_REMOVED:         fit_points = [
+# OLD_REMOVED:             {
+# OLD_REMOVED:                 "type": "valueprop",
+# OLD_REMOVED:                 "title": "Decision Maker Access",
+# OLD_REMOVED:                 "detail": f"{contact.get('name')} holds {contact.get('title', 'senior')} position",
+# OLD_REMOVED:                 "impact": "Direct path to buyer"
+# OLD_REMOVED:             },
+# OLD_REMOVED:             {
+# OLD_REMOVED:                 "type": "painpoint",
+# OLD_REMOVED:                 "title": "Company Profile Match",
+# OLD_REMOVED:                 "detail": f"{contact.get('company')} fits target profile",
+# OLD_REMOVED:                 "impact": "High solution need"
+# OLD_REMOVED:             }
+# OLD_REMOVED:         ]
+# OLD_REMOVED:         
+# OLD_REMOVED:         return jsonify({
+# OLD_REMOVED:             "contactid": contact_id,
+# OLD_REMOVED:             "icpmatch": {
+# OLD_REMOVED:                 "score": score,
+# OLD_REMOVED:                 "reasons": reasons,
+# OLD_REMOVED:                 "matchlevel": match_level
+# OLD_REMOVED:             },
+# OLD_REMOVED:             "whyusfit": {
+# OLD_REMOVED:                 "summary": f"{match_level.lower()} fit based on profile analysis.",
+# OLD_REMOVED:                 "points": fit_points
+# OLD_REMOVED:             },
+# OLD_REMOVED:             "playbookconfigured": True
+# OLD_REMOVED:         })
+# OLD_REMOVED:         
+# OLD_REMOVED:     except Exception as e:
+# OLD_REMOVED:         logger.error(f"ICP match error: {e}")
+# OLD_REMOVED:         return jsonify({"error": str(e)}), 500
+# OLD_REMOVED: 
+# OLD_REMOVED: 
+# OLD_REMOVED: @app.route('/api/contacts/<int:contact_id>/activities', methods=['GET'])
+# OLD_REMOVED: def get_contact_activities_detail(contact_id):
+# OLD_REMOVED:     """Frontend-compatible activities endpoint"""
+# OLD_REMOVED:     try:
+# OLD_REMOVED:         conn = get_db()
+# OLD_REMOVED:         cursor = conn.cursor()
+# OLD_REMOVED:         
+# OLD_REMOVED:         cursor.execute("""
+# OLD_REMOVED:             SELECT created_at, enriched_at, last_scored, last_contacted,
+# OLD_REMOVED:                    times_contacted, cadence_started_at, cadence_status
+# OLD_REMOVED:             FROM contacts WHERE id = %s
+# OLD_REMOVED:         """, (contact_id,))
+# OLD_REMOVED:         
+# OLD_REMOVED:         contact = cursor.fetchone()
+# OLD_REMOVED:         cursor.close()
+# OLD_REMOVED:         conn.close()
+# OLD_REMOVED:         
+# OLD_REMOVED:         if not contact:
+# OLD_REMOVED:             return jsonify({"error": "Contact not found"}), 404
+# OLD_REMOVED:         
+# OLD_REMOVED:         activities = []
+# OLD_REMOVED:         
+# OLD_REMOVED:         if contact.get('created_at'):
+# OLD_REMOVED:             activities.append({
+# OLD_REMOVED:                 "type": "created",
+# OLD_REMOVED:                 "timestamp": str(contact['created_at']),
+# OLD_REMOVED:                 "description": "Contact added to system"
+# OLD_REMOVED:             })
+# OLD_REMOVED:         
+# OLD_REMOVED:         if contact.get('enriched_at'):
+# OLD_REMOVED:             activities.append({
+# OLD_REMOVED:                 "type": "enrichment",
+# OLD_REMOVED:                 "timestamp": str(contact['enriched_at']),
+# OLD_REMOVED:                 "description": "Profile enriched with AI"
+# OLD_REMOVED:             })
+# OLD_REMOVED:         
+# OLD_REMOVED:         if contact.get('last_scored'):
+# OLD_REMOVED:             activities.append({
+# OLD_REMOVED:                 "type": "scoring",
+# OLD_REMOVED:                 "timestamp": str(contact['last_scored']),
+# OLD_REMOVED:                 "description": "Contact scored and tiered"
+# OLD_REMOVED:             })
+# OLD_REMOVED:         
+# OLD_REMOVED:         if contact.get('last_contacted'):
+# OLD_REMOVED:             times = contact.get('times_contacted', 0)
+# OLD_REMOVED:             activities.append({
+# OLD_REMOVED:                 "type": "contact",
+# OLD_REMOVED:                 "timestamp": str(contact['last_contacted']),
+# OLD_REMOVED:                 "description": f"Contacted ({times}x total)"
+# OLD_REMOVED:             })
+# OLD_REMOVED:         
+# OLD_REMOVED:         if contact.get('cadence_started_at'):
+# OLD_REMOVED:             activities.append({
+# OLD_REMOVED:                 "type": "cadence",
+# OLD_REMOVED:                 "timestamp": str(contact['cadence_started_at']),
+# OLD_REMOVED:                 "description": f"Cadence: {contact.get('cadence_status', 'active')}"
+# OLD_REMOVED:             })
+# OLD_REMOVED:         
+# OLD_REMOVED:         activities.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
+# OLD_REMOVED:         
+# OLD_REMOVED:         return jsonify({
+# OLD_REMOVED:             "activities": activities,
+# OLD_REMOVED:             "count": len(activities)
+# OLD_REMOVED:         })
+# OLD_REMOVED:         
+# OLD_REMOVED:     except Exception as e:
+# OLD_REMOVED:         logger.error(f"Activities error: {e}")
+# OLD_REMOVED:         return jsonify({"error": str(e)}), 500
+# OLD_REMOVED: 
+# OLD_REMOVED: 
 @app.route('/api/contacts/<int:contact_id>/enrollments', methods=['GET'])
 def get_contact_enrollments_detail(contact_id):
     """Get cadence enrollments for frontend"""
