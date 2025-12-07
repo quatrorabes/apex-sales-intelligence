@@ -704,7 +704,7 @@ def export_contacts():
 @app.route('/api/batch/enrich', methods=['POST'])
 def batch_enrich():
     try:
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
         contact_ids = data.get('contact_ids', [])
         
         conn = get_db()
