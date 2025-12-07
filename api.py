@@ -74,7 +74,11 @@ def get_db():
     return conn
 
 
-def ensure_tables():
+def try:
+    ensure_tables()
+except Exception as e:
+    logger.error(f"Database migration error (non-fatal): {e}")
+    # Continue anyway - tables may already exist:
     """Ensure all required tables and columns exist."""
     conn = get_db()
     cursor = conn.cursor()

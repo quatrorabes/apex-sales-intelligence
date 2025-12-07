@@ -3,7 +3,7 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "gunicorn -w 4 -b 0.0.0.0:$PORT --timeout 120 api:app",
+    "startCommand": "python api.py",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 100
   }
