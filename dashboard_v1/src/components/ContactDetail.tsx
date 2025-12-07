@@ -100,28 +100,34 @@ interface ICPMatchData {
 function extractSection(content: string | null, sectionType: string): string {
   if (!content) return '';
   
-  const markers: Record<string, RegExp> = {
-    person: /===\s*PERSON RESEARCH[^=]*===/i,
-    company: /===\s*COMPANY RESEARCH[^=]*===/i,
-    sales: /===\s*SALES INTELLIGENCE\s*===/i,
-    personality: /(?:###?\s*)?PERSONALITY ANALYSIS/i
+  // Map section types to markdown headers
+  const headerMappings: Record<string, string[]> = {
+    person: ['Professional Background', 'Educational Foundation', 'Professional Credentials', 'Career'],
+    company: ['Company Overview', 'Industry Context', 'Organization'],
+    sales: ['Potential Business Challenges', 'Relevant Talking Points', 'Recent Activity'],
+    personality: ['Communication and Contact Information', 'Personality']
   };
   
-  const marker = markers[sectionType];
-  if (!marker) return '';
+  const headers = headerMappings[sectionType];
+  if (!headers) return '';
   
-  const match = content.match(marker);
-  if (!match || match.index === undefined) return '';
+  const sections: string[] = [];
   
-  const startIdx = match.index + match[0].length;
-  const afterMarker = content.substring(startIdx);
+  // Split content by ## headers
+  const parts = content.split(/(?=^## )/m);
   
-  const nextMatch = afterMarker.match(/===\s*(PERSON|COMPANY|SALES)|(?:###?\s*)?PERSONALITY ANALYSIS/i);
-  if (nextMatch && nextMatch.index !== undefined) {
-    return afterMarker.substring(0, nextMatch.index).trim();
+  for (const part of parts) {
+    const headerMatch = part.match(/^## (.+)/m);
+    if (headerMatch) {
+      const header = headerMatch[1].trim();
+      // Check if this header matches any of our target headers
+      if (headers.some(h => header.toLowerCase().includes(h.toLowerCase().split(' ')[0]))) {
+        sections.push(part.trim());
+      }
+    }
   }
   
-  return afterMarker.trim();
+  return sections.join('\n\n');
 }
 
 // =============================================================================
