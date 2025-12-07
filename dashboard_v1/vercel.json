@@ -1,8 +1,5 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
-  "env": {
-    "VITE_API_URL": "https://apex-backend-production-production.up.railway.app"
-  }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
