@@ -395,7 +395,72 @@ def internal_error(error):
 
 # ==================== MAIN ====================
 
+
+# ==================== SMART LISTS ====================
+
+@app.route('/api/smart-lists')
+def get_smart_lists():
+    """Get smart list definitions with counts"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE mdcp_score >= 80")
+        hot = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE mdcp_score >= 60 AND mdcp_score < 80")
+        warm = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
+        enriched = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
+        needs_enrichment = cursor.fetchone()['count']
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "lists": [
+                {"id": "hot_leads", "name": "Hot Leads", "description": "Score 80+", "count": hot, "icon": "flame", "color": "red"},
+                {"id": "warm_leads", "name": "Warm Leads", "description": "Score 60-79", "count": warm, "icon": "sun", "color": "orange"},
+                {"id": "enriched", "name": "Enriched Contacts", "description": "Fully enriched", "count": enriched, "icon": "sparkles", "color": "green"},
+                {"id": "needs_enrichment", "name": "Needs Enrichment", "description": "Pending enrichment", "count": needs_enrichment, "icon": "clock", "color": "gray"}
+            ]
+        })
+    except Exception as e:
+        return jsonify({"lists": [], "error": str(e)})
+
+@app.route('/api/smart-lists/<list_id>/contacts')
+def get_smart_list_contacts(list_id):
+    """Get contacts for a specific smart list"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        limit = request.args.get('limit', 50, type=int)
+        
+        if list_id == 'hot_leads':
+            cursor.execute("SELECT * FROM contacts WHERE mdcp_score >= 80 ORDER BY mdcp_score DESC LIMIT %s", (limit,))
+        elif list_id == 'warm_leads':
+            cursor.execute("SELECT * FROM contacts WHERE mdcp_score >= 60 AND mdcp_score < 80 ORDER BY mdcp_score DESC LIMIT %s", (limit,))
+        elif list_id == 'enriched':
+            cursor.execute("SELECT * FROM contacts WHERE enrichment_status = 'completed' ORDER BY mdcp_score DESC NULLS LAST LIMIT %s", (limit,))
+        elif list_id == 'needs_enrichment':
+            cursor.execute("SELECT * FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending' ORDER BY id DESC LIMIT %s", (limit,))
+        else:
+            return jsonify({"error": "Unknown list"}), 404
+        
+        contacts = [dict(row) for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"contacts": contacts, "count": len(contacts)})
+    except Exception as e:
+        return jsonify({"contacts": [], "error": str(e)})
+
+# ==================== MAIN ====================
+
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
+    port = int(os.environ.get('PORT', 8000))
     logger.info(f"🚀 Starting APEX Backend on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
