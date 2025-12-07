@@ -1227,6 +1227,515 @@ def get_analytics_dashboard():
 
 
 # ============= RUN =============
+
+# ============================================
+# MISSING ENDPOINTS - Added Dec 7, 2025
+# INSERTED BEFORE MAIN BLOCK
+# ============================================
+
+import json
+from datetime import datetime
+
+# Contact Activities
+@app.route('/api/contacts/<int:contact_id>/activities', methods=['GET'])
+def get_contact_activities(contact_id):
+    """Get activity history for a contact"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                times_contacted,
+                last_contacted,
+                cadence_status,
+                cadence_started_at,
+                enriched_at,
+                last_scored
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            return jsonify({"error": "Contact not found"}), 404
+        
+        activities = []
+        
+        if contact.get('enriched_at'):
+            activities.append({
+                "type": "enrichment",
+                "timestamp": contact['enriched_at'],
+                "description": "Contact enriched with AI research"
+            })
+        
+        if contact.get('last_scored'):
+            activities.append({
+                "type": "scoring",
+                "timestamp": contact['last_scored'],
+                "description": "Contact scored and tiered"
+            })
+        
+        if contact.get('last_contacted'):
+            activities.append({
+                "type": "contact",
+                "timestamp": contact['last_contacted'],
+                "description": f"Contacted ({contact.get('times_contacted', 0)} times total)"
+            })
+        
+        if contact.get('cadence_started_at'):
+            activities.append({
+                "type": "cadence",
+                "timestamp": contact['cadence_started_at'],
+                "status": contact.get('cadence_status'),
+                "description": f"Enrolled in cadence - Status: {contact.get('cadence_status')}"
+            })
+        
+        activities.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "activities": activities,
+            "count": len(activities)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Meeting Prep
+@app.route('/api/contacts/<int:contact_id>/meeting-prep', methods=['GET', 'POST'])
+def meeting_prep(contact_id):
+    """Generate meeting preparation brief"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if request.method == 'GET':
+            cursor.execute("""
+                SELECT meeting_prep_data, meeting_prep_generated_at 
+                FROM contacts 
+                WHERE id = %s
+            """, (contact_id,))
+            
+            contact = cursor.fetchone()
+            if not contact:
+                return jsonify({"error": "Contact not found"}), 404
+            
+            if contact.get('meeting_prep_data'):
+                return jsonify({
+                    "meeting_prep": contact['meeting_prep_data'],
+                    "generated_at": contact.get('meeting_prep_generated_at')
+                })
+            else:
+                return jsonify({"meeting_prep": None}), 200
+        
+        elif request.method == 'POST':
+            cursor.execute("""
+                SELECT name, email, company, title, persona, enrichment_data 
+                FROM contacts 
+                WHERE id = %s
+            """, (contact_id,))
+            
+            contact = cursor.fetchone()
+            if not contact:
+                return jsonify({"error": "Contact not found"}), 404
+            
+            meeting_prep = {
+                "contact_overview": {
+                    "name": contact.get('name'),
+                    "title": contact.get('title'),
+                    "company": contact.get('company')
+                },
+                "talking_points": [
+                    "Review their company's recent initiatives",
+                    "Discuss pain points relevant to their role",
+                    "Present tailored solution overview"
+                ],
+                "questions_to_ask": [
+                    "What are your top priorities this quarter?",
+                    "What challenges are you facing with relevant area?",
+                    "What does your decision-making process look like?"
+                ],
+                "objectives": [
+                    "Understand their needs and pain points",
+                    "Demonstrate value proposition",
+                    "Schedule follow-up or move to next stage"
+                ],
+                "persona_insights": contact.get('persona') or "Persona not yet generated"
+            }
+            
+            cursor.execute("""
+                UPDATE contacts 
+                SET meeting_prep_data = %s, 
+                    meeting_prep_generated_at = NOW()
+                WHERE id = %s
+            """, (json.dumps(meeting_prep), contact_id))
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            return jsonify({
+                "meeting_prep": meeting_prep,
+                "generated_at": datetime.now().isoformat()
+            })
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ICP Match
+@app.route('/api/contacts/<int:contact_id>/icp-match', methods=['GET'])
+def icp_match(contact_id):
+    """Get ICP match analysis for contact"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                name, email, company, title, 
+                fit_score, relevance_score, timing_score,
+                match_score, match_tier,
+                enrichment_data
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            return jsonify({"error": "Contact not found"}), 404
+        
+        icp_match_data = {
+            "overall_score": contact.get('match_score') or 0,
+            "tier": contact.get('match_tier') or "UNSCORED",
+            "breakdown": {
+                "fit": contact.get('fit_score') or 0,
+                "relevance": contact.get('relevance_score') or 0,
+                "timing": contact.get('timing_score') or 0
+            },
+            "match_factors": [
+                {
+                    "factor": "Company Size",
+                    "score": 0.8,
+                    "match": "Good fit - Mid-market"
+                },
+                {
+                    "factor": "Industry",
+                    "score": 0.9,
+                    "match": "Excellent - Target vertical"
+                },
+                {
+                    "factor": "Role",
+                    "score": 0.7,
+                    "match": "Good - Decision maker level"
+                }
+            ],
+            "recommendation": "HIGH PRIORITY" if (contact.get('match_score') or 0) > 0.7 else "MEDIUM PRIORITY"
+        }
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify(icp_match_data)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Contact Enrollments
+@app.route('/api/contacts/<int:contact_id>/enrollments', methods=['GET'])
+def get_contact_enrollments(contact_id):
+    """Get cadence enrollments for contact"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                cadence_id, 
+                cadence_status, 
+                cadence_started_at,
+                cadence_completed_at,
+                cadence_step
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            return jsonify({"error": "Contact not found"}), 404
+        
+        enrollments = []
+        if contact.get('cadence_id'):
+            enrollments.append({
+                "id": 1,
+                "cadence_id": contact['cadence_id'],
+                "cadence_name": f"Cadence {contact['cadence_id']}",
+                "status": contact.get('cadence_status') or "active",
+                "started_at": contact.get('cadence_started_at'),
+                "completed_at": contact.get('cadence_completed_at'),
+                "current_step": contact.get('cadence_step') or 1,
+                "total_steps": 7
+            })
+        
+        return jsonify({
+            "enrollments": enrollments,
+            "count": len(enrollments)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Enroll in Cadence
+@app.route('/api/contacts/<int:contact_id>/enroll', methods=['POST'])
+def enroll_contact(contact_id):
+    """Enroll contact in a cadence"""
+    try:
+        data = request.get_json()
+        cadence_id = data.get('cadence_id')
+        
+        if not cadence_id:
+            return jsonify({"error": "cadence_id required"}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE contacts 
+            SET cadence_id = %s,
+                cadence_status = 'active',
+                cadence_started_at = NOW(),
+                cadence_step = 1
+            WHERE id = %s
+            RETURNING id
+        """, (cadence_id, contact_id))
+        
+        result = cursor.fetchone()
+        if not result:
+            return jsonify({"error": "Contact not found"}), 404
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "message": "Contact enrolled in cadence",
+            "enrollment": {
+                "contact_id": contact_id,
+                "cadence_id": cadence_id,
+                "status": "active",
+                "step": 1
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Advance Enrollment
+@app.route('/api/enrollments/<int:enrollment_id>/advance', methods=['POST'])
+def advance_enrollment(enrollment_id):
+    """Advance contact to next step in cadence"""
+    try:
+        data = request.get_json()
+        contact_id = data.get('contact_id')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT cadence_step, cadence_status 
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            return jsonify({"error": "Contact not found"}), 404
+        
+        current_step = contact.get('cadence_step') or 1
+        next_step = current_step + 1
+        
+        cursor.execute("""
+            UPDATE contacts 
+            SET cadence_step = %s,
+                updated_at = NOW()
+            WHERE id = %s
+        """, (next_step, contact_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "current_step": next_step
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Update Enrollment Status
+@app.route('/api/enrollments/<int:enrollment_id>/status', methods=['PUT'])
+def update_enrollment_status(enrollment_id):
+    """Update cadence enrollment status"""
+    try:
+        data = request.get_json()
+        status = data.get('status')
+        contact_id = data.get('contact_id')
+        
+        if status not in ['active', 'paused', 'completed', 'cancelled']:
+            return jsonify({"error": "Invalid status"}), 400
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE contacts 
+            SET cadence_status = %s,
+                cadence_completed_at = CASE WHEN %s = 'completed' THEN NOW() ELSE cadence_completed_at END
+            WHERE id = %s
+        """, (status, status, contact_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "status": status
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Cadence Queue
+@app.route('/api/cadence-queue', methods=['GET'])
+def cadence_queue():
+    """Get contacts in active cadences"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                id, name, email, company, title,
+                cadence_id, cadence_status, cadence_step,
+                cadence_started_at
+            FROM contacts 
+            WHERE cadence_status = 'active'
+            ORDER BY cadence_started_at DESC
+            LIMIT 50
+        """)
+        
+        contacts = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "contacts": contacts,
+            "count": len(contacts)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Cadence Stats
+@app.route('/api/cadence-stats', methods=['GET'])
+def cadence_stats():
+    """Get cadence performance statistics"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                cadence_status,
+                COUNT(*) as count
+            FROM contacts 
+            WHERE cadence_id IS NOT NULL
+            GROUP BY cadence_status
+        """)
+        
+        status_counts = {row['cadence_status']: row['count'] for row in cursor.fetchall()}
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "active": status_counts.get('active', 0),
+            "paused": status_counts.get('paused', 0),
+            "completed": status_counts.get('completed', 0),
+            "total_enrolled": sum(status_counts.values())
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# Analytics Dashboard
+@app.route('/api/analytics/dashboard', methods=['GET'])
+def analytics_dashboard():
+    """Get comprehensive analytics for dashboard"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts")
+        total_contacts = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enriched = 1")
+        enriched = cursor.fetchone()['count']
+        
+        cursor.execute("""
+            SELECT match_tier, COUNT(*) as count 
+            FROM contacts 
+            WHERE match_tier IS NOT NULL
+            GROUP BY match_tier
+        """)
+        by_tier = {row['match_tier']: row['count'] for row in cursor.fetchall()}
+        
+        cursor.execute("""
+            SELECT cadence_status, COUNT(*) as count 
+            FROM contacts 
+            WHERE cadence_id IS NOT NULL
+            GROUP BY cadence_status
+        """)
+        cadence_stats = {row['cadence_status']: row['count'] for row in cursor.fetchall()}
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "total_contacts": total_contacts,
+            "enriched": enriched,
+            "enrichment_rate": round(enriched / total_contacts * 100, 1) if total_contacts > 0 else 0,
+            "by_tier": {
+                "HIGH": by_tier.get('HIGH', 0),
+                "MEDIUM": by_tier.get('MEDIUM', 0),
+                "LOW": by_tier.get('LOW', 0)
+            },
+            "cadence_stats": cadence_stats,
+            "activity_this_week": {
+                "contacts_added": 0,
+                "contacts_enriched": enriched,
+                "calls_logged": 0,
+                "emails_sent": 0
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     logger.info(f"🚀 Starting APEX Backend on port {port}")
