@@ -12,8 +12,8 @@ import {
 // =============================================================================
 interface Contact {
   id: number;
-  first_name: string;
-  last_name: string;
+  firstname: string;
+  lastname: string;
   email: string;
   phone: string;
   company: string;
@@ -348,11 +348,11 @@ export default function ContactDetailPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
-                {contact.first_name[0]}{contact.last_name[0]}
+                {contact.firstname[0]}{contact.lastname[0]}
               </div>
               <div>
                 <div className="flex items-center gap-3">
-                  <h1 className="text-xl font-bold">{contact.first_name} {contact.last_name}</h1>
+                  <h1 className="text-xl font-bold">{contact.firstname} {contact.lastname}</h1>
                   {isEnriched && (
                     <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs flex items-center gap-1">
                       <CheckCircle2 size={12} /> Enriched
@@ -454,7 +454,7 @@ export default function ContactDetailPage() {
               </Card>
             )) : (
               <Card title="Overview" icon={<User size={18} />}>
-                <DataRow label="Name" value={`${contact.first_name} ${contact.last_name}`} />
+                <DataRow label="Name" value={`${contact.firstname} ${contact.lastname}`} />
                 <DataRow label="Title" value={contact.title} />
                 <DataRow label="Company" value={contact.company} />
                 <DataRow label="Email" value={contact.email} />
