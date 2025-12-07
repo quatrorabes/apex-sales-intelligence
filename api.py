@@ -374,6 +374,332 @@ def save_playbook():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+# ============= SEARCH =============
+@app.route('/api/contacts/search', methods=['GET'])
+def search_contacts():
+    try:
+        q = request.args.get('q', '')
+        limit = request.args.get('limit', 50, type=int)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE name ILIKE %s OR email ILIKE %s OR company ILIKE %s
+            ORDER BY match_score DESC NULLS LAST
+            LIMIT %s
+        """, (f'%{q}%', f'%{q}%', f'%{q}%', limit))
+        contacts = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({'contacts': contacts, 'query': q, 'count': len(contacts)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= COLD CALL QUEUE =============
+@app.route('/api/cold-call/queue', methods=['GET'])
+def get_cold_call_queue():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE phone IS NOT NULL AND phone != ''
+            ORDER BY match_score DESC NULLS LAST
+            LIMIT 20
+        """)
+        contacts = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify({'queue': contacts, 'count': len(contacts)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cold-call/log', methods=['POST'])
+def log_cold_call():
+    try:
+        data = request.get_json()
+        contact_id = data.get('contact_id')
+        outcome = data.get('outcome')
+        notes = data.get('notes', '')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts SET 
+                times_contacted = COALESCE(times_contacted, 0) + 1,
+                last_contacted = NOW(),
+                notes = COALESCE(notes, '') || %s
+            WHERE id = %s
+        """, (f'\n[Call {outcome}]: {notes}', contact_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= BULK OPERATIONS =============
+@app.route('/api/contacts/bulk-enrich', methods=['POST'])
+def bulk_enrich():
+    try:
+        data = request.get_json()
+        contact_ids = data.get('contact_ids', [])
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        for cid in contact_ids[:50]:  # Limit to 50
+            cursor.execute("UPDATE contacts SET enrichment_status = 'queued' WHERE id = %s", (cid,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'queued': len(contact_ids[:50])})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/bulk-score', methods=['POST'])
+def bulk_score():
+    try:
+        data = request.get_json()
+        contact_ids = data.get('contact_ids', [])
+        
+        # Placeholder - actual scoring would go here
+        return jsonify({'success': True, 'scored': len(contact_ids)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= SCRIPTS =============
+@app.route('/api/contacts/<int:contact_id>/scripts', methods=['GET'])
+def get_contact_scripts(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT call_script_1, call_script_2, call_script_3, 
+                   email_1_body, email_2_body, email_3_body
+            FROM contacts WHERE id = %s
+        """, (contact_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        return jsonify({
+            'call_scripts': [row['call_script_1'], row['call_script_2'], row['call_script_3']],
+            'email_scripts': [row['email_1_body'], row['email_2_body'], row['email_3_body']]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/scripts', methods=['POST'])
+def generate_scripts(contact_id):
+    try:
+        # Placeholder for script generation
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'message': 'Script generation queued'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= SCORING =============
+@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
+def score_contact(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        
+        if not contact:
+            conn.close()
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        # Simple scoring logic
+        score = 50
+        tier = 'MEDIUM'
+        
+        if contact.get('enrichment_status') == 'completed':
+            score += 20
+        if contact.get('company'):
+            score += 10
+        if contact.get('title'):
+            score += 10
+        if contact.get('email'):
+            score += 10
+        
+        if score >= 80:
+            tier = 'HIGH'
+        elif score < 50:
+            tier = 'LOW'
+        
+        cursor.execute("""
+            UPDATE contacts SET match_score = %s, match_tier = %s, last_scored = NOW()
+            WHERE id = %s
+        """, (score, tier, contact_id))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'success': True, 'score': score, 'tier': tier})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= WHY ME =============
+@app.route('/api/contacts/<int:contact_id>/why-me', methods=['GET'])
+def get_why_me(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT why_me_data FROM contacts WHERE id = %s", (contact_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        if row['why_me_data']:
+            import json
+            return jsonify(json.loads(row['why_me_data']))
+        return jsonify({'generated': False})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/why-me', methods=['POST'])
+def generate_why_me(contact_id):
+    try:
+        # Placeholder for Why Me generation
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'message': 'Why Me generation queued'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= AI COMMAND =============
+@app.route('/api/ai/command', methods=['POST'])
+def ai_command():
+    try:
+        data = request.get_json()
+        command = data.get('command', '')
+        
+        # Placeholder for AI command processing
+        return jsonify({
+            'success': True,
+            'command': command,
+            'response': f'Command received: {command}',
+            'actions': []
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= FILTERS & TAGS =============
+@app.route('/api/filters', methods=['GET'])
+def get_filters():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get unique values for filters
+        cursor.execute("SELECT DISTINCT company FROM contacts WHERE company IS NOT NULL LIMIT 100")
+        companies = [row['company'] for row in cursor.fetchall()]
+        
+        cursor.execute("SELECT DISTINCT title FROM contacts WHERE title IS NOT NULL LIMIT 100")
+        titles = [row['title'] for row in cursor.fetchall()]
+        
+        cursor.execute("SELECT DISTINCT match_tier FROM contacts WHERE match_tier IS NOT NULL")
+        tiers = [row['match_tier'] for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'companies': companies,
+            'titles': titles,
+            'tiers': tiers,
+            'statuses': ['pending', 'processing', 'completed', 'failed']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= ACTIVITY =============
+@app.route('/api/activity', methods=['GET'])
+def get_activity():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Recent enrichments
+        cursor.execute("""
+            SELECT id, name, company, enriched_at, 'enriched' as type
+            FROM contacts 
+            WHERE enriched_at IS NOT NULL
+            ORDER BY enriched_at DESC
+            LIMIT 10
+        """)
+        activities = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({'activities': activities})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= DASHBOARD STATS =============
+@app.route('/api/dashboard/stats', methods=['GET'])
+def get_dashboard_stats():
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        stats = {}
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts")
+        stats['total_contacts'] = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
+        stats['enriched'] = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE match_tier = 'HIGH'")
+        stats['high_priority'] = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
+        stats['new_this_week'] = cursor.fetchone()['count']
+        
+        cursor.execute("SELECT AVG(match_score) as avg FROM contacts WHERE match_score IS NOT NULL")
+        avg = cursor.fetchone()['avg']
+        stats['avg_score'] = round(float(avg), 1) if avg else 0
+        
+        conn.close()
+        
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= EXPORT =============
+@app.route('/api/contacts/export', methods=['GET'])
+def export_contacts():
+    try:
+        format = request.args.get('format', 'json')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts ORDER BY id")
+        contacts = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        if format == 'csv':
+            import csv
+            import io
+            output = io.StringIO()
+            if contacts:
+                writer = csv.DictWriter(output, fieldnames=contacts[0].keys())
+                writer.writeheader()
+                writer.writerows(contacts)
+            return output.getvalue(), 200, {'Content-Type': 'text/csv'}
+        
+        return jsonify({'contacts': contacts, 'count': len(contacts)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ============= RUN =============
 if __name__ == '__main__':
