@@ -506,3 +506,4 @@ if __name__ == '__main__':
 	port = int(os.getenv('PORT', 8080))
 	logger.info(f"🚀 Starting APEX Backend on port {port}")
 	app.run(host='0.0.0.0', port=port, debug=False)
+# redeploy Sat Dec  6 18:16:56 PST 2025
