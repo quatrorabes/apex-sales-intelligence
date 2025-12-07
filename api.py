@@ -220,11 +220,6 @@ def get_user_profile():
         'configured': False
     })
 
-# ============= RUN =============
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8000))
-    logger.info(f"🚀 Starting APEX Backend on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False)
 
 # ============= CONTACT CRUD =============
 @app.route('/api/contacts', methods=['POST'])
@@ -380,3 +375,8 @@ def save_playbook():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ============= RUN =============
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
+    logger.info(f"🚀 Starting APEX Backend on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
