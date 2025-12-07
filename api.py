@@ -97,7 +97,7 @@ def ensure_tables():
     # User profile table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS user_profile (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT UNIQUE NOT NULL DEFAULT 'default',
             full_name TEXT,
             role TEXT,
@@ -132,7 +132,7 @@ def ensure_tables():
     # Proof points table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS proof_points (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL DEFAULT 'default',
             deals_closed_12mo INTEGER,
             total_volume_12mo REAL,
@@ -151,7 +151,7 @@ def ensure_tables():
     # Cold call queue table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cold_call_queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             user_id TEXT NOT NULL DEFAULT 'default',
             name TEXT NOT NULL,
             phone TEXT,
@@ -179,7 +179,7 @@ def ensure_tables():
     # Contact match table (for Why Me data)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS contact_match (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             contact_id INTEGER NOT NULL,
             user_id TEXT NOT NULL DEFAULT 'default',
             match_score REAL,
