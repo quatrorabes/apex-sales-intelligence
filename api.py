@@ -225,3 +225,158 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
     logger.info(f"🚀 Starting APEX Backend on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# ============= CONTACT CRUD =============
+@app.route('/api/contacts', methods=['POST'])
+def create_contact():
+    try:
+        data = request.get_json()
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO contacts (name, email, company, title, phone)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            data.get('name'),
+            data.get('email'),
+            data.get('company'),
+            data.get('title'),
+            data.get('phone')
+        ))
+        contact_id = cursor.fetchone()['id']
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True, 'id': contact_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>', methods=['PUT'])
+def update_contact(contact_id):
+    try:
+        data = request.get_json()
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Build dynamic update
+        fields = []
+        values = []
+        for key in ['name', 'email', 'company', 'title', 'phone', 'notes']:
+            if key in data:
+                fields.append(f"{key} = %s")
+                values.append(data[key])
+        
+        if fields:
+            values.append(contact_id)
+            cursor.execute(f"UPDATE contacts SET {', '.join(fields)} WHERE id = %s", values)
+            conn.commit()
+        
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>', methods=['DELETE'])
+def delete_contact(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM contacts WHERE id = %s", (contact_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= ENRICHMENT =============
+@app.route('/api/contacts/<int:contact_id>/enrich', methods=['POST'])
+def enrich_contact(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        
+        if not contact:
+            conn.close()
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        # Mark as processing
+        cursor.execute("UPDATE contacts SET enrichment_status = 'processing' WHERE id = %s", (contact_id,))
+        conn.commit()
+        conn.close()
+        
+        # TODO: Actual enrichment logic
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'message': 'Enrichment started'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/enrichment-status', methods=['GET'])
+def get_enrichment_status(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT enrichment_status, enriched_at FROM contacts WHERE id = %s", (contact_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        return jsonify({
+            'status': row['enrichment_status'] or 'pending',
+            'enriched_at': row['enriched_at']
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ============= CADENCES =============
+@app.route('/api/cadences', methods=['GET'])
+def get_cadences():
+    # Return default cadences for now
+    return jsonify({
+        'cadences': [
+            {'id': 1, 'name': 'Default Outreach', 'steps': 5, 'contacts': 0},
+            {'id': 2, 'name': 'High Priority', 'steps': 3, 'contacts': 0},
+            {'id': 3, 'name': 'Nurture', 'steps': 7, 'contacts': 0}
+        ]
+    })
+
+@app.route('/api/cadences/<int:cadence_id>', methods=['GET'])
+def get_cadence(cadence_id):
+    return jsonify({
+        'id': cadence_id,
+        'name': 'Default Cadence',
+        'steps': [],
+        'contacts': []
+    })
+
+# ============= PLAYBOOK =============
+@app.route('/api/playbook', methods=['GET'])
+def get_playbook():
+    try:
+        import json
+        playbook_file = os.path.join(os.path.dirname(__file__), 'playbook.json')
+        if os.path.exists(playbook_file):
+            with open(playbook_file, 'r') as f:
+                return jsonify(json.load(f))
+        return jsonify({'configured': False})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/playbook', methods=['POST'])
+def save_playbook():
+    try:
+        import json
+        data = request.get_json()
+        playbook_file = os.path.join(os.path.dirname(__file__), 'playbook.json')
+        with open(playbook_file, 'w') as f:
+            json.dump(data, f, indent=2)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
