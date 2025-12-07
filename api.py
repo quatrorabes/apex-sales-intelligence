@@ -74,12 +74,6 @@ def get_db():
     return conn
 
 # Initialize database (safely)
-try:
-    ensure_tables()
-except Exception as e:
-    logger.warning(f"DB init note: {e}")
-
-
 def ensure_tables():
     """Ensure all required tables and columns exist."""
     conn = get_db()
@@ -379,6 +373,13 @@ Provide:
 app = Flask(__name__)
 
 # DEBUG: Route registration checker
+
+# Initialize database tables
+try:
+    ensure_tables()
+except Exception as e:
+    logger.warning(f"DB init: {e}")
+
 @app.route('/api/debug/routes', methods=['GET'])
 def debug_routes():
     """List all registered routes"""
