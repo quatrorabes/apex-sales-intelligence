@@ -1303,8 +1303,59 @@ def get_smart_list_contacts(list_id):
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
+# TODAY'S BOARD - Required by frontend dashboard
+# ============================================================================
+@app.route('/api/todays-board', methods=['GET'])
+def get_todays_board():
+  try:
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute(f"""
+      SELECT {CONTACT_COLUMNS} FROM contacts 
+      WHERE match_score IS NOT NULL 
+      ORDER BY match_score DESC LIMIT 100
+    """)
+    contacts = [safe_dict(row) for row in cursor.fetchall()]
+    
+    cursor.execute('SELECT COUNT(*) as count FROM contacts')
+    total = cursor.fetchone()['count']
+    
+    cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
+    enriched = cursor.fetchone()['count']
+    
+    conn.close()
+    
+    high = [c for c in contacts if c.get('match_tier') == 'HIGH']
+    medium = [c for c in contacts if c.get('match_tier') == 'MEDIUM']
+    low = [c for c in contacts if c.get('match_tier') == 'LOW']
+    
+    return jsonify({
+      'success': True,
+      'date': datetime.now().strftime('%B %d, %Y'),
+      'stats': {
+        'total_contacts': total,
+        'enriched': enriched,
+        'high_match': len(high),
+        'medium_match': len(medium),
+        'low_match': len(low)
+      },
+      'segments': {
+        'high': high[:12],
+        'medium': medium[:12],
+        'low': low[:12]
+      },
+      'top_priority': contacts[:20]
+    })
+  except Exception as e:
+    logger.error(f"todays_board error: {e}")
+    return jsonify({'error': str(e)}), 500
+  
+
+# ============================================================================
 # MAIN - MUST BE LAST
 # ============================================================================
 if __name__ == '__main__':
     logger.info(f"Starting Apex API on port {PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=False)
+  
