@@ -1,5 +1,5 @@
 // src/lib/api.ts - APEX Backend API Integration
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://apex-backend-production-production.up.railway.app";
 
 // Types matching your backend
 export interface Contact {
