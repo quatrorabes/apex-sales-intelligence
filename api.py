@@ -1035,6 +1035,52 @@ def download_file():
         }), 501
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+# ============= SMART LIST CONTACTS =============
+@app.route('/api/smart-lists/<list_id>/contacts', methods=['GET'])
+def get_smart_list_contacts(list_id):
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Map list_id to SQL filter
+        filters = {
+            'hot_leads': "match_tier = 'HIGH'",
+            'warm_leads': "match_tier = 'MEDIUM'",
+            'cold_leads': "match_tier = 'LOW' OR match_tier IS NULL",
+            'enriched': "enrichment_status = 'completed'",
+            'needs_enrichment': "enrichment_status IS NULL OR enrichment_status != 'completed'",
+            'recent': "created_at > NOW() - INTERVAL '7 days'",
+            'all': "1=1"
+        }
+        
+        where_clause = filters.get(list_id, "1=1")
+        
+        cursor.execute(f"""
+            SELECT * FROM contacts 
+            WHERE {where_clause}
+            ORDER BY match_score DESC NULLS LAST, id DESC
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+        contacts = [dict(row) for row in cursor.fetchall()]
+        
+        cursor.execute(f"SELECT COUNT(*) as count FROM contacts WHERE {where_clause}")
+        total = cursor.fetchone()['count']
+        
+        conn.close()
+        
+        return jsonify({
+            'contacts': contacts,
+            'total': total,
+            'list_id': list_id,
+            'limit': limit,
+            'offset': offset
+        })
+    except Exception as e:
+        logger.error(f"Smart list error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 # ============= RUN =============
 if __name__ == '__main__':
