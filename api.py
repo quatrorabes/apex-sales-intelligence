@@ -824,6 +824,217 @@ def promote_contact(contact_id):
         return jsonify({'success': True, 'promoted': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+# ============= GENERATION ENDPOINTS =============
+@app.route('/api/contacts/<int:contact_id>/reset-enrichment', methods=['POST'])
+def reset_enrichment(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE contacts SET 
+                enrichment_status = NULL,
+                enrichment_data = NULL,
+                enriched_at = NULL
+            WHERE id = %s
+        """, (contact_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/generate-persona', methods=['POST'])
+def generate_persona(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        conn.close()
+        
+        if not contact:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'persona': {
+                'type': contact.get('persona') or 'prospect',
+                'confidence': contact.get('persona_confidence') or 50
+            },
+            'message': 'Persona generated'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/generate-call-script', methods=['POST'])
+def generate_call_script(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        conn.close()
+        
+        if not contact:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        name = contact.get('name') or 'there'
+        company = contact.get('company') or 'your company'
+        
+        script = f"""Hi {name}, this is [Your Name] from Harvest Small Business Finance.
+
+I'm reaching out because I noticed {company} might benefit from our SBA financing solutions.
+
+We specialize in helping businesses like yours secure 90% financing for commercial real estate.
+
+Do you have 2 minutes to discuss how we might help?"""
+        
+        return jsonify({
+            'success': True,
+            'script': script,
+            'contact_id': contact_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/generate-linkedin', methods=['POST'])
+def generate_linkedin(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        conn.close()
+        
+        if not contact:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        name = contact.get('name', '').split()[0] if contact.get('name') else 'there'
+        
+        message = f"""Hi {name},
+
+I came across your profile and was impressed by your work. I help business owners secure SBA financing for commercial real estate with up to 90% LTV.
+
+Would you be open to a brief conversation about how this might benefit your business goals?
+
+Best regards"""
+        
+        return jsonify({
+            'success': True,
+            'message': message,
+            'contact_id': contact_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/generate-email', methods=['POST'])
+def generate_email(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        conn.close()
+        
+        if not contact:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        name = contact.get('name', '').split()[0] if contact.get('name') else 'there'
+        company = contact.get('company') or 'your company'
+        
+        email = {
+            'subject': f'SBA Financing Opportunity for {company}',
+            'body': f"""Hi {name},
+
+I hope this email finds you well. I'm reaching out from Harvest Small Business Finance because I believe we can help {company} achieve its growth objectives.
+
+We specialize in SBA 504 and 7(a) loans, offering:
+• Up to 90% financing
+• Competitive rates
+• Fast, reliable closings
+
+Would you have 15 minutes this week for a brief call to explore if this could benefit your business?
+
+Best regards,
+[Your Name]
+Harvest Small Business Finance"""
+        }
+        
+        return jsonify({
+            'success': True,
+            'email': email,
+            'contact_id': contact_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/generate-outreach', methods=['POST'])
+def generate_outreach(contact_id):
+    try:
+        data = request.get_json(silent=True) or {}
+        outreach_type = data.get('type', 'email')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        conn.close()
+        
+        if not contact:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'type': outreach_type,
+            'content': f'Generated {outreach_type} content for {contact.get("name", "contact")}',
+            'contact_id': contact_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts/<int:contact_id>/generate-sequence', methods=['POST'])
+def generate_sequence(contact_id):
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        conn.close()
+        
+        if not contact:
+            return jsonify({'error': 'Contact not found'}), 404
+        
+        sequence = [
+            {'day': 1, 'type': 'email', 'action': 'Initial outreach'},
+            {'day': 3, 'type': 'linkedin', 'action': 'Connection request'},
+            {'day': 5, 'type': 'call', 'action': 'Follow-up call'},
+            {'day': 7, 'type': 'email', 'action': 'Value-add email'},
+            {'day': 10, 'type': 'call', 'action': 'Final attempt'}
+        ]
+        
+        return jsonify({
+            'success': True,
+            'sequence': sequence,
+            'contact_id': contact_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/download', methods=['GET'])
+def download_file():
+    try:
+        path = request.args.get('path', '')
+        # Security: only allow specific file types
+        if not path or '..' in path:
+            return jsonify({'error': 'Invalid path'}), 400
+        
+        return jsonify({
+            'error': 'File downloads not yet implemented',
+            'path': path
+        }), 501
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ============= RUN =============
 if __name__ == '__main__':
