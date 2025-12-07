@@ -75,7 +75,11 @@ def get_db():
 
 
 def try:
+    try:
     ensure_tables()
+except Exception as e:
+    logger.error(f"Database migration error (non-fatal): {e}")
+    # Continue anyway - tables may already exist
 except Exception as e:
     logger.error(f"Database migration error (non-fatal): {e}")
     # Continue anyway - tables may already exist:
