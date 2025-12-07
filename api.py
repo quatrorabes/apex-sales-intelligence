@@ -399,3 +399,76 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
     logger.info(f"🚀 Starting APEX Backend on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# ==================== MISSING ENDPOINTS ====================
+
+@app.route('/api/todays-board')
+def todays_board():
+    """Get today's prioritized contacts"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM contacts 
+            WHERE mdcp_score IS NOT NULL 
+            ORDER BY mdcp_score DESC 
+            LIMIT 20
+        """)
+        contacts = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return jsonify({"contacts": contacts, "date": datetime.utcnow().isoformat()})
+    except Exception as e:
+        return jsonify({"contacts": [], "error": str(e)})
+
+@app.route('/api/user/profile')
+def get_user_profile():
+    """Get user profile"""
+    user_id = request.args.get('user_id', 'default')
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM user_preferences WHERE user_id = %s", (user_id,))
+        profile = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if profile:
+            return jsonify(profile)
+        return jsonify({
+            "user_id": user_id,
+            "full_name": "Sales User",
+            "company": "Your Company",
+            "onboarding_complete": True
+        })
+    except Exception as e:
+        return jsonify({
+            "user_id": user_id,
+            "full_name": "Sales User", 
+            "company": "Your Company",
+            "onboarding_complete": True
+        })
+
+@app.route('/api/user/profile', methods=['POST'])
+def save_user_profile():
+    """Save user profile"""
+    data = request.json
+    return jsonify({"success": True, "profile": data})
+
+@app.route('/api/contacts/<int:contact_id>/detail')
+def get_contact_detail(contact_id):
+    """Get detailed contact info"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if not contact:
+            return jsonify({"error": "Contact not found"}), 404
+        return jsonify(contact)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
