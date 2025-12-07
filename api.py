@@ -394,7 +394,7 @@ def get_contacts():
     cursor.execute('SELECT * FROM contacts ORDER BY match_score DESC NULLS LAST, id DESC LIMIT ? OFFSET ?', (limit, offset))
     contacts = [dict(row) for row in cursor.fetchall()]
     cursor.execute('SELECT COUNT(*) FROM contacts')
-    total = cursor.fetchone()[0]
+    total = cursor.fetchone()['count']
     conn.close()
     return jsonify({'contacts': contacts, 'total': total})
 
@@ -812,9 +812,9 @@ def get_todays_board():
 
     # Stats
     cursor.execute("SELECT COUNT(*) FROM contacts")
-    total = cursor.fetchone()[0]
+    total = cursor.fetchone()['count']
     cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
-    enriched = cursor.fetchone()[0]
+    enriched = cursor.fetchone()['count']
 
     # Cold call stats
     cold_stats = {}
@@ -1853,14 +1853,14 @@ def get_cadence_stats():
         SELECT COUNT(*) FROM cadence_activities 
         WHERE date(completed_at) = date('now')
     ''')
-    stats['activities_today'] = cursor.fetchone()[0]
+    stats['activities_today'] = cursor.fetchone()['count']
     
     # Due today
     cursor.execute('''
         SELECT COUNT(*) FROM cadence_enrollments 
         WHERE status = 'active' AND next_action_date <= date('now')
     ''')
-    stats['due_today'] = cursor.fetchone()[0]
+    stats['due_today'] = cursor.fetchone()['count']
     
     conn.close()
     
@@ -1965,15 +1965,15 @@ def get_analytics():
     
     # Total contacts
     cursor.execute("SELECT COUNT(*) FROM contacts")
-    total_contacts = cursor.fetchone()[0]
+    total_contacts = cursor.fetchone()['count']
     
     # Enriched contacts
     cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
-    enriched_contacts = cursor.fetchone()[0]
+    enriched_contacts = cursor.fetchone()['count']
     
     # Scored contacts
     cursor.execute("SELECT COUNT(*) FROM contacts WHERE match_score IS NOT NULL")
-    scored_contacts = cursor.fetchone()[0]
+    scored_contacts = cursor.fetchone()['count']
     
     # Tier distribution
     cursor.execute("""
@@ -2132,7 +2132,7 @@ def get_smart_lists():
         'description': 'High match score, enriched and ready',
         'icon': 'flame',
         'color': 'red',
-        'count': cursor.fetchone()[0],
+        'count': cursor.fetchone()['count'],
         'filter': {'match_tier': 'HIGH', 'enrichment_status': 'completed'}
     })
     
@@ -2149,7 +2149,7 @@ def get_smart_lists():
         'description': 'Has contact info, scored 50+',
         'icon': 'phone',
         'color': 'green',
-        'count': cursor.fetchone()[0],
+        'count': cursor.fetchone()['count'],
         'filter': {'enrichment_status': 'completed', 'min_score': 50, 'has_contact': True}
     })
     
@@ -2164,7 +2164,7 @@ def get_smart_lists():
         'description': 'Not yet enriched',
         'icon': 'zap',
         'color': 'yellow',
-        'count': cursor.fetchone()[0],
+        'count': cursor.fetchone()['count'],
         'filter': {'enrichment_status': ['pending', None]}
     })
     
@@ -2179,7 +2179,7 @@ def get_smart_lists():
         'description': 'Great fit, needs nurturing (low timing)',
         'icon': 'clock',
         'color': 'blue',
-        'count': cursor.fetchone()[0],
+        'count': cursor.fetchone()['count'],
         'filter': {'min_fit': 70, 'max_timing': 30}
     })
     
@@ -2197,7 +2197,7 @@ def get_smart_lists():
         'description': 'C-suite and principals',
         'icon': 'crown',
         'color': 'purple',
-        'count': cursor.fetchone()[0],
+        'count': cursor.fetchone()['count'],
         'filter': {'title_contains': ['ceo', 'president', 'owner', 'principal', 'managing director']}
     })
     
@@ -2212,7 +2212,7 @@ def get_smart_lists():
         'description': 'Enriched in last 7 days',
         'icon': 'sparkles',
         'color': 'cyan',
-        'count': cursor.fetchone()[0],
+        'count': cursor.fetchone()['count'],
         'filter': {'enriched_since': '7d'}
     })
     
