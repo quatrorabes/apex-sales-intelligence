@@ -2101,6 +2101,302 @@ def get_contact_activities_detail(contact_id):
         logger.error(f"Activities error: {e}")
         return jsonify({"error": str(e)}), 500
 
+# ============================================================================
+# FRONTEND-COMPATIBLE ENDPOINTS
+# Added: December 7, 2025, 12:41 PM PST
+# Match ContactDetailPage.tsx expectations exactly
+# ============================================================================
+
+# ICP Match - Returns frontend-expected structure
+@app.route('/api/contacts/<int:contact_id>/icp-match', methods=['GET'])
+def get_icp_match_frontend(contact_id):
+    """Frontend-compatible ICP match endpoint"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                id, name, email, company, title,
+                match_score, match_tier,
+                fit_score, relevance_score, timing_score
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Contact not found"}), 404
+        
+        score = contact.get('match_score') or 0
+        tier = contact.get('match_tier') or 'UNSCORED'
+        
+        # Generate match reasons
+        reasons = []
+        if contact.get('fit_score', 0) > 70:
+            reasons.append("Strong company/role fit")
+        if contact.get('relevance_score', 0) > 70:
+            reasons.append("High relevance to services")
+        if contact.get('timing_score', 0) > 70:
+            reasons.append("Positive timing indicators")
+        if contact.get('title') and any(kw in str(contact.get('title', '')).lower() for kw in ['director', 'vp', 'chief', 'head', 'owner']):
+            reasons.append("Decision-maker title")
+        
+        if not reasons:
+            reasons = ["Matches basic criteria"]
+        
+        # Match level
+        if score >= 85:
+            match_level = "EXCELLENT"
+        elif score >= 70:
+            match_level = "GOOD"
+        elif score >= 55:
+            match_level = "FAIR"
+        else:
+            match_level = "POOR"
+        
+        # Why-us-fit points
+        fit_points = [
+            {
+                "type": "valueprop",
+                "title": "Decision Maker Access",
+                "detail": f"{contact.get('name')} in {contact.get('title', 'senior')} role",
+                "impact": "Direct decision maker"
+            },
+            {
+                "type": "painpoint",
+                "title": "Company Profile",
+                "detail": f"{contact.get('company')} matches target profile",
+                "impact": "High solution fit"
+            }
+        ]
+        
+        # Check playbook config
+        cursor.execute("SELECT COUNT(*) as count FROM user_profile WHERE user_id = %s", ('default',))
+        playbook_row = cursor.fetchone()
+        playbook_configured = playbook_row and playbook_row.get('count', 0) > 0
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "contactid": contact_id,
+            "icpmatch": {
+                "score": float(score),
+                "reasons": reasons,
+                "matchlevel": match_level
+            },
+            "whyusfit": {
+                "summary": f"{match_level.lower()} fit based on role and company.",
+                "points": fit_points
+            },
+            "playbookconfigured": playbook_configured
+        })
+        
+    except Exception as e:
+        logger.error(f"ICP match error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# Activities - Returns frontend-expected structure
+@app.route('/api/contacts/<int:contact_id>/activities', methods=['GET'])
+def get_contact_activities_frontend(contact_id):
+    """Frontend-compatible activities endpoint"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                created_at, enriched_at, last_scored, last_contacted,
+                times_contacted, cadence_started_at, cadence_status
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Contact not found"}), 404
+        
+        activities = []
+        
+        if contact.get('created_at'):
+            activities.append({
+                "type": "created",
+                "timestamp": contact['created_at'],
+                "description": "Contact added"
+            })
+        
+        if contact.get('enriched_at'):
+            activities.append({
+                "type": "enrichment",
+                "timestamp": contact['enriched_at'],
+                "description": "Profile enriched"
+            })
+        
+        if contact.get('last_scored'):
+            activities.append({
+                "type": "scoring",
+                "timestamp": contact['last_scored'],
+                "description": "Contact scored"
+            })
+        
+        if contact.get('last_contacted'):
+            activities.append({
+                "type": "contact",
+                "timestamp": contact['last_contacted'],
+                "description": f"Contacted ({contact.get('times_contacted', 0)}x total)"
+            })
+        
+        if contact.get('cadence_started_at'):
+            activities.append({
+                "type": "cadence",
+                "timestamp": contact['cadence_started_at'],
+                "description": f"Cadence: {contact.get('cadence_status', 'active')}"
+            })
+        
+        # Sort by timestamp desc
+        activities.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "activities": activities,
+            "count": len(activities)
+        })
+        
+    except Exception as e:
+        logger.error(f"Activities error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# Meeting Prep - Returns frontend-expected structure
+@app.route('/api/contacts/<int:contact_id>/meeting-prep', methods=['GET', 'POST'])
+def meeting_prep_frontend(contact_id):
+    """Frontend-compatible meeting prep endpoint"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        if request.method == 'GET':
+            cursor.execute("""
+                SELECT meeting_prep_data, meeting_prep_generated_at 
+                FROM contacts 
+                WHERE id = %s
+            """, (contact_id,))
+            
+            contact = cursor.fetchone()
+            if not contact:
+                cursor.close()
+                conn.close()
+                return jsonify({"error": "Contact not found"}), 404
+            
+            if contact.get('meeting_prep_data'):
+                try:
+                    prep_data = json.loads(contact['meeting_prep_data'])
+                    cursor.close()
+                    conn.close()
+                    return jsonify({
+                        "meeting_prep": prep_data,
+                        "generated_at": contact.get('meeting_prep_generated_at')
+                    })
+                except:
+                    pass
+            
+            cursor.close()
+            conn.close()
+            return jsonify({"meeting_prep": None}), 200
+        
+        # POST - generate meeting prep
+        cursor.execute("""
+            SELECT name, title, company, enrichment_data 
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        contact = cursor.fetchone()
+        if not contact:
+            cursor.close()
+            conn.close()
+            return jsonify({"error": "Contact not found"}), 404
+        
+        meeting_prep = {
+            "contact_overview": {
+                "name": contact.get('name', ''),
+                "title": contact.get('title', ''),
+                "company": contact.get('company', '')
+            },
+            "talking_points": [
+                "Discuss their company's priorities",
+                "Address relevant pain points",
+                "Present solution overview"
+            ],
+            "questions_to_ask": [
+                "What are your top priorities?",
+                "What challenges are you facing?",
+                "What's your decision process?"
+            ],
+            "objectives": [
+                "Understand needs",
+                "Demonstrate value",
+                "Schedule next steps"
+            ]
+        }
+        
+        cursor.execute("""
+            UPDATE contacts 
+            SET meeting_prep_data = %s, 
+                meeting_prep_generated_at = NOW()
+            WHERE id = %s
+        """, (json.dumps(meeting_prep), contact_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "meeting_prep": meeting_prep,
+            "generated_at": datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        logger.error(f"Meeting prep error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# Enrollments - For cadence modal
+@app.route('/api/contacts/<int:contact_id>/enrollments', methods=['GET'])
+def get_contact_enrollments_frontend(contact_id):
+    """Get cadence enrollments for a contact"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT e.*, c.name as cadence_name
+            FROM cadence_enrollments e
+            LEFT JOIN cadences c ON e.cadence_id = c.id
+            WHERE e.contact_id = %s
+            ORDER BY e.started_at DESC
+        """, (contact_id,))
+        
+        enrollments = [dict(row) for row in cursor.fetchall()]
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({"enrollments": enrollments})
+        
+    except Exception as e:
+        logger.error(f"Enrollments error: {e}")
+        return jsonify({"enrollments": []})
+
+
 if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info("🚀 APEX API SERVER v4.0")
