@@ -388,6 +388,24 @@ def debug_routes():
         'routes': sorted(routes, key=lambda x: x['path'])
     })
 
+
+# DEBUG: Route registration checker
+@app.route('/api/debug/routes', methods=['GET'])
+def debug_routes():
+    """List all registered routes"""
+    from flask import jsonify
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            'endpoint': rule.endpoint,
+            'methods': sorted(list(rule.methods - {'HEAD', 'OPTIONS'})),
+            'path': str(rule.rule)
+        })
+    return jsonify({
+        'total': len(routes),
+        'routes': sorted(routes, key=lambda x: x['path'])
+    })
+
 CORS(app)
 
 
