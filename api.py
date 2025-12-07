@@ -402,78 +402,8 @@ if __name__ == '__main__':
 
 # ==================== MISSING ENDPOINTS ====================
 
-@app.route('/api/todays-board')
-def todays_board():
-    """Get today's prioritized contacts"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT * FROM contacts 
-            WHERE mdcp_score IS NOT NULL 
-            ORDER BY mdcp_score DESC 
-            LIMIT 20
-        """)
-        contacts = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return jsonify({"contacts": contacts, "date": datetime.utcnow().isoformat()})
-    except Exception as e:
-        return jsonify({"contacts": [], "error": str(e)})
 
-@app.route('/api/user/profile')
-def get_user_profile():
-    """Get user profile"""
-    user_id = request.args.get('user_id', 'default')
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM user_preferences WHERE user_id = %s", (user_id,))
-        profile = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if profile:
-            return jsonify(profile)
-        return jsonify({
-            "user_id": user_id,
-            "full_name": "Sales User",
-            "company": "Your Company",
-            "onboarding_complete": True
-        })
-    except Exception as e:
-        return jsonify({
-            "user_id": user_id,
-            "full_name": "Sales User", 
-            "company": "Your Company",
-            "onboarding_complete": True
-        })
-
-@app.route('/api/user/profile', methods=['POST'])
-def save_user_profile():
-    """Save user profile"""
-    data = request.json
-    return jsonify({"success": True, "profile": data})
-
-@app.route('/api/contacts/<int:contact_id>/detail')
-def get_contact_detail(contact_id):
-    """Get detailed contact info"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
-        contact = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        if not contact:
-            return jsonify({"error": "Contact not found"}), 404
-        return jsonify(contact)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ==================== ADDITIONAL ENDPOINTS ====================
+# ==================== DASHBOARD ENDPOINTS ====================
 
 @app.route('/api/todays-board')
 def todays_board():
@@ -482,19 +412,21 @@ def todays_board():
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT * FROM contacts 
-            WHERE mdcp_score IS NOT NULL 
-            ORDER BY mdcp_score DESC 
+            SELECT id, firstname, lastname, email, company, title, 
+                   phone, linkedin_url, mdcp_score, enrichment_status
+            FROM contacts 
+            ORDER BY mdcp_score DESC NULLS LAST
             LIMIT 20
         """)
-        contacts = cursor.fetchall()
+        rows = cursor.fetchall()
+        contacts = [dict(row) for row in rows] if rows else []
         cursor.close()
         conn.close()
-        return jsonify({"contacts": [dict(c) for c in contacts] if contacts else [], "date": datetime.utcnow().isoformat()})
+        return jsonify({"contacts": contacts, "count": len(contacts)})
     except Exception as e:
         return jsonify({"contacts": [], "error": str(e)})
 
-@app.route('/api/user/profile')
+@app.route('/api/user/profile', methods=['GET'])
 def get_user_profile():
     """Get user profile"""
     user_id = request.args.get('user_id', 'default')
@@ -509,7 +441,7 @@ def get_user_profile():
 @app.route('/api/user/profile', methods=['POST'])
 def save_user_profile():
     """Save user profile"""
-    data = request.json
+    data = request.json or {}
     return jsonify({"success": True, "profile": data})
 
 @app.route('/api/smart-lists')
@@ -518,19 +450,17 @@ def get_smart_lists():
     try:
         conn = get_db()
         cursor = conn.cursor()
-        
-        # Hot leads
-        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE mdcp_score >= 80")
-        hot = cursor.fetchone()['count'] if cursor.fetchone() else 0
-        
+        cursor.execute("SELECT COUNT(*) FROM contacts WHERE mdcp_score >= 80")
+        hot_count = cursor.fetchone()[0] or 0
+        cursor.execute("SELECT COUNT(*) FROM contacts WHERE mdcp_score >= 60 AND mdcp_score < 80")
+        warm_count = cursor.fetchone()[0] or 0
         cursor.close()
         conn.close()
-        
         return jsonify({
             "lists": [
-                {"id": 1, "name": "Hot Leads", "count": hot, "criteria": "mdcp_score >= 80"},
-                {"id": 2, "name": "Needs Enrichment", "count": 0, "criteria": "enrichment_status = pending"},
-                {"id": 3, "name": "Recently Active", "count": 0, "criteria": "last_activity < 7 days"}
+                {"id": 1, "name": "Hot Leads", "count": hot_count},
+                {"id": 2, "name": "Warm Leads", "count": warm_count},
+                {"id": 3, "name": "Needs Enrichment", "count": 0}
             ]
         })
     except Exception as e:
@@ -538,7 +468,7 @@ def get_smart_lists():
 
 @app.route('/api/contacts/<int:contact_id>/detail')
 def get_contact_detail(contact_id):
-    """Get detailed contact info"""
+    """Get contact detail"""
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -546,10 +476,14 @@ def get_contact_detail(contact_id):
         contact = cursor.fetchone()
         cursor.close()
         conn.close()
-        
         if not contact:
             return jsonify({"error": "Contact not found"}), 404
         return jsonify(dict(contact))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ==================== MAIN ====================
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False)
