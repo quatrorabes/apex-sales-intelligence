@@ -404,6 +404,20 @@ def todays_board():
     try:
         conn = get_db()
         cursor = conn.cursor()
+        
+        # Get total count
+        cursor.execute("SELECT COUNT(*) FROM contacts")
+        total = cursor.fetchone()[0]
+        
+        # Get high priority count
+        cursor.execute("SELECT COUNT(*) FROM contacts WHERE mdcp_score >= 80")
+        high_priority = cursor.fetchone()[0]
+        
+        # Get enriched count
+        cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+        enriched = cursor.fetchone()[0]
+        
+        # Get top contacts
         cursor.execute("""
             SELECT id, firstname, lastname, email, company, title, 
                    phone, linkedin_url, mdcp_score, enrichment_status
@@ -415,9 +429,19 @@ def todays_board():
         contacts = [dict(row) for row in rows] if rows else []
         cursor.close()
         conn.close()
-        return jsonify({"contacts": contacts, "count": len(contacts), "total_contacts": len(contacts)})
+        
+        return jsonify({
+            "contacts": contacts,
+            "count": len(contacts),
+            "stats": {
+                "total_contacts": total,
+                "high_priority": high_priority,
+                "enriched": enriched,
+                "in_call_queue": 0
+            }
+        })
     except Exception as e:
-        return jsonify({"contacts": [], "error": str(e)})
+        return jsonify({"contacts": [], "stats": {"total_contacts": 0, "high_priority": 0, "enriched": 0, "in_call_queue": 0}, "error": str(e)})
 
 @app.route('/api/user/profile', methods=['GET'])
 def get_user_profile():
