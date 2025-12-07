@@ -79,6 +79,8 @@ try:
 except Exception as e:
     logger.warning(f"DB init note: {e}")
 
+
+def ensure_tables():
     """Ensure all required tables and columns exist."""
     conn = get_db()
     cursor = conn.cursor()
