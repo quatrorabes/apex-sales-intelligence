@@ -406,16 +406,16 @@ def todays_board():
         cursor = conn.cursor()
         
         # Get total count
-        cursor.execute("SELECT COUNT(*) FROM contacts")
-        total = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as cnt FROM contacts")
+        total = cursor.fetchone()['cnt']
         
         # Get high priority count
-        cursor.execute("SELECT COUNT(*) FROM contacts WHERE mdcp_score >= 80")
-        high_priority = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE mdcp_score >= 80")
+        high_priority = cursor.fetchone()['cnt']
         
         # Get enriched count
-        cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
-        enriched = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as cnt FROM contacts WHERE enrichment_status = 'completed'")
+        enriched = cursor.fetchone()['cnt']
         
         # Get top contacts
         cursor.execute("""
