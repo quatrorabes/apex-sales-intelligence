@@ -361,47 +361,47 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const dos: string[] = [];
   const donts: string[] = [];
   let opening = '';
-  
+
   const playbookMatch = text.match(/Communication DO's and DON'Ts/i);
   if (!playbookMatch || playbookMatch.index === undefined) {
     return { dos, donts, opening };
   }
-  
+
   const playbookText = text.substring(playbookMatch.index);
-  
-  const doMatch = playbookText.match(/[✅]?\s*DO:?\s*(?:How to Engage)?\s*([\s\S]*?)(?=[❌]?\s*DON'?T:|$)/i);
+
+  // Match DO's section: Look for "**DO's:**" or "- **DO's:**" followed by bullet points
+  const doMatch = playbookText.match(/\*\*DO'?s?:?\*\*\s*([\s\S]*?)(?=\*\*DON'?T|$)/i);
   if (doMatch && doMatch[1]) {
     doMatch[1].split('\n').forEach(line => {
       const cleaned = line.replace(/^[-•*]\s*/, '').replace(/\*\*/g, '').trim();
-      const isValid = cleaned.length > 15 &&
+      const isValid = cleaned.length > 10 &&
         !cleaned.match(/^DO$/i) &&
         !cleaned.match(/^#{2,}/) &&
-        !cleaned.match(/Style:/i) &&
-        !cleaned.match(/^(Dominance|Conscientiousness|Influence|Steadiness)/i) &&
-        !cleaned.match(/^\w+\s*\([DISC]\):/i) &&
-        !cleaned.match(/^(Primary|Secondary)/i);
+        !cleaned.match(/Communication/i);
       if (isValid) dos.push(cleaned);
     });
   }
-  
-  const dontMatch = playbookText.match(/[❌]?\s*DON'?T:?\s*(?:What to Avoid)?\s*([\s\S]*?)(?=[🎯]?\s*Best Opening|$)/i);
+
+  // Match DON'Ts section: Look for "**DON'Ts:**" or "- **DON'Ts:**" followed by bullet points
+  const dontMatch = playbookText.match(/\*\*DON'?T'?s?:?\*\*\s*([\s\S]*?)(?=\*\*Best Opening|\n\n#{2,}|$)/i);
   if (dontMatch && dontMatch[1]) {
     dontMatch[1].split('\n').forEach(line => {
       const cleaned = line.replace(/^[-•*]\s*/, '').replace(/\*\*/g, '').trim();
-      const isValid = cleaned.length > 15 && !cleaned.match(/^DON'?T$/i) && !cleaned.match(/^#{2,}/);
+      const isValid = cleaned.length > 10 && 
+        !cleaned.match(/^DON'?T$/i) && 
+        !cleaned.match(/^#{2,}/);
       if (isValid) donts.push(cleaned);
     });
   }
-  
-  const openMatch = playbookText.match(/[🎯]?\s*Best Opening(?: Approach)?:?\s*([\s\S]*?)(?=\n\n\n|={3,}|$)/i);
+
+  // Match Best Opening section
+  const openMatch = playbookText.match(/Best Opening(?: Approach)?.*?:\s*([\s\S]*?)(?=\n\n\n|={3,}|###|$)/i);
   if (openMatch && openMatch[1]) {
     opening = openMatch[1].replace(/\*\*/g, '').replace(/^[-•*]\s*/gm, '').trim().substring(0, 400);
   }
-  
+
   return { dos: dos.slice(0, 5), donts: donts.slice(0, 5), opening };
 }
-
-// =============================================================================
 // UI COMPONENTS
 // =============================================================================
 
