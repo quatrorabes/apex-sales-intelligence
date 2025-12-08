@@ -380,42 +380,53 @@ export default function Settings() {
   // SAVE PLAYBOOK
   // ---------------------------------------------------------------------------
   const savePlaybook = async () => {
-    setSaving(true);
-    const updated = { ...playbook, lastUpdated: new Date().toISOString() };
-    setPlaybook(updated);
-
-    // Save to localStorage first (always works)
-    localStorage.setItem('apex_playbook', JSON.stringify(updated));
-    console.log('✅ Saved to localStorage');
-
-    // Try to save to backend (critical for multi-device sync)
+    console.log('🔄 Saving playbook...', {
+      companyName: playbook.companyName,
+      productsCount: playbook.products.length,
+      icpIndustries: playbook.icp.industries.length
+    });
+    
     try {
-      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/playbook', {
+      // Save to localStorage first (immediate feedback)
+      localStorage.setItem('salesPlaybook', JSON.stringify(playbook));
+      console.log('✅ Saved to localStorage');
+      
+      // Attempt backend sync for multi-device persistence
+      const response = await fetch(`${API_BASE_URL}/api/playbook`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated)
+        body: JSON.stringify(playbook)
       });
       
-      if (res.ok) {
-        console.log('✅ Playbook saved to backend - synced across devices!');
-        // Show success message
-        setTimeout(() => {
-          setSaving(false);
-          setSaved(true);
-          setTimeout(() => setSaved(false), 3000);
-        }, 500);
-      } else {
-        console.error('❌ Backend save failed with status:', res.status);
-        alert('⚠️ Saved locally only. Backend sync failed. Changes may not appear on other devices.');
-        setSaving(false);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Backend save failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
+        throw new Error(`Backend returned ${response.status}: ${errorText}`);
       }
-    } catch (e) {
-      console.error('❌ Backend save failed:', e);
-      alert('⚠️ Saved locally only. Backend not reachable. Changes will NOT sync to other devices.');
-      setSaving(false);
+      
+      const result = await response.json();
+      console.log('✅ Backend sync successful:', result);
+      
+      alert('✅ Sales Playbook saved and synced across all devices!');
+      
+    } catch (error) {
+      console.error('⚠️ Backend sync failed, saved locally only:', error);
+      
+      // User-facing message with context
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      alert(
+        `⚠️ Playbook saved locally but could not sync to server.\n\n` +
+        `Error: ${errorMsg}\n\n` +
+        `Your changes are saved on this device only. ` +
+        `Check your internet connection or contact support if this persists.`
+      );
     }
   };
-
+  
   // Save API keys
   const saveApiKeys = () => {
     localStorage.setItem('apex_api_keys', JSON.stringify(apiKeys));
