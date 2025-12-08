@@ -362,17 +362,25 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const donts: string[] = [];
   let opening = '';
 
-  // Find the Communication section
-  const commIdx = text.search(/###.*Communication.*DO/i);
-  if (commIdx === -1) return { dos, donts, opening };
+  console.log('🔍 parseCommPlaybook called, text length:', text.length);
 
-  const commText = text.substring(commIdx);
+  // Find Communication section - search anywhere in text
+  const commMatch = text.match(/Communication.*DO['']?s?.*DON['']?T/i);
+  if (!commMatch || commMatch.index === undefined) {
+    console.log('❌ Communication section not found');
+    return { dos, donts, opening };
+  }
+
+  const commText = text.substring(commMatch.index);
+  console.log('✅ Communication section found, length:', commText.length);
 
   // Handle BOTH straight (') and curly (') apostrophes
   const doStart = commText.search(/DO['']?s?:/i);
   const dontStart = commText.search(/DON['']?T['']?s?:/i);
   
-  if (doStart !== -1 && dontStart !== -1) {
+  console.log('📍 DO start:', doStart, 'DONT start:', dontStart);
+
+  if (doStart !== -1 && dontStart !== -1 && dontStart > doStart) {
     const doSection = commText.substring(doStart, dontStart);
     doSection.split('\n').forEach(line => {
       const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
@@ -384,8 +392,8 @@ function parseCommPlaybook(text: string): CommPlaybook {
 
   // Extract DON'Ts
   if (dontStart !== -1) {
-    const bestIdx = commText.search(/###.*Best Opening|^\s*###\s*\d+\)/im);
-    const endIdx = bestIdx !== -1 ? bestIdx : commText.length;
+    const bestIdx = commText.search(/Best Opening/i);
+    const endIdx = bestIdx !== -1 ? bestIdx : Math.min(dontStart + 1000, commText.length);
     const dontSection = commText.substring(dontStart, endIdx);
     
     dontSection.split('\n').forEach(line => {
@@ -397,13 +405,14 @@ function parseCommPlaybook(text: string): CommPlaybook {
   }
 
   // Extract Best Opening
-  const openIdx = commText.search(/Best Opening.*?:/i);
+  const openIdx = commText.search(/Best Opening/i);
   if (openIdx !== -1) {
     const openSection = commText.substring(openIdx);
     const lines = openSection.split('\n').slice(1, 10);
     opening = lines.map(l => l.replace(/\*\*/g, '').trim()).filter(l => l.length > 20).join(' ').substring(0, 400);
   }
 
+  console.log('📊 Final - DOs:', dos.length, 'DONTs:', donts.length);
   return { dos: dos.slice(0, 5), donts: donts.slice(0, 5), opening };
 }
 // UI COMPONENTS
