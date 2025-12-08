@@ -378,8 +378,6 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const doStart = commText.search(doPattern);
   const dontStart = commText.search(dontPattern);
   
-  console.log('📍 DO start:', doStart, 'DONT start:', dontStart);
-  console.log('🔎 commText sample:', commText.substring(0, 300));
 
   if (doStart !== -1 && dontStart !== -1 && dontStart > doStart) {
     const doSection = commText.substring(doStart, dontStart);
@@ -411,7 +409,6 @@ function parseCommPlaybook(text: string): CommPlaybook {
     opening = lines.map(l => l.replace(/\*\*/g, '').trim()).filter(l => l.length > 20).join(' ').substring(0, 400);
   }
 
-  console.log('📊 Final - DOs:', dos.length, 'DONTs:', donts.length);
   return { dos: dos.slice(0, 5), donts: donts.slice(0, 5), opening };
 }
 // UI COMPONENTS
@@ -646,7 +643,6 @@ export default function ContactDetailPage() {
 
   const mbti = parseMBTI(personalitySection);
   const disc = parseDISC(personalitySection);
-  console.log("🧪 personalitySection length:", personalitySection?.length, "preview:", personalitySection?.substring(0, 200));
   const comm = parseCommPlaybook(personalitySection);
 
   // =============================================================================
