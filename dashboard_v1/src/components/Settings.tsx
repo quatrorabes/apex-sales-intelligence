@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ImportWizard from './ImportWizard';
 import {
   Settings as SettingsIcon, BookOpen, Upload, Key, Users, Building2,
   Target, Zap, Trophy, Shield, Plus, Trash2, Save, X,
@@ -314,6 +315,8 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  
 
   // API Keys State
   const [apiKeys, setApiKeys] = useState<APIKey[]>([
@@ -1129,7 +1132,7 @@ export default function Settings() {
                       <p className="text-white font-medium mb-1">CSV / Excel Upload</p>
                       <p className="text-[#8b919a] text-sm mb-4">Drag & drop or click to browse</p>
                       <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium">Choose File</button>
-                    </div>
+                  </div>
                     <div className="bg-[#0d1117] border-2 border-dashed border-[#30363d] rounded-xl p-6 text-center hover:border-emerald-500/50 transition-colors cursor-pointer">
                       <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-3"><Copy size={24} className="text-emerald-400" /></div>
                       <p className="text-white font-medium mb-1">Copy & Paste</p>
@@ -1195,6 +1198,7 @@ export default function Settings() {
                     </div>
                   </div>
                 </SectionCard>
+                <ImportWizard isOpen={importOpen} onClose={() => setImportOpen(false)} onComplete={() => setImportOpen(false)} />
               </div>
             )}
 

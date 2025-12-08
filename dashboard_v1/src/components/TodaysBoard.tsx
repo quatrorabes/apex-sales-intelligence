@@ -67,8 +67,8 @@ export default function TodaysBoard() {
         try {
             const res = await fetch(`${API_URL}/api/user/profile?user_id=default`);
             const profile = await res.json();
-            if (!profile.full_name) {
-                setShowOnboarding(true);
+            if (false) {  // Disabled - playbook is configured
+            setShowOnboarding(true);
             }
         } catch (e) {
             // Ignore
