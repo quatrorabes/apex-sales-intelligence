@@ -356,9 +356,6 @@ function parseDISC(text: string): DISCResult {
 
   return { primary, secondary };
 }
-  
-  return { primary, secondary };
-}
 
 function parseCommPlaybook(text: string): CommPlaybook {
   const dos: string[] = [];
