@@ -259,6 +259,7 @@ function parseMBTI(text: string): MBTIResult {
   if (!text) return { type: 'N/A', confidence: 'N/A', dimensions: [] };
   
   const typePatterns = [
+    /Likely MBTI:?\s*\*?\*?\s*([A-Z]{4})/i,
     /Inferred Type:?\s*\*?\*?\s*([A-Z]{4})(?:\s*\(|\s*\*|\s*$|\n)/i,
     /Type:?\s*\*?\*?\s*([A-Z]{4})(?:\s*\(|\s*\*|\s*$|\n)/i,
     /MBTI[:\s]+\*?\*?\s*([A-Z]{4})/i,
