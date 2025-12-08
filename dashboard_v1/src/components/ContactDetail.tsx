@@ -362,35 +362,35 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const donts: string[] = [];
   let opening = '';
 
-  console.log('🔍 parseCommPlaybook called, text length:', text.length);
-
-  // Find Communication section - search anywhere in text
-  const commMatch = text.match(/Communication.*DO['']?s?.*DON['']?T/i);
+  // Find Communication section
+  const commMatch = text.match(/Communication.*DO/i);
   if (!commMatch || commMatch.index === undefined) {
-    console.log('❌ Communication section not found');
     return { dos, donts, opening };
   }
 
   const commText = text.substring(commMatch.index);
-  console.log('✅ Communication section found, length:', commText.length);
-
-  // Handle BOTH straight (') and curly (') apostrophes
-  const doStart = commText.search(/DO['']?s?:/i);
-  const dontStart = commText.search(/DON['']?T['']?s?:/i);
+  
+  // Use unicode escape \u2019 for curly apostrophe, plus straight apostrophe
+  // Also match with or without asterisks (**)
+  const doPattern = /\*?\*?DO[\u2019']?s?\*?\*?:/i;
+  const dontPattern = /\*?\*?DON[\u2019']?T[\u2019']?s?\*?\*?:/i;
+  
+  const doStart = commText.search(doPattern);
+  const dontStart = commText.search(dontPattern);
   
   console.log('📍 DO start:', doStart, 'DONT start:', dontStart);
+  console.log('🔎 commText sample:', commText.substring(0, 300));
 
   if (doStart !== -1 && dontStart !== -1 && dontStart > doStart) {
     const doSection = commText.substring(doStart, dontStart);
     doSection.split('\n').forEach(line => {
       const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
-      if (clean.length > 15 && !clean.match(/^DO['']?s?:?$/i)) {
+      if (clean.length > 15 && !clean.match(/^DO[\u2019']?s?:?$/i)) {
         dos.push(clean);
       }
     });
   }
 
-  // Extract DON'Ts
   if (dontStart !== -1) {
     const bestIdx = commText.search(/Best Opening/i);
     const endIdx = bestIdx !== -1 ? bestIdx : Math.min(dontStart + 1000, commText.length);
@@ -398,13 +398,12 @@ function parseCommPlaybook(text: string): CommPlaybook {
     
     dontSection.split('\n').forEach(line => {
       const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
-      if (clean.length > 15 && !clean.match(/^DON['']?T['']?s?:?$/i)) {
+      if (clean.length > 15 && !clean.match(/^DON[\u2019']?T[\u2019']?s?:?$/i)) {
         donts.push(clean);
       }
     });
   }
 
-  // Extract Best Opening
   const openIdx = commText.search(/Best Opening/i);
   if (openIdx !== -1) {
     const openSection = commText.substring(openIdx);
