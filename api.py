@@ -1360,7 +1360,120 @@ def get_todays_board():
     logger.error(f"todays_board error: {e}")
     return jsonify({'error': str(e)}), 500
   
+# =============================================================================
+# HUBSPOT INTEGRATION
+# =============================================================================
+HUBSPOT_ACCESS_TOKEN = os.environ.get('HUBSPOT_ACCESS_TOKEN')
 
+@app.route('/api/hubspot/contacts', methods=['GET'])
+def get_hubspot_contacts():
+  """Fetch contacts from HubSpot"""
+  if not HUBSPOT_ACCESS_TOKEN:
+    return jsonify({'error': 'HubSpot not configured'}), 503
+  
+  try:
+    limit = request.args.get('limit', 100, type=int)
+    
+    headers = {
+      'Authorization': f'Bearer {HUBSPOT_ACCESS_TOKEN}',
+      'Content-Type': 'application/json'
+    }
+    
+    url = f'https://api.hubapi.com/crm/v3/objects/contacts?limit={limit}&properties=firstname,lastname,email,phone,company,jobtitle,lifecyclestage'
+    
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+      return jsonify({'error': 'HubSpot API error', 'details': response.text}), response.status_code
+    
+    data = response.json()
+    contacts = []
+    
+    for result in data.get('results', []):
+      props = result.get('properties', {})
+      contacts.append({
+        'hubspot_id': result.get('id'),
+        'firstname': props.get('firstname', ''),
+        'lastname': props.get('lastname', ''),
+        'email': props.get('email', ''),
+        'phone': props.get('phone', ''),
+        'company': props.get('company', ''),
+        'title': props.get('jobtitle', ''),
+      })
+      
+    return jsonify({'contacts': contacts, 'total': len(contacts)})
+  except Exception as e:
+    logger.error(f"HubSpot error: {e}")
+    return jsonify({'error': str(e)}), 500
+  
+  
+@app.route('/api/hubspot/sync', methods=['POST'])
+def sync_hubspot_contacts():
+  """Import contacts from HubSpot into Apex database"""
+  if not HUBSPOT_ACCESS_TOKEN:
+    return jsonify({'error': 'HubSpot not configured'}), 503
+  
+  try:
+    headers = {
+      'Authorization': f'Bearer {HUBSPOT_ACCESS_TOKEN}',
+      'Content-Type': 'application/json'
+    }
+    
+    # Fetch up to 100 contacts
+    url = 'https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=firstname,lastname,email,phone,company,jobtitle,linkedinbio'
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+      return jsonify({'error': 'HubSpot API error'}), response.status_code
+    
+    data = response.json()
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    imported = 0
+    skipped = 0
+    
+    for result in data.get('results', []):
+      props = result.get('properties', {})
+      email = props.get('email', '')
+      
+      # Skip if no email or already exists
+      if not email:
+        skipped += 1
+        continue
+      
+      cursor.execute("SELECT id FROM contacts WHERE email = %s", (email,))
+      if cursor.fetchone():
+        skipped += 1
+        continue
+      
+      firstname = props.get('firstname', '')
+      lastname = props.get('lastname', '')
+      name = f"{firstname} {lastname}".strip()
+      
+      cursor.execute('''
+        INSERT INTO contacts (name, firstname, lastname, email, phone, company, title, source, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+      ''', (
+        name,
+        firstname,
+        lastname,
+        email,
+        props.get('phone', ''),
+        props.get('company', ''),
+        props.get('jobtitle', ''),
+        'hubspot'
+      ))
+      imported += 1
+      
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'imported': imported, 'skipped': skipped})
+  except Exception as e:
+    logger.error(f"HubSpot sync error: {e}")
+    return jsonify({'error': str(e)}), 500
+  
 # ============================================================================
 # MAIN - MUST BE LAST
 # ============================================================================
