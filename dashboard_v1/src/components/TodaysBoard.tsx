@@ -198,6 +198,9 @@ export default function TodaysBoard() {
                         <button onClick={fetchBoard} className="p-2 hover:bg-gray-800 rounded-lg text-gray-400">
                             <RefreshCw size={20} />
                         </button>
+                        <Link to="/settings" className="p-2 hover:bg-gray-800 rounded-lg text-gray-400">
+                            <Settings size={20} />
+                        </Link>
                         <Link to="/contacts" className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center gap-2 text-sm">
                             <Users size={16} /> All Contacts
                         </Link>
