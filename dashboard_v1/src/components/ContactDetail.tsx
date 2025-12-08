@@ -362,42 +362,46 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const donts: string[] = [];
   let opening = '';
 
-  const playbookMatch = text.match(/###.*Communication DO/i);
-  if (!playbookMatch || playbookMatch.index === undefined) {
-    return { dos, donts, opening };
-  }
+  // Find the Communication section
+  const commIdx = text.search(/###.*Communication.*DO/i);
+  if (commIdx === -1) return { dos, donts, opening };
 
-  const playbookText = text.substring(playbookMatch.index);
+  const commText = text.substring(commIdx);
 
-  // Match DO's section: Look for "**DO's:**" or "- **DO's:**" followed by bullet points
-  const doMatch = playbookText.match(/\*\*DO'?s?:?\*\*\s*([\s\S]*?)(?=\*\*DON'?T|$)/i);
-  if (doMatch && doMatch[1]) {
-    doMatch[1].split('\n').forEach(line => {
-      const cleaned = line.replace(/^[-•*]\s*/, '').replace(/\*\*/g, '').trim();
-      const isValid = cleaned.length > 10 &&
-        !cleaned.match(/^DO$/i) &&
-        !cleaned.match(/^#{2,}/) &&
-        !cleaned.match(/Communication/i);
-      if (isValid) dos.push(cleaned);
+  // Extract DO's: everything between "DO's:" and "DON'T"
+  const doStart = commText.search(/DO'?s?:/i);
+  const dontStart = commText.search(/DON'?T'?s?:/i);
+  
+  if (doStart !== -1 && dontStart !== -1) {
+    const doSection = commText.substring(doStart, dontStart);
+    doSection.split('\n').forEach(line => {
+      const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
+      if (clean.length > 15 && !clean.match(/^DO'?s?:?$/i)) {
+        dos.push(clean);
+      }
     });
   }
 
-  // Match DON'Ts section: Look for "**DON'Ts:**" or "- **DON'Ts:**" followed by bullet points
-  const dontMatch = playbookText.match(/\*\*DON'?T'?s?:?\*\*\s*([\s\S]*?)(?=\*\*Best Opening|\n\n#{2,}|$)/i);
-  if (dontMatch && dontMatch[1]) {
-    dontMatch[1].split('\n').forEach(line => {
-      const cleaned = line.replace(/^[-•*]\s*/, '').replace(/\*\*/g, '').trim();
-      const isValid = cleaned.length > 10 && 
-        !cleaned.match(/^DON'?T$/i) && 
-        !cleaned.match(/^#{2,}/);
-      if (isValid) donts.push(cleaned);
+  // Extract DON'Ts: everything between "DON'T" and "Best Opening" or end
+  if (dontStart !== -1) {
+    const bestIdx = commText.search(/###.*Best Opening|^\s*###\s*\d+\)/im);
+    const endIdx = bestIdx !== -1 ? bestIdx : commText.length;
+    const dontSection = commText.substring(dontStart, endIdx);
+    
+    dontSection.split('\n').forEach(line => {
+      const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
+      if (clean.length > 15 && !clean.match(/^DON'?T'?s?:?$/i)) {
+        donts.push(clean);
+      }
     });
   }
 
-  // Match Best Opening section
-  const openMatch = playbookText.match(/Best Opening(?: Approach)?.*?:\s*([\s\S]*?)(?=\n\n\n|={3,}|###|$)/i);
-  if (openMatch && openMatch[1]) {
-    opening = openMatch[1].replace(/\*\*/g, '').replace(/^[-•*]\s*/gm, '').trim().substring(0, 400);
+  // Extract Best Opening
+  const openIdx = commText.search(/Best Opening.*?:/i);
+  if (openIdx !== -1) {
+    const openSection = commText.substring(openIdx);
+    const lines = openSection.split('\n').slice(1, 10); // Skip header, take next lines
+    opening = lines.map(l => l.replace(/\*\*/g, '').trim()).filter(l => l.length > 20).join(' ').substring(0, 400);
   }
 
   return { dos: dos.slice(0, 5), donts: donts.slice(0, 5), opening };
