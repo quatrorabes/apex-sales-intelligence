@@ -312,7 +312,7 @@ function parseDISC(text: string): DISCResult {
   
   const primPatterns = [
     /\*?\*?Primary\s*Style:?\*?\*?\s*([DISC])\s*[-–]\s*(\w+)/i,
-    /Primary:?\s*([DISC])\s*[-–]\s*(\w+)/i,
+    /Primary:?\s*([A-Z])\s*[-–]\s*(\w+)/i,
   ];
   
   let primary = 'N/A';
@@ -326,7 +326,7 @@ function parseDISC(text: string): DISCResult {
   
   const secPatterns = [
     /\*?\*?Secondary\s*Style:?\*?\*?\s*([DISC])\s*[-–]\s*(\w+)/i,
-    /Secondary:?\s*([DISC])\s*[-–]\s*(\w+)/i,
+    /Secondary:?\s*([A-Z])\s*[-–]\s*(\w+)/i,
   ];
   
   let secondary = 'N/A';
