@@ -362,32 +362,22 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const donts: string[] = [];
   let opening = '';
 
-  console.log('🔍 parseCommPlaybook called, text length:', text.length);
-
   // Find the Communication section
   const commIdx = text.search(/###.*Communication.*DO/i);
-  console.log('📍 Communication section found at index:', commIdx);
-  
   if (commIdx === -1) return { dos, donts, opening };
 
   const commText = text.substring(commIdx);
-  console.log('📄 Communication text preview:', commText.substring(0, 300));
 
-  // Extract DO's: everything between "DO's:" and "DON'T"
-  const doStart = commText.search(/DO'?s?:/i);
-  const dontStart = commText.search(/DON'?T'?s?:/i);
-  
-  console.log('✅ DO start:', doStart, 'DON\'T start:', dontStart);
+  // Handle BOTH straight (') and curly (') apostrophes
+  const doStart = commText.search(/DO['']?s?:/i);
+  const dontStart = commText.search(/DON['']?T['']?s?:/i);
   
   if (doStart !== -1 && dontStart !== -1) {
     const doSection = commText.substring(doStart, dontStart);
-    console.log('📝 DO section:', doSection);
-    
     doSection.split('\n').forEach(line => {
       const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
-      if (clean.length > 15 && !clean.match(/^DO'?s?:?$/i)) {
+      if (clean.length > 15 && !clean.match(/^DO['']?s?:?$/i)) {
         dos.push(clean);
-        console.log('  ✓ Added DO:', clean.substring(0, 50));
       }
     });
   }
@@ -397,18 +387,22 @@ function parseCommPlaybook(text: string): CommPlaybook {
     const bestIdx = commText.search(/###.*Best Opening|^\s*###\s*\d+\)/im);
     const endIdx = bestIdx !== -1 ? bestIdx : commText.length;
     const dontSection = commText.substring(dontStart, endIdx);
-    console.log('📝 DON\'T section:', dontSection.substring(0, 200));
     
     dontSection.split('\n').forEach(line => {
       const clean = line.replace(/^[-•*\s]+/, '').replace(/\*\*/g, '').trim();
-      if (clean.length > 15 && !clean.match(/^DON'?T'?s?:?$/i)) {
+      if (clean.length > 15 && !clean.match(/^DON['']?T['']?s?:?$/i)) {
         donts.push(clean);
-        console.log('  ✗ Added DON\'T:', clean.substring(0, 50));
       }
     });
   }
 
-  console.log('📊 Final counts - DOs:', dos.length, 'DON\'Ts:', donts.length);
+  // Extract Best Opening
+  const openIdx = commText.search(/Best Opening.*?:/i);
+  if (openIdx !== -1) {
+    const openSection = commText.substring(openIdx);
+    const lines = openSection.split('\n').slice(1, 10);
+    opening = lines.map(l => l.replace(/\*\*/g, '').trim()).filter(l => l.length > 20).join(' ').substring(0, 400);
+  }
 
   return { dos: dos.slice(0, 5), donts: donts.slice(0, 5), opening };
 }
