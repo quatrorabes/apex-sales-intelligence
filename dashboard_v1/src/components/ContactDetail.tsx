@@ -100,27 +100,46 @@ interface ICPMatchData {
 function extractSection(content: string | null, sectionType: string): string {
   if (!content) return '';
   
-  // Map section types to markdown headers
+  // === FORMAT 1: Legacy === SECTION === format ===
+  const legacyMarkers: Record<string, RegExp> = {
+    person: /===\s*PERSON RESEARCH[^=]*===/i,
+    company: /===\s*COMPANY RESEARCH[^=]*===/i,
+    sales: /===\s*SALES INTELLIGENCE\s*===/i,
+    personality: /###?\s*PERSONALITY ANALYSIS/i
+  };
+  
+  const marker = legacyMarkers[sectionType];
+  if (marker) {
+    const match = content.match(marker);
+    if (match && match.index !== undefined) {
+      const startIdx = match.index + match[0].length;
+      const afterMarker = content.substring(startIdx);
+      const nextMatch = afterMarker.match(/===\s*(PERSON|COMPANY|SALES)|###?\s*PERSONALITY/i);
+      if (nextMatch && nextMatch.index !== undefined) {
+        return afterMarker.substring(0, nextMatch.index).trim();
+      }
+      return afterMarker.trim();
+    }
+  }
+  
+  // === FORMAT 2: Markdown ## Header format ===
   const headerMappings: Record<string, string[]> = {
-    person: ['Professional Background', 'Educational Foundation', 'Professional Credentials', 'Career'],
+    person: ['Professional Background', 'Educational', 'Professional Credentials', 'Career', 'Communication Style'],
     company: ['Company Overview', 'Industry Context', 'Organization'],
-    sales: ['Potential Business Challenges', 'Relevant Talking Points', 'Recent Activity'],
-    personality: ['Communication and Contact Information', 'Personality']
+    sales: ['Potential Business Challenges', 'Relevant Talking Points', 'Talking Points', 'Recent Activity', 'Pain Points'],
+    personality: ['Communication and Contact', 'Personality']
   };
   
   const headers = headerMappings[sectionType];
   if (!headers) return '';
   
   const sections: string[] = [];
-  
-  // Split content by ## headers
   const parts = content.split(/(?=^## )/m);
   
   for (const part of parts) {
     const headerMatch = part.match(/^## (.+)/m);
     if (headerMatch) {
       const header = headerMatch[1].trim();
-      // Check if this header matches any of our target headers
       if (headers.some(h => header.toLowerCase().includes(h.toLowerCase().split(' ')[0]))) {
         sections.push(part.trim());
       }
@@ -129,6 +148,7 @@ function extractSection(content: string | null, sectionType: string): string {
   
   return sections.join('\n\n');
 }
+
 
 // =============================================================================
 // UNIVERSAL SECTION PARSER
