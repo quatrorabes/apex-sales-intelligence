@@ -386,26 +386,34 @@ export default function Settings() {
 
     // Save to localStorage first (always works)
     localStorage.setItem('apex_playbook', JSON.stringify(updated));
+    console.log('✅ Saved to localStorage');
 
-    // Try to save to backend
+    // Try to save to backend (critical for multi-device sync)
     try {
       const res = await fetch('https://apex-backend-production-production.up.railway.app/api/playbook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
+      
       if (res.ok) {
-        console.log('✅ Playbook saved to backend');
+        console.log('✅ Playbook saved to backend - synced across devices!');
+        // Show success message
+        setTimeout(() => {
+          setSaving(false);
+          setSaved(true);
+          setTimeout(() => setSaved(false), 3000);
+        }, 500);
+      } else {
+        console.error('❌ Backend save failed with status:', res.status);
+        alert('⚠️ Saved locally only. Backend sync failed. Changes may not appear on other devices.');
+        setSaving(false);
       }
     } catch (e) {
-      console.log('Backend save failed, using localStorage only');
-    }
-
-    setTimeout(() => {
+      console.error('❌ Backend save failed:', e);
+      alert('⚠️ Saved locally only. Backend not reachable. Changes will NOT sync to other devices.');
       setSaving(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    }, 500);
+    }
   };
 
   // Save API keys
