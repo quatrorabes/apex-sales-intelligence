@@ -525,16 +525,21 @@ def enrich_contact(contact_id):
           person_result = call_perplexity(f"Research {name}, {title} at {company}. Career history, achievements, LinkedIn activity.")
           company_result = call_perplexity(f"Research {company}. Overview, employees, products, competitors, news.")
           sales_result = call_perplexity(f"Sales intelligence for {name}, {title} at {company}: What are their likely pain points, business challenges, and what talking points would resonate? What triggers might indicate buying intent?")
+          # Call 4: Personality Analysis
+          personality_result = call_perplexity(f"Analyze the likely personality profile of {name}, {title} at {company}. Infer their Myers-Briggs (MBTI) type and DISC profile based on their role, industry, and communication style. Include: 1) MBTI type with confidence level and evidence for each dimension (E/I, S/N, T/F, J/P), 2) DISC primary and secondary styles, 3) Communication DO's and DON'Ts, 4) Best opening approach for sales conversations.")
           
           profile_text = f"""=== PERSON RESEARCH: {name} ===
-    {person_result or 'No data'}
-    
-    === COMPANY RESEARCH: {company} ===
-    {company_result or 'No data'}
-    
-    === SALES INTELLIGENCE ===
-    {sales_result or 'No data'}
-    """
+          {person_result or 'No data'}
+          
+          === COMPANY RESEARCH: {company} ===
+          {company_result or 'No data'}
+          
+          === SALES INTELLIGENCE ===
+          {sales_result or 'No data'}
+          
+          ### PERSONALITY ANALYSIS
+          {personality_result or 'No data'}
+          """
         except Exception as e:
             logger.error(f"Perplexity error: {e}")
         
