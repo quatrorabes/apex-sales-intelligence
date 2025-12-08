@@ -316,6 +316,9 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [syncingHubspot, setSyncingHubspot] = useState(false);
+  const [hubspotResult, setHubspotResult] = useState<{imported: number, skipped: number} | null>(null);
+  
   
 
   // API Keys State
@@ -413,6 +416,24 @@ export default function Settings() {
   // Generate unique ID
   const genId = () => Math.random().toString(36).substr(2, 9);
 
+  const syncHubspot = async () => {
+    setSyncingHubspot(true);
+    setHubspotResult(null);
+    try {
+      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/hubspot/sync', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setHubspotResult({ imported: data.imported, skipped: data.skipped });
+      } else {
+        alert('Sync failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('Sync failed');
+    } finally {
+      setSyncingHubspot(false);
+    }
+  };
+  
   // =============================================================================
   // CRUD OPERATIONS
   // =============================================================================
@@ -1143,12 +1164,32 @@ export default function Settings() {
                 </SectionCard>
                 <SectionCard title="CRM Integrations" description="Connect your CRM for automatic sync" icon={<Link2 size={20} className="text-white" />} gradient="from-orange-500 to-red-500">
                   <div className="grid md:grid-cols-3 gap-4">
-                    {[{ name: 'Salesforce', icon: '☁️', status: 'Connect' }, { name: 'HubSpot', icon: '🧡', status: 'Connect' }, { name: 'Pipedrive', icon: '🎯', status: 'Coming Soon', disabled: true }].map(crm => (
-                      <div key={crm.name} className={`bg-[#0d1117] border border-[#30363d] rounded-xl p-4 ${'disabled' in crm && crm.disabled ? 'opacity-50' : 'hover:border-indigo-500/50'} transition-colors`}>
-                        <div className="flex items-center gap-3 mb-3"><span className="text-2xl">{crm.icon}</span><span className="text-white font-medium">{crm.name}</span></div>
-                        <button disabled={'disabled' in crm && crm.disabled} className={`w-full px-4 py-2 rounded-lg text-sm font-medium ${'disabled' in crm && crm.disabled ? 'bg-[#21262d] text-[#6e7681] cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{crm.status}</button>
-                      </div>
-                    ))}
+                    {/* Salesforce */}
+                    <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 opacity-50">
+                      <div className="flex items-center gap-3 mb-3"><span className="text-2xl">☁️</span><span className="text-white font-medium">Salesforce</span></div>
+                      <button disabled className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#21262d] text-[#6e7681] cursor-not-allowed">Coming Soon</button>
+                    </div>
+              
+                    {/* HubSpot */}
+                    <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 hover:border-orange-500/50 transition-colors">
+                      <div className="flex items-center gap-3 mb-3"><span className="text-2xl">🧡</span><span className="text-white font-medium">HubSpot</span></div>
+                      <button 
+                        onClick={syncHubspot} 
+                        disabled={syncingHubspot}
+                        className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-orange-600 hover:bg-orange-500 text-white disabled:opacity-50"
+                      >
+                        {syncingHubspot ? 'Syncing...' : 'Sync Contacts'}
+                      </button>
+                      {hubspotResult && (
+                        <p className="text-xs text-emerald-400 mt-2">✓ Imported {hubspotResult.imported}, skipped {hubspotResult.skipped}</p>
+                      )}
+                    </div>
+              
+                    {/* Pipedrive */}
+                    <div className="bg-[#0d1117] border border-[#30363d] rounded-xl p-4 opacity-50">
+                      <div className="flex items-center gap-3 mb-3"><span className="text-2xl">🎯</span><span className="text-white font-medium">Pipedrive</span></div>
+                      <button disabled className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-[#21262d] text-[#6e7681] cursor-not-allowed">Coming Soon</button>
+                    </div>
                   </div>
                 </SectionCard>
               </div>
