@@ -541,7 +541,7 @@ export default function ContactDetailPage() {
       const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}/icp-match`);
       if (res.ok) {
         const data = await res.json();
-        setIcpData(data);
+        setIcpData(data.data);
       }
     } catch (e) {
       console.error('Failed to fetch ICP match:', e);
