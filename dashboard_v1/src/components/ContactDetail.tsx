@@ -557,7 +557,7 @@ export default function ContactDetailPage() {
       const poll = setInterval(async () => {
         const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}/enrichment-status`);
         const data = await res.json();
-        if (data.status === 'enriched' || data.status === 'error') {
+        if (data.status === 'completed' || data.status === 'error') {
           clearInterval(poll);
           fetchContact();
           setEnriching(false);
@@ -604,7 +604,7 @@ export default function ContactDetailPage() {
 
   // Parse enrichment data
   const raw = contact.enrichment_data || '';
-  const isEnriched = contact.enrichment_status === 'enriched' && raw.length > 100;
+  const isEnriched = contact.enrichment_status === 'completed' && raw.length > 100;
 
   const personSection = extractSection(raw, 'person');
   const companySection = extractSection(raw, 'company');
