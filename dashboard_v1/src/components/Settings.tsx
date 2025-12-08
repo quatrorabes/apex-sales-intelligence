@@ -709,13 +709,45 @@ export default function Settings() {
                       style={{ width: `${completeness}%` }}
                     />
                   </div>
-                  <p className="text-xs text-[#6e7681] mt-2">
-                    {completeness < 50 
-                      ? 'Add more details to improve scoring accuracy'
-                      : completeness < 80
-                      ? 'Good progress! Keep adding details'
-                      : 'Excellent! Your playbook is ready'}
-                  </p>
+                                <p className="text-xs text-[#6e7681] mt-2">
+                                  {completeness >= 100
+                                    ? '✅ Excellent! Your playbook is complete'
+                                    : completeness >= 80
+                                    ? '🎯 Almost there! See what\'s missing below'
+                                    : completeness >= 50
+                                    ? 'Good progress! Keep adding details'
+                                    : 'Add more details to improve scoring accuracy'}
+                                </p>
+                                {completeness < 100 && (
+                                  <div className="mt-3 p-3 bg-[#161b22] rounded-lg border border-[#30363d]">
+                                    <p className="text-xs font-medium text-[#8b919a] mb-2">To reach 100%:</p>
+                                    <ul className="text-xs text-[#6e7681] space-y-1">
+                                      {playbook.valueProps.length < 3 && (
+                                        <li className="flex items-center gap-2">
+                                          <span className="text-yellow-500">○</span>
+                                          Add {3 - playbook.valueProps.length} more Value Prop{3 - playbook.valueProps.length > 1 ? 's' : ''} (+7 pts)
+                                        </li>
+                                      )}
+                                      {playbook.painPoints.length < 3 && (
+                                        <li className="flex items-center gap-2">
+                                          <span className="text-yellow-500">○</span>
+                                          Add {3 - playbook.painPoints.length} more Pain Point{3 - playbook.painPoints.length > 1 ? 's' : ''} (+5 pts)
+                                        </li>
+                                      )}
+                                      {playbook.proofPoints.length < 3 && (
+                                        <li className="flex items-center gap-2">
+                                          <span className="text-yellow-500">○</span>
+                                          Add {3 - playbook.proofPoints.length} more Proof Point{3 - playbook.proofPoints.length > 1 ? 's' : ''} (+5 pts)
+                                        </li>
+                                      )}
+                                      {!playbook.companyName && <li className="flex items-center gap-2"><span className="text-yellow-500">○</span> Add Company Name (+7 pts)</li>}
+                                      {!playbook.tagline && <li className="flex items-center gap-2"><span className="text-yellow-500">○</span> Add Tagline (+7 pts)</li>}
+                                      {!playbook.website && <li className="flex items-center gap-2"><span className="text-yellow-500">○</span> Add Website (+6 pts)</li>}
+                                      {playbook.products.length < 2 && <li className="flex items-center gap-2"><span className="text-yellow-500">○</span> Add {2 - playbook.products.length} more Product{2 - playbook.products.length > 1 ? 's' : ''} (+{playbook.products.length === 0 ? '15' : '5'} pts)</li>}
+                                      {playbook.competitors.length === 0 && <li className="flex items-center gap-2"><span className="text-yellow-500">○</span> Add a Competitor (+5 pts)</li>}
+                                    </ul>
+                                  </div>
+                                )}
                 </div>
               )}
             </div>
