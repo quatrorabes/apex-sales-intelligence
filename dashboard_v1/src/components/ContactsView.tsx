@@ -52,6 +52,14 @@ export default function ContactsView() {
     const [bulkAction, setBulkAction] = useState<string>('');
     const [actionLoading, setActionLoading] = useState(false);
     const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
+    const [page, setPage] = useState(1);
+    const [totalContacts, setTotalContacts] = useState(0);
+    const pageSize = 50;
+    
+    useEffect(() => {
+        fetchContacts();
+    }, [page]);
+    
 
     useEffect(() => {
         fetchContacts();
@@ -71,16 +79,18 @@ export default function ContactsView() {
     const fetchContacts = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`${API_URL}/api/contacts`);
+            const offset = (page - 1) * pageSize;
+            const res = await fetch(`${API_URL}/api/contacts?limit=${pageSize}&offset=${offset}`);
             const data = await res.json();
             setContacts(data.contacts || data || []);
+            setTotalContacts(data.total || data.contacts?.length || 0);
         } catch (e) {
             console.error('Fetch error:', e);
         } finally {
             setLoading(false);
         }
     };
-
+                
     const getDisplayName = (c: Contact) => {
         if (c.name) return c.name;
         return `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown';
@@ -823,6 +833,34 @@ export default function ContactsView() {
                     </div>
                 )}
             </div>
+
+            {/* ADD PAGINATION HERE */}
+            {/* Pagination */}
+            <div className="flex items-center justify-between px-6 py-4 bg-[#1a1d21] border-t border-gray-800">
+                <div className="text-sm text-gray-400">
+                    Showing {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, totalContacts)} of {totalContacts} contacts
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm flex items-center gap-1"
+                    >
+                        <ChevronLeft size={16} /> Previous
+                    </button>
+                    <span className="px-3 py-1.5 text-sm text-gray-300">
+                        Page {page} of {Math.ceil(totalContacts / pageSize) || 1}
+                    </span>
+                    <button
+                        onClick={() => setPage(p => p + 1)}
+                        disabled={page >= Math.ceil(totalContacts / pageSize)}
+                        className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm flex items-center gap-1"
+                    >
+                        Next <ChevronRight size={16} />
+                    </button>
+                </div>
+            </div>
+
         </div>
     );
 }
