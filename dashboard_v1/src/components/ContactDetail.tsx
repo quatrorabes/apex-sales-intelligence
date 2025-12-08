@@ -309,34 +309,53 @@ function parseMBTI(text: string): MBTIResult {
 
 function parseDISC(text: string): DISCResult {
   if (!text) return { primary: 'N/A', secondary: 'N/A' };
-  
+
   const primPatterns = [
     /\*?\*?Primary\s*Style:?\*?\*?\s*([DISC])\s*[-–]\s*(\w+)/i,
     /Primary:?\s*([A-Z])\s*[-–]\s*(\w+)/i,
+    /Primary:?\s*\*?\*?\s*(\w+)\s*\(([DISC])\)/i,  // NEW: "**Primary: Dominance (D)**"
   ];
-  
+
   let primary = 'N/A';
   for (const pattern of primPatterns) {
     const match = text.match(pattern);
     if (match && match[1] && match[2]) {
-      primary = `${match[1].toUpperCase()} - ${match[2]}`;
+      // Check if match[1] is a single letter (old format) or word (new format)
+      if (match[1].length === 1 && /[A-Z]/i.test(match[1])) {
+        // Old format: letter first, word second
+        primary = `${match[1].toUpperCase()} - ${match[2]}`;
+      } else {
+        // New format: word first, letter second
+        primary = `${match[2].toUpperCase()} - ${match[1]}`;
+      }
       break;
     }
   }
-  
+
   const secPatterns = [
     /\*?\*?Secondary\s*Style:?\*?\*?\s*([DISC])\s*[-–]\s*(\w+)/i,
     /Secondary:?\s*([A-Z])\s*[-–]\s*(\w+)/i,
+    /Secondary:?\s*\*?\*?\s*(\w+)\s*\(([DISC])\)/i,  // NEW: "**Secondary: Conscientiousness (C)**"
   ];
-  
+
   let secondary = 'N/A';
   for (const pattern of secPatterns) {
     const match = text.match(pattern);
     if (match && match[1] && match[2]) {
-      secondary = `${match[1].toUpperCase()} - ${match[2]}`;
+      // Check if match[1] is a single letter (old format) or word (new format)
+      if (match[1].length === 1 && /[A-Z]/i.test(match[1])) {
+        // Old format: letter first, word second
+        secondary = `${match[1].toUpperCase()} - ${match[2]}`;
+      } else {
+        // New format: word first, letter second
+        secondary = `${match[2].toUpperCase()} - ${match[1]}`;
+      }
       break;
     }
   }
+
+  return { primary, secondary };
+}
   
   return { primary, secondary };
 }
@@ -346,7 +365,7 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const donts: string[] = [];
   let opening = '';
   
-  const playbookMatch = text.match(/Communication Playbook/i);
+  const playbookMatch = text.match(/Communication DO's and DON'Ts/i);
   if (!playbookMatch || playbookMatch.index === undefined) {
     return { dos, donts, opening };
   }
