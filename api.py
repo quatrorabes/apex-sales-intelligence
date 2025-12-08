@@ -522,15 +522,19 @@ def enrich_contact(contact_id):
         # Research
         profile_text = ""
         try:
-            person_result = call_perplexity(f"Research {name}, {title} at {company}. Career history, achievements, LinkedIn activity.")
-            company_result = call_perplexity(f"Research {company}. Overview, employees, products, competitors, news.")
-            
-            profile_text = f"""=== PERSON RESEARCH: {name} ===
-{person_result or 'No data'}
-
-=== COMPANY RESEARCH: {company} ===
-{company_result or 'No data'}
-"""
+          person_result = call_perplexity(f"Research {name}, {title} at {company}. Career history, achievements, LinkedIn activity.")
+          company_result = call_perplexity(f"Research {company}. Overview, employees, products, competitors, news.")
+          sales_result = call_perplexity(f"Sales intelligence for {name}, {title} at {company}: What are their likely pain points, business challenges, and what talking points would resonate? What triggers might indicate buying intent?")
+          
+          profile_text = f"""=== PERSON RESEARCH: {name} ===
+    {person_result or 'No data'}
+    
+    === COMPANY RESEARCH: {company} ===
+    {company_result or 'No data'}
+    
+    === SALES INTELLIGENCE ===
+    {sales_result or 'No data'}
+    """
         except Exception as e:
             logger.error(f"Perplexity error: {e}")
         
