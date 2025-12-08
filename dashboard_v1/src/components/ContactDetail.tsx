@@ -638,6 +638,7 @@ export default function ContactDetailPage() {
 
   const mbti = parseMBTI(personalitySection);
   const disc = parseDISC(personalitySection);
+  console.log("🧪 personalitySection length:", personalitySection?.length, "preview:", personalitySection?.substring(0, 200));
   const comm = parseCommPlaybook(personalitySection);
 
   // =============================================================================
