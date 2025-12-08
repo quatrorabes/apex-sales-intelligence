@@ -362,7 +362,7 @@ function parseCommPlaybook(text: string): CommPlaybook {
   const donts: string[] = [];
   let opening = '';
 
-  const playbookMatch = text.match(/Communication DO's and DON'Ts/i);
+  const playbookMatch = text.match(/###.*Communication DO/i);
   if (!playbookMatch || playbookMatch.index === undefined) {
     return { dos, donts, opening };
   }
