@@ -4,7 +4,7 @@ import {
     ChevronDown, Sparkles, Clock, MessageSquare
 } from 'lucide-react';
 
-const API_URL = 'https://apex-backend-production-production.up.railway.app';
+const API_URL = 'https://apex-backend-i7b0.onrender.com';
 
 interface EmailDrafterProps {
     contactId: number;

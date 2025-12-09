@@ -5,7 +5,7 @@ import {
     Zap, BarChart3, Phone, Sparkles, X, Loader2
 } from 'lucide-react';
 
-const API_URL = 'https://apex-backend-production-production.up.railway.app';
+const API_URL = 'https://apex-backend-i7b0.onrender.com';
 
 interface SearchResult {
     type: 'contact' | 'page';

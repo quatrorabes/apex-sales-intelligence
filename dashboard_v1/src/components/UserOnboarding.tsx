@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, User, Briefcase, Target, Trophy, ChevronRight, ChevronLeft, Check, Loader2 } from 'lucide-react';
 
-const API_URL = 'https://apex-backend-production-production.up.railway.app';
+const API_URL = 'https://apex-backend-i7b0.onrender.com';
 
 interface UserOnboardingProps {
     isOpen: boolean;

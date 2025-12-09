@@ -10,7 +10,7 @@ import {
     BarChart3, TrendingUp, AlertCircle
 } from 'lucide-react';
 
-const API_URL = 'https://apex-backend-production-production.up.railway.app';
+const API_URL = 'https://apex-backend-i7b0.onrender.com';
 
 interface Contact {
     id: number;

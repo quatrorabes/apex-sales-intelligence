@@ -118,7 +118,7 @@ export default function OutreachGenerator({
     
     try {
       if (channel === 'call') {
-        const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contactId}/generate-call-script`, {
+        const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contactId}/generate-call-script`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ call_type: callType })
@@ -130,7 +130,7 @@ export default function OutreachGenerator({
           setError(data.error || 'Failed to generate call script');
         }
       } else {
-        const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contactId}/generate-outreach`, {
+        const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contactId}/generate-outreach`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ template, tone, channel, context: customContext })
@@ -153,7 +153,7 @@ export default function OutreachGenerator({
     setGeneratingSequence(true);
     setSequence([]);
     try {
-      const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contactId}/generate-sequence`, {
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contactId}/generate-sequence`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tone })

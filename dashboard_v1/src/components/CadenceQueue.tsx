@@ -72,7 +72,7 @@ export default function CadenceQueue({ onSelectContact }: { onSelectContact?: (i
 
   const fetchQueue = async () => {
     try {
-      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/cadence-queue');
+      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/cadence-queue');
       const data = await res.json();
       setQueue(data.queue || []);
       setStats(data.summary || { total: 0, emails: 0, calls: 0, linkedin: 0 });
@@ -85,7 +85,7 @@ export default function CadenceQueue({ onSelectContact }: { onSelectContact?: (i
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/cadence-stats');
+      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/cadence-stats');
       const data = await res.json();
       setCadenceStats(data);
     } catch (e) {
@@ -96,7 +96,7 @@ export default function CadenceQueue({ onSelectContact }: { onSelectContact?: (i
   const handleComplete = async (item: QueueItem, outcome: string) => {
     setProcessingId(item.enrollment_id);
     try {
-      await fetch(`https://apex-backend-production-production.up.railway.app/api/enrollments/${item.enrollment_id}/advance`, {
+      await fetch(`https://apex-backend-i7b0.onrender.com/api/enrollments/${item.enrollment_id}/advance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'completed', outcome })
@@ -113,7 +113,7 @@ export default function CadenceQueue({ onSelectContact }: { onSelectContact?: (i
   const handleSkip = async (item: QueueItem) => {
     setProcessingId(item.enrollment_id);
     try {
-      await fetch(`https://apex-backend-production-production.up.railway.app/api/enrollments/${item.enrollment_id}/advance`, {
+      await fetch(`https://apex-backend-i7b0.onrender.com/api/enrollments/${item.enrollment_id}/advance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'skipped' })
@@ -129,7 +129,7 @@ export default function CadenceQueue({ onSelectContact }: { onSelectContact?: (i
   const handlePause = async (item: QueueItem) => {
     setProcessingId(item.enrollment_id);
     try {
-      await fetch(`https://apex-backend-production-production.up.railway.app/api/enrollments/${item.enrollment_id}/status`, {
+      await fetch(`https://apex-backend-i7b0.onrender.com/api/enrollments/${item.enrollment_id}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'paused' })

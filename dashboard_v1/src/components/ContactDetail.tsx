@@ -533,7 +533,7 @@ export default function ContactDetailPage() {
   const fetchEnrollments = async () => {
     if (!contact?.id) return;
     try {
-      const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contact.id}/enrollments`);
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contact.id}/enrollments`);
       const data = await res.json();
       setEnrollments(data.enrollments || []);
     } catch (e) {
@@ -550,7 +550,7 @@ export default function ContactDetailPage() {
         
   const fetchContact = async () => {
     try {
-      const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}`);
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}`);
       if (res.ok) {
         setContact(await res.json());
       }
@@ -564,7 +564,7 @@ export default function ContactDetailPage() {
   const fetchIcpMatch = async () => {
     setLoadingIcp(true);
     try {
-      const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}/icp-match`);
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/icp-match`);
       if (res.ok) {
         const data = await res.json();
         setIcpData(data.data);
@@ -579,9 +579,9 @@ export default function ContactDetailPage() {
   const handleEnrich = async () => {
     setEnriching(true);
     try {
-      await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}/enrich`, { method: 'POST' });
+      await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/enrich`, { method: 'POST' });
       const poll = setInterval(async () => {
-        const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}/enrichment-status`);
+        const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/enrichment-status`);
         const data = await res.json();
         if (data.status === 'completed' || data.status === 'error') {
           clearInterval(poll);
@@ -598,11 +598,11 @@ export default function ContactDetailPage() {
   const handleDownload = async () => {
     setGenerating(true);
     try {
-      const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${id}/generate-persona`, { method: 'POST' });
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/generate-persona`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.files?.pdf_landscape) {
-          window.open(`https://apex-backend-production-production.up.railway.app/api/download?path=${encodeURIComponent(data.files.pdf_landscape)}`, '_blank');
+          window.open(`https://apex-backend-i7b0.onrender.com/api/download?path=${encodeURIComponent(data.files.pdf_landscape)}`, '_blank');
         }
       }
     } catch (e) {

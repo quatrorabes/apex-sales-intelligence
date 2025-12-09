@@ -45,7 +45,7 @@ export default function EnrollCadenceModal({ contactId, contactName, isOpen, onC
 
   const fetchCadences = async () => {
     try {
-      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/cadences');
+      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/cadences');
       const data = await res.json();
       setCadences(data.cadences || []);
       if (data.cadences?.length > 0) {
@@ -63,7 +63,7 @@ export default function EnrollCadenceModal({ contactId, contactName, isOpen, onC
     
     setEnrolling(true);
     try {
-      const res = await fetch(`https://apex-backend-production-production.up.railway.app/api/contacts/${contactId}/enroll`, {
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contactId}/enroll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cadence_id: selectedId })

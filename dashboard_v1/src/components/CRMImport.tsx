@@ -5,7 +5,7 @@ import {
     Building2, Users, Zap
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-production-production.up.railway.app';
+const API_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-i7b0.onrender.com';
 
 interface CRMStatus {
     configured: boolean;

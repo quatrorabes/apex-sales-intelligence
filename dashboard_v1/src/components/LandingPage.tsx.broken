@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
+import { API_BASE_URL } from "../config/api";
     Zap, Users, Target, TrendingUp, Phone, Mail, BarChart3,
     Sparkles, ChevronRight, Brain, Shield, Rocket, Star,
     ArrowRight, Check, Play, Clock, Building2
 } from 'lucide-react';
 
-const API_URL = 'https://apex-backend-i7b0.onrender.com';
+const API_URL = API_BASE_URL;
 
 interface QuickStats {
     total_contacts: number;

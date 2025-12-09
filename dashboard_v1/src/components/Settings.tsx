@@ -340,7 +340,7 @@ export default function Settings() {
   const loadPlaybook = async () => {
     try {
       // Try backend first
-      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/playbook');
+      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/playbook');
       if (res.ok) {
         const data = await res.json();
         if (data && Object.keys(data).length > 0) {
@@ -439,7 +439,7 @@ export default function Settings() {
     setSyncingHubspot(true);
     setHubspotResult(null);
     try {
-      const res = await fetch('https://apex-backend-production-production.up.railway.app/api/hubspot/sync', { method: 'POST' });
+      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/hubspot/sync', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         setHubspotResult({ imported: data.imported, skipped: data.skipped });

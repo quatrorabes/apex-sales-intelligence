@@ -5,7 +5,7 @@ import {
     TrendingUp, Mail, Phone, Building2, Brain, Wand2
 } from 'lucide-react';
 
-const API_URL = 'https://apex-backend-production-production.up.railway.app';
+const API_URL = 'https://apex-backend-i7b0.onrender.com';
 
 interface CommandResult {
     type: 'contacts' | 'action' | 'insight' | 'navigation';
