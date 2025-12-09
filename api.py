@@ -301,3 +301,9 @@ if __name__ == "__main__":
     print(f"📚 Docs: http://{config['host']}:{config['port']}/docs")
     
     uvicorn.run("main:app", **config)
+
+# Additional health endpoint for Railway
+@app.get("/api/health", tags=["System"])
+async def api_health():
+    """Health check at /api/health for Railway"""
+    return await health_check()
