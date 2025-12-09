@@ -127,20 +127,28 @@ async def todays_board():
             cursor.close()
             
         return {
-            "contacts": contacts,
-            "count": len(contacts),
+            "success": True,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M:%S"),
             "stats": {
                 "total_contacts": total,
                 "enriched": enriched,
-                "high_priority": high_priority,
-                "in_call_queue": in_call_queue,
-                "total": total,
-                "high": high_priority,
+                "high_match": high_priority,
                 "medium_match": 0,
                 "low_match": 0,
                 "cold_call_queue": in_call_queue
+            },
+            "segments": {
+                "high": [dict(c) for c in contacts[:10]],
+                "medium": [],
+                "low": []
+            },
+            "top_priority": [dict(c) for c in contacts[:20]],
+            "cold_call_stats": {
+                "total": in_call_queue,
+                "new": 0,
+                "meeting_set": 0
             }
-    
         }
     
             
