@@ -134,10 +134,13 @@ async def todays_board():
                 "enriched": enriched,
                 "high_priority": high_priority,
                 "in_call_queue": in_call_queue,
-                # Add frontend-compatible aliases
                 "total": total,
-                "high": high_priority
+                "high": high_priority,
+                "medium_match": 0,
+                "low_match": 0,
+                "cold_call_queue": in_call_queue
             }
+    
         }
     
             
