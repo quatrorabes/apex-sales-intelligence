@@ -225,7 +225,7 @@ export default function TodaysBoard() {
                     </div>
                     <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
                         <p className="text-green-400 text-sm">High Match</p>
-                        <p className="text-2xl font-bold">{data?.stats.high || 0}</p>
+                        <p className="text-2xl font-bold">{data?.stats.high_match || 0}</p>
                     </div>
                     <div className="bg-[#1e2228] rounded-lg p-4 border border-gray-800">
                         <p className="text-yellow-400 text-sm">Medium Match</p>
