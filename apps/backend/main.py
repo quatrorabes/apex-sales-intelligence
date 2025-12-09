@@ -7,6 +7,8 @@ Production-ready for Render
 
 import os
 import logging
+import sys
+from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
@@ -22,6 +24,9 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+sys.path.insert(0, str(Path(__file__).parent / 'intelligence' / 'engines' / 'enrichment'))
+from enhanced_enrichment import EnhancedEnrichment
 
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -39,6 +44,8 @@ def get_db():
 
 app = FastAPI(title="Apex Sales Intelligence API", version="2.0")
 
+
+
 # CORS - Includes Vercel production domain
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS", 
@@ -53,6 +60,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Initialize enrichment engine (after app = FastAPI...)
+try:
+    enrichment_engine = EnhancedEnrichment()
+    print("✅ Enrichment engine loaded successfully")
+except Exception as e:
+    print(f"⚠️ Enrichment engine failed to load: {e}")
+    enrichment_engine = None
 
 # ==================== SYSTEM ROUTES ====================
 
@@ -423,45 +437,74 @@ async def promote_contact(contact_id: int):
 @app.post("/api/contacts/{contact_id}/enrich", tags=["Enrichment"])
 async def enrich_contact(contact_id: int):
     """
-    Synchronous enrichment with Apex Intelligence scoring
+    Deep enrichment with 3-stage Perplexity search
     """
+    if not enrichment_engine:
+        raise HTTPException(500, detail="Enrichment engine not available")
+        
     try:
-        # Validate contact exists and mark as enriching
+        # Get contact data
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
             contact = cursor.fetchone()
             if not contact:
                 raise HTTPException(404, detail="Contact not found")
+                
+            # Mark as enriching
             cursor.execute("UPDATE contacts SET enrichment_status = 'enriching' WHERE id = %s", (contact_id,))
             conn.commit()
             cursor.close()
             
-        # Perform enrichment synchronously
-        # TODO: Import and call your actual enrichment engine here
-        # For now, just mark as completed
+        # Convert to dict for enrichment engine
+        contact_dict = dict(contact)
+        
+        # Call your working enrichment engine
+        print(f"\n{'='*70}")
+        print(f"🚀 Starting enrichment for {contact_dict.get('name')} (ID: {contact_id})")
+        print(f"{'='*70}")
+        
+        enrichment_result = enrichment_engine.enrich_contact(contact_dict)
+        
+        # Save results to database
         with get_db() as conn:
             cursor = conn.cursor()
+            
+            # Update contact with enrichment data
             cursor.execute("""
-                UPDATE contacts SET 
+                UPDATE contacts SET
                     enrichment_status = 'completed',
                     enriched_at = NOW(),
-                    match_score = COALESCE(match_score, 50) + 20
+                    profile_content = %s,
+                    enrichment_data = %s,
+                    match_score = COALESCE(match_score, 0) + 20
                 WHERE id = %s
-            """, (contact_id,))
+            """, (
+                enrichment_result.get('profile_content', ''),
+                str(enrichment_result),
+                contact_id
+            ))
             conn.commit()
             cursor.close()
             
+        print(f"\n{'='*70}")
+        print(f"✅ Enrichment completed for contact {contact_id}")
+        print(f"   Profile length: {len(enrichment_result.get('profile_content', ''))} chars")
+        print(f"{'='*70}\n")
+        
         return {
-            "success": True, 
-            "contact_id": contact_id, 
+            "success": True,
+            "contact_id": contact_id,
             "status": "completed",
-            "message": "Enrichment completed"
+            "message": "Enrichment completed successfully",
+            "profile_length": len(enrichment_result.get('profile_content', ''))
         }
+    
     except HTTPException:
         raise
     except Exception as e:
         # Mark as failed
+        print(f"\n❌ Enrichment failed: {str(e)}\n")
         try:
             with get_db() as conn:
                 cursor = conn.cursor()
