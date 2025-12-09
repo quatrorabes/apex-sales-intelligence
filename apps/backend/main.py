@@ -480,7 +480,7 @@ async def enrich_contact(contact_id: int):
                     match_score = COALESCE(match_score, 0) + 20
                 WHERE id = %s
             """, (
-                (enrichmentresult.get('profile_text', ''),  # ← Changed from 'profilecontent'
+                enrichment_result.get('profile_text', ''),
                 str(enrichment_result),
                 contact_id
             ))
