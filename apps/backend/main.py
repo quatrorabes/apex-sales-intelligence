@@ -93,6 +93,7 @@ async def todays_board():
     try:
         with get_db() as conn:
             cursor = conn.cursor()
+            
             # Get top contacts
             cursor.execute("""
                 SELECT * FROM contacts 
@@ -100,20 +101,45 @@ async def todays_board():
                 LIMIT 20
             """)
             contacts = [dict(row) for row in cursor.fetchall()]
-            # Stats
+            
+            # Total contacts
             cursor.execute("SELECT COUNT(*) as count FROM contacts")
             total = cursor.fetchone()["count"]
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed' OR enriched = 1")
+            
+            # Enriched
+            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enriched = 1")
             enriched = cursor.fetchone()["count"]
+            
+            # High priority (using match_tier or urgency_level)
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM contacts 
+                WHERE match_tier = 'HIGH' OR urgency_level = 'HIGH'
+            """)
+            high_priority = cursor.fetchone()["count"]
+            
+            # In call queue
+            cursor.execute("""
+                SELECT COUNT(*) as count FROM contacts 
+                WHERE cadence_status = 'active'
+            """)
+            in_call_queue = cursor.fetchone()["count"]
+            
             cursor.close()
+            
         return {
             "contacts": contacts,
             "count": len(contacts),
-            "stats": {"total_contacts": total, "enriched": enriched}
+            "stats": {
+                "total_contacts": total,
+                "enriched": enriched,
+                "high_priority": high_priority,
+                "in_call_queue": in_call_queue
+            }
         }
     except Exception as e:
         logger.error(f"todays_board error: {e}")
         raise HTTPException(500, detail=str(e))
+        
 
 
 @app.get("/api/dashboard/stats", tags=["Dashboard"])
@@ -776,3 +802,4 @@ async def startup_event():
             cursor.close()
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
+        
