@@ -133,9 +133,15 @@ async def todays_board():
                 "total_contacts": total,
                 "enriched": enriched,
                 "high_priority": high_priority,
-                "in_call_queue": in_call_queue
+                "in_call_queue": in_call_queue,
+                # Add frontend-compatible aliases
+                "total": total,
+                "high": high_priority
             }
         }
+    
+            
+        
     except Exception as e:
         logger.error(f"todays_board error: {e}")
         raise HTTPException(500, detail=str(e))
