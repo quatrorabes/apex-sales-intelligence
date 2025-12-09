@@ -47,7 +47,11 @@ app.include_router(import_filters_router)
 print("✅ Import Filters API registered at /api/import/*")
 
 # CORS middleware
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000,http://localhost:5173").split(",")
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS", 
+    "http://localhost:5173,http://localhost:8000,https://apex-sales-intelligence.vercel.app,https://*.vercel.app"
+).split(",")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -301,3 +305,4 @@ if __name__ == "__main__":
     print(f"📚 Docs: http://{config['host']}:{config['port']}/docs")
     
     uvicorn.run("main:app", **config)
+    
