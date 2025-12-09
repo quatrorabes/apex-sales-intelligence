@@ -3,3 +3,5 @@ uvicorn
 psycopg2-binary
 python-dotenv
 pydantic
+requests==2.31.0
+openai==1.12.0
