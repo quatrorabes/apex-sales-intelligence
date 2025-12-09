@@ -41,7 +41,7 @@ app = FastAPI(
 )
 
 # Import Filters API
-from api.import_filters import router as import_filters_router
+from filters.import_filters import router as import_filters_router
 app.include_router(import_filters_router)
 
 print("✅ Import Filters API registered at /api/import/*")
