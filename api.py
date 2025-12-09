@@ -307,3 +307,16 @@ if __name__ == "__main__":
 async def api_health():
     """Health check at /api/health for Railway"""
     return await health_check()
+
+# Railway expects /api/health
+@app.get("/api/health", tags=["System"])
+async def api_health_check():
+    """Health check endpoint for Railway at /api/health"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM contacts")
+            count = cursor.fetchone()[0]
+        return {"status": "healthy", "contacts": count}
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
