@@ -287,6 +287,82 @@ async def startup_event():
     print("✅ Import Filters API ready")
     print("🎯 APEX Platform operational!")
     print("=" * 70)
+    
+@app.get("/api/todays-board", tags=["Dashboard"])
+async def get_todays_board():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Total contacts
+        cursor.execute("SELECT COUNT(*) FROM contacts")
+        total = cursor.fetchone()[0]
+        
+        # Enriched contacts
+        cursor.execute("SELECT COUNT(*) FROM contacts WHERE enriched = 1")
+        enriched = cursor.fetchone()[0]
+        
+        # High priority
+        cursor.execute("SELECT COUNT(*) FROM contacts WHERE urgency_level = 'HIGH'")
+        high_priority = cursor.fetchone()[0]
+        
+        return {
+            "total_contacts": total,
+            "enriched": enriched,
+            "high_priority": high_priority,
+            "in_call_queue": 0
+        }
+    
+@app.get("/api/user/profile", tags=["User"])
+async def get_user_profile(user_id: str = "default"):
+    return {
+        "user_id": user_id,
+        "name": "Sales User",
+        "role": "Sales Rep"
+    }
+    
+@app.post("/api/batch/rescore", tags=["Scoring"])
+async def batch_rescore():
+    return {"message": "Rescoring initiated", "status": "success"}
+
+# Add this to apps/backend/main.py
+
+@app.get("/api/todays-board", tags=["Dashboard"])
+async def todays_board():
+    """
+    Dashboard statistics - returns top contacts and stats
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Get top contacts by score
+        cursor.execute("""
+            SELECT * FROM contacts 
+            ORDER BY COALESCE(match_score, 0) DESC, id DESC 
+            LIMIT 20
+        """)
+        contacts = [dict(row) for row in cursor.fetchall()]
+        
+        # Get total contacts
+        cursor.execute("SELECT COUNT(*) as count FROM contacts")
+        total = cursor.fetchone()['count']
+        
+        # Get enriched count
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM contacts 
+            WHERE enrichment_status = 'completed'
+        """)
+        enriched = cursor.fetchone()['count']
+        
+        return {
+            "contacts": contacts,
+            "count": len(contacts),
+            "stats": {
+                "total_contacts": total,
+                "enriched": enriched
+            }
+        }
+    
+
 
 # ==================== MAIN ====================
 
