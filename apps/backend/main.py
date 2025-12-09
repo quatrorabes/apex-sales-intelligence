@@ -361,7 +361,44 @@ async def todays_board():
                 "enriched": enriched
             }
         }
+
+# Add to apps/backend/main.py (after existing routes)
     
+@app.get("/api/todays-board", tags=["Dashboard"])
+async def todays_board():
+    """Dashboard stats"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM contacts")
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enriched = 1")
+        enriched = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE urgency_level = 'HIGH'")
+        high_priority = cursor.fetchone()[0]
+        cursor.close()
+        return {
+            "total_contacts": total,
+            "enriched": enriched,
+            "high_priority": high_priority,
+            "in_call_queue": 0
+        }
+    
+@app.get("/api/user/profile")
+async def user_profile(user_id: str = "default"):
+    return {"user_id": user_id, "name": "Sales User"}
+
+@app.get("/api/analytics")
+async def analytics(range: str = "all"):
+    return {"total": 1600, "enriched": 0, "high": 0}
+
+@app.get("/api/cold-call/queue")
+async def cold_call_queue(status: str = "all"):
+    return {"queue": [], "count": 0}
+
+@app.get("/api/cold-call/queue")
+async def cold_call_queue_status(status: str = "connected"):
+    return {"queue": [], "status": status}
+
 
 
 # ==================== MAIN ====================
