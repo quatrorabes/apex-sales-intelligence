@@ -91,6 +91,17 @@ async def health():
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
+    
+@app.get("/api/debug/env", tags=["System"])
+async def debug_env():
+    """Check if environment variables are set"""
+    return {
+        "DATABASE_URL": "✅ Set" if os.getenv("DATABASE_URL") else "❌ Missing",
+        "OPENAI_API_KEY": "✅ Set" if os.getenv("OPENAI_API_KEY") else "❌ Missing",
+        "PERPLEXITY_API_KEY": "✅ Set" if os.getenv("PERPLEXITY_API_KEY") else "❌ Missing",
+        "enrichment_engine": "✅ Loaded" if enrichment_engine else "❌ Not loaded"
+    }
+    
 
 @app.get("/api/debug/routes", tags=["System"])
 async def debug_routes():
