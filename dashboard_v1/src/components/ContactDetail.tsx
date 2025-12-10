@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import { QualificationTab } from './QualificationTab';
 
+const API_BASE_URL = 'https://apex-backend-i7b0.onrender.com';
+
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -245,6 +248,36 @@ const getIcon = (title: string) => {
 // MAIN COMPONENT
 // =============================================================================
 export default function ContactDetailPage() {
+  const [contact, setContact] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchContact = async () => {
+      try {
+        console.log('Fetching contact:', id);
+        const response = await axios.get(`${API_BASE_URL}/api/contacts/${id}`);
+        console.log('Contact data:', response.data);
+        setContact(response.data.contact);
+      } catch (error) {
+        console.error('Failed to fetch contact:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchContact();
+    }
+  }, [id]);
+
+  if (loading) {
+    return <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-gray-400">Loading...</div>;
+  }
+
+  if (!contact) {
+    return <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-red-400">Contact not found</div>;
+  }
+
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   
