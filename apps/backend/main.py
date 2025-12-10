@@ -1,5 +1,5 @@
 
-#!/usr/bin/env python3
+
 """
 Apex Sales Intelligence Backend - COMPLETE FastAPI Implementation
 All endpoints from original Flask api.py ported to FastAPI
@@ -69,6 +69,7 @@ except Exception as e:
     enrichment_engine = None
 
 # ==================== SYSTEM ROUTES ====================
+
 @app.get("/", tags=["System"])
 async def root():
     return {"status": "running", "service": "apex-backend", "version": "2.0"}
@@ -91,7 +92,7 @@ async def health():
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
-    
+
 @app.get("/api/debug/env", tags=["System"])
 async def debug_env():
     """Check if environment variables are set"""
@@ -101,7 +102,6 @@ async def debug_env():
         "PERPLEXITY_API_KEY": "✅ Set" if os.getenv("PERPLEXITY_API_KEY") else "❌ Missing",
         "enrichment_engine": "✅ Loaded" if enrichment_engine else "❌ Not loaded"
     }
-    
 
 @app.get("/api/debug/routes", tags=["System"])
 async def debug_routes():
@@ -109,68 +109,57 @@ async def debug_routes():
     return {"total": len(routes), "routes": routes}
 
 # ==================== DASHBOARD ====================
+
 @app.get("/api/todays-board", tags=["Dashboard"])
 async def todays_board():
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # Get top contacts
             cursor.execute("""
-                SELECT * FROM contacts 
-                ORDER BY COALESCE(match_score, 0) DESC, id DESC 
+                SELECT * FROM contacts
+                ORDER BY COALESCE(match_score, 0) DESC, id DESC
                 LIMIT 20
             """)
             contacts = [dict(row) for row in cursor.fetchall()]
-            
-            # Total contacts
             cursor.execute("SELECT COUNT(*) as count FROM contacts")
             total = cursor.fetchone()["count"]
-            
-            # Enriched
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enriched = 1")
             enriched = cursor.fetchone()["count"]
-            
-            # High priority
             cursor.execute("""
-                SELECT COUNT(*) as count FROM contacts 
+                SELECT COUNT(*) as count FROM contacts
                 WHERE match_tier = 'HIGH' OR urgency_level = 'HIGH'
             """)
             high_priority = cursor.fetchone()["count"]
-            
-            # In call queue
             cursor.execute("""
-                SELECT COUNT(*) as count FROM contacts 
+                SELECT COUNT(*) as count FROM contacts
                 WHERE cadence_status = 'active'
             """)
             in_call_queue = cursor.fetchone()["count"]
-            
             cursor.close()
-            
-            return {
-                "success": True,
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "time": datetime.now().strftime("%H:%M:%S"),
-                "stats": {
-                    "total_contacts": total,
-                    "enriched": enriched,
-                    "high_match": high_priority,
-                    "medium_match": 0,
-                    "low_match": 0,
-                    "cold_call_queue": in_call_queue
-                },
-                "segments": {
-                    "high": [dict(c) for c in contacts[:10]],
-                    "medium": [],
-                    "low": []
-                },
-                "top_priority": [dict(c) for c in contacts[:20]],
-                "cold_call_stats": {
-                    "total": in_call_queue,
-                    "new": 0,
-                    "meeting_set": 0
-                }
+        return {
+            "success": True,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "stats": {
+                "total_contacts": total,
+                "enriched": enriched,
+                "high_match": high_priority,
+                "medium_match": 0,
+                "low_match": 0,
+                "cold_call_queue": in_call_queue
+            },
+            "segments": {
+                "high": [dict(c) for c in contacts[:10]],
+                "medium": [],
+                "low": []
+            },
+            "top_priority": [dict(c) for c in contacts[:20]],
+            "cold_call_stats": {
+                "total": in_call_queue,
+                "new": 0,
+                "meeting_set": 0
             }
+        }
     except Exception as e:
         logger.error(f"todays_board error: {e}")
         raise HTTPException(500, detail=str(e))
@@ -196,6 +185,7 @@ async def user_profile(user_id: str = "default"):
     return {"user_id": user_id, "full_name": "Sales User", "company": "Apex Sales", "configured": False}
 
 # ==================== ANALYTICS ====================
+
 @app.get("/api/analytics", tags=["Analytics"])
 async def get_analytics(range: str = "all"):
     try:
@@ -240,6 +230,7 @@ async def analytics_dashboard():
         raise HTTPException(500, detail=str(e))
 
 # ==================== CONTACTS CRUD ====================
+
 @app.get("/api/contacts", tags=["Contacts"])
 async def get_contacts(limit: int = 50, offset: int = 0):
     try:
@@ -320,6 +311,7 @@ async def delete_contact(contact_id: int):
         raise HTTPException(500, detail=str(e))
 
 # ==================== SMART LISTS ====================
+
 @app.get("/api/smart-lists", tags=["Smart Lists"])
 async def get_smart_lists():
     try:
@@ -363,6 +355,7 @@ async def get_smart_list_contacts(list_id: str, limit: int = 50, offset: int = 0
         raise HTTPException(500, detail=str(e))
 
 # ==================== COLD CALL QUEUE ====================
+
 @app.get("/api/cold-call/queue", tags=["Cold Call"])
 async def cold_call_queue(status: str = "all"):
     try:
@@ -416,10 +409,12 @@ async def promote_contact(contact_id: int):
         raise HTTPException(500, detail=str(e))
 
 # ==================== ENRICHMENT ====================
+
 @app.post("/api/contacts/{contact_id}/enrich", tags=["Enrichment"])
 async def enrich_contact(contact_id: int):
     """
     Deep enrichment with 3-stage Perplexity search
+    Returns structured, frontend-friendly response
     """
     if not enrichment_engine:
         raise HTTPException(503, detail="Enrichment engine not available")
@@ -438,28 +433,52 @@ async def enrich_contact(contact_id: int):
             conn.commit()
             cursor.close()
         
-        # Convert to dict for enrichment engine
         contact_dict = dict(contact)
         
-        # Call enrichment engine
         logger.info(f"🚀 Starting enrichment for {contact_dict.get('name')} (ID: {contact_id})")
         
+        # Call enrichment engine
         enrichment_result = enrichment_engine.enrich_contact(contact_dict)
         
-        # Save results to database
+        # Extract and structure the profile data
+        profile_text = enrichment_result.get('profile_text', '')
+        
+        # Parse profile into structured sections (if it follows markdown format)
+        sections = {
+            "overview": "",
+            "background": "",
+            "company_info": "",
+            "sales_opportunities": ""
+        }
+        
+        # Simple section extraction (looks for ## headers)
+        current_section = "overview"
+        for line in profile_text.split('\n'):
+            if line.startswith('## '):
+                section_name = line.replace('##', '').strip().lower()
+                if 'overview' in section_name:
+                    current_section = 'overview'
+                elif 'background' in section_name or 'experience' in section_name:
+                    current_section = 'background'
+                elif 'company' in section_name or 'organization' in section_name:
+                    current_section = 'company_info'
+                elif 'sales' in section_name or 'opportunity' in section_name:
+                    current_section = 'sales_opportunities'
+            else:
+                sections[current_section] += line + '\n'
+        
+        # Prepare clean enrichment data for database
+        enrichment_json = json.dumps({
+            'profile_text': profile_text,
+            'sections': sections,
+            'character_count': len(profile_text),
+            'enriched_at': datetime.now().isoformat(),
+            'success': True
+        })
+        
+        # Save to database
         with get_db() as conn:
             cursor = conn.cursor()
-            
-            # Prepare clean enrichment data
-            profile_text = enrichment_result.get('profile_text', '')
-            enrichment_json = json.dumps({
-                'profile_text': profile_text,
-                'character_count': len(profile_text),
-                'enriched_at': datetime.now().isoformat(),
-                'success': True
-            })
-            
-            # Update contact with enrichment data
             cursor.execute("""
                 UPDATE contacts SET
                     enrichment_status = 'completed',
@@ -468,27 +487,34 @@ async def enrich_contact(contact_id: int):
                     enriched = 1,
                     match_score = COALESCE(match_score, 0) + 20
                 WHERE id = %s
-            """, (
-                enrichment_json,
-                contact_id
-            ))
+            """, (enrichment_json, contact_id))
             conn.commit()
             cursor.close()
         
         logger.info(f"✅ Enrichment completed for contact {contact_id} ({len(profile_text)} chars)")
         
+        # Return CLEAN, structured response for frontend
         return {
             "success": True,
             "contact_id": contact_id,
-            "profile_length": len(profile_text),
-            "status": "completed"
+            "enrichment": {
+                "status": "completed",
+                "profile_length": len(profile_text),
+                "sections": {
+                    "overview": sections["overview"][:500] + "..." if len(sections["overview"]) > 500 else sections["overview"],
+                    "background": sections["background"][:500] + "..." if len(sections["background"]) > 500 else sections["background"],
+                    "company_info": sections["company_info"][:500] + "..." if len(sections["company_info"]) > 500 else sections["company_info"],
+                    "sales_opportunities": sections["sales_opportunities"][:500] + "..." if len(sections["sales_opportunities"]) > 500 else sections["sales_opportunities"]
+                },
+                "full_profile_available": True
+            },
+            "timestamp": datetime.now().isoformat()
         }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Enrichment error for contact {contact_id}: {e}")
-        # Mark as failed
         try:
             with get_db() as conn:
                 cursor = conn.cursor()
@@ -497,6 +523,46 @@ async def enrich_contact(contact_id: int):
                 cursor.close()
         except:
             pass
+        raise HTTPException(500, detail=str(e))
+
+@app.get("/api/contacts/{contact_id}/enrichment", tags=["Enrichment"])
+async def get_enrichment_data(contact_id: int):
+    """
+    Get enrichment data for a contact
+    Returns parsed, structured profile information
+    """
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT enrichment_data, enrichment_status, enriched_at FROM contacts WHERE id = %s", (contact_id,))
+            contact = cursor.fetchone()
+            cursor.close()
+        
+        if not contact:
+            raise HTTPException(404, detail="Contact not found")
+        
+        if not contact.get("enrichment_data"):
+            return {
+                "success": False,
+                "status": contact.get("enrichment_status") or "not_enriched",
+                "message": "Contact has not been enriched yet"
+            }
+        
+        # Parse enrichment data
+        enrichment_data = json.loads(contact["enrichment_data"]) if isinstance(contact["enrichment_data"], str) else contact["enrichment_data"]
+        
+        return {
+            "success": True,
+            "contact_id": contact_id,
+            "status": contact.get("enrichment_status"),
+            "enriched_at": contact.get("enriched_at").isoformat() if contact.get("enriched_at") else None,
+            "profile": enrichment_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching enrichment for contact {contact_id}: {e}")
         raise HTTPException(500, detail=str(e))
 
 @app.post("/api/contacts/{contact_id}/reset-enrichment", tags=["Enrichment"])
@@ -512,6 +578,7 @@ async def reset_enrichment(contact_id: int):
         raise HTTPException(500, detail=str(e))
 
 # ==================== BATCH OPERATIONS ====================
+
 @app.post("/api/batch/enrich", tags=["Batch"])
 async def batch_enrich(request: Request):
     try:
@@ -537,12 +604,12 @@ async def batch_rescore():
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE contacts SET
-                    match_score = 50 + 
+                    match_score = 50 +
                         CASE WHEN enrichment_status = 'completed' THEN 20 ELSE 0 END +
                         CASE WHEN company IS NOT NULL THEN 10 ELSE 0 END +
                         CASE WHEN title IS NOT NULL THEN 10 ELSE 0 END +
                         CASE WHEN email IS NOT NULL THEN 10 ELSE 0 END,
-                    match_tier = CASE 
+                    match_tier = CASE
                         WHEN match_score >= 80 THEN 'HIGH'
                         WHEN match_score >= 50 THEN 'MEDIUM'
                         ELSE 'LOW'
@@ -557,6 +624,7 @@ async def batch_rescore():
         raise HTTPException(500, detail=str(e))
 
 # ==================== GENERATION ENDPOINTS ====================
+
 @app.post("/api/contacts/{contact_id}/generate-persona", tags=["Generation"])
 async def generate_persona(contact_id: int):
     try:
@@ -678,6 +746,7 @@ async def generate_sequence(contact_id: int):
         raise HTTPException(500, detail=str(e))
 
 # ==================== CONTACT EXTRAS ====================
+
 @app.get("/api/contacts/{contact_id}/activities", tags=["Contacts"])
 async def get_contact_activities(contact_id: int):
     return {"activities": [], "contact_id": contact_id}
@@ -729,6 +798,7 @@ async def update_contact_tier(contact_id: int, request: Request):
         raise HTTPException(500, detail=str(e))
 
 # ==================== ENROLLMENTS ====================
+
 @app.get("/api/contacts/{contact_id}/enrollments", tags=["Enrollments"])
 async def get_contact_enrollments(contact_id: int):
     return {"enrollments": [], "contact_id": contact_id}
@@ -755,6 +825,7 @@ async def get_enrollment_status(enrollment_id: int):
     return {"enrollment_id": enrollment_id, "status": "active", "current_step": 1, "total_steps": 5}
 
 # ==================== CADENCE ====================
+
 @app.get("/api/cadence-queue", tags=["Cadence"])
 async def get_cadence_queue():
     try:
@@ -780,6 +851,7 @@ async def get_cadence_stats():
         raise HTTPException(500, detail=str(e))
 
 # ==================== IMPORT/EXPORT ====================
+
 @app.post("/api/contacts/import", tags=["Import"])
 async def import_contacts():
     return {"success": True, "imported": 0, "message": "Import queued"}
@@ -805,6 +877,7 @@ async def export_contacts(format: str = "json"):
         raise HTTPException(500, detail=str(e))
 
 # ==================== SETTINGS ====================
+
 @app.get("/api/settings/playbook", tags=["Settings"])
 async def get_settings_playbook():
     try:
@@ -832,6 +905,7 @@ async def get_user_proof_points():
     return {"proof_points": [{"id": 1, "title": "90% Approval Rate"}, {"id": 2, "title": "Fast Close"}]}
 
 # ==================== STARTUP ====================
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Apex Backend v2.0 starting...")
@@ -845,4 +919,8 @@ async def startup_event():
             cursor.close()
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
-        
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    
