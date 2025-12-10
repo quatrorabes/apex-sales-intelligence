@@ -7,6 +7,7 @@ import {
   Clock, Target, Users, Award, Briefcase, ChevronDown, ChevronRight,
   RefreshCw, Loader2, ExternalLink
 } from 'lucide-react';
+import { QualificationTab } from './QualificationTab';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://apex-backend-i7b0.onrender.com';
 
@@ -32,7 +33,7 @@ export function ContactDetail() {
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
-  const [mainTab, setMainTab] = useState<'overview' | 'intelligence' | 'fit'>('overview');
+  const [mainTab, setMainTab] = useState<'overview' | 'intelligence' | 'fit' | 'qualification'>('overview');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     overview: true,
     background: false,
@@ -227,6 +228,7 @@ export function ContactDetail() {
               { id: 'overview', label: 'Overview', icon: Users },
               { id: 'intelligence', label: 'AI Intelligence', icon: Sparkles },
               { id: 'fit', label: 'Why We Fit', icon: Target }
+            { id: 'qualification', label: 'Qualification', icon: Award }
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -428,6 +430,13 @@ export function ContactDetail() {
           </div>
         )}
       </div>
+
+          {/* QUALIFICATION TAB */}
+          {mainTab === 'qualification' && (
+            <div className="p-6">
+              <QualificationTab contactId={parseInt(id!)} />
+            </div>
+          )}
     </div>
   );
 }
