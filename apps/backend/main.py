@@ -466,23 +466,30 @@ async def enrich_contact(contact_id: int):
         
         enrichment_result = enrichment_engine.enrich_contact(contact_dict)
         
-    
+
         # Save results to database
         with get_db() as conn:
             cursor = conn.cursor()
+            
+            # Prepare clean enrichment data
+            profile_text = enrichment_result.get('profile_text', '')
+            enrichment_json = json.dumps({
+                'profile_text': profile_text,
+                'character_count': len(profile_text),
+                'enriched_at': datetime.now().isoformat(),
+                'success': True
+            })
             
             # Update contact with enrichment data
             cursor.execute("""
                 UPDATE contacts SET
                     enrichment_status = 'completed',
                     enriched_at = NOW(),
-                    profile_content = %s,
                     enrichment_data = %s,
                     match_score = COALESCE(match_score, 0) + 20
                 WHERE id = %s
             """, (
-                enrichment_result.get('profile_text', ''),  # ✅ Use profile_text
-                json.dumps(enrichment_result),              # ✅ Convert to JSON string
+                enrichment_json,
                 contact_id
             ))
             conn.commit()
@@ -490,34 +497,27 @@ async def enrich_contact(contact_id: int):
             
         print(f"\n{'='*70}")
         print(f"✅ Enrichment completed for contact {contact_id}")
-        print(f"   Profile length: {len(enrichment_result.get('profile_text', ''))} chars")  # ✅ Fix this too
+        print(f"   Profile length: {len(profile_text)} chars")
         print(f"{'='*70}\n")
-        
-        
         
         return {
             "success": True,
             "contact_id": contact_id,
-            "status": "completed",
-            "message": "Enrichment completed successfully",
-            "profile_length": len(enrichment_result.get('profile_content', ''))
+            "profile_length": len(profile_text),
+            "status": "completed"
         }
     
     except HTTPException:
         raise
     except Exception as e:
-        # Mark as failed
-        print(f"\n❌ Enrichment failed: {str(e)}\n")
-        try:
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
-                conn.commit()
-                cursor.close()
-        except:
-            pass
-        raise HTTPException(500, detail=f"Enrichment failed: {str(e)}")
-        
+        logger.error(f"Enrichment error for contact {contact_id}: {e}")
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
+            conn.commit()
+            cursor.close()
+        raise HTTPException(500, detail=str(e))
+
 
 
 @app.post("/api/contacts/{contact_id}/reset-enrichment", tags=["Enrichment"])
