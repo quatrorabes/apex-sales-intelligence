@@ -28,6 +28,7 @@ interface Contact {
     timing_score?: number;
     enrichment_status?: string;
     enriched_at?: string;
+    apex_enrichment_data?: string;
     linkedin_url?: string;
 }
 
@@ -104,9 +105,9 @@ export default function ContactsView() {
             const q = search.toLowerCase();
             const matchesSearch = name.includes(q) || company.includes(q) || title.includes(q);
             const matchesTier = filterTier === 'all' || c.match_tier === filterTier;
-            const matchesEnriched = filterEnriched === 'all' || 
-                (filterEnriched === 'yes' && c.enrichment_status === 'completed') ||
-                (filterEnriched === 'no' && c.enrichment_status !== 'completed');
+            const matchesEnriched = filterEnriched === 'all' ||
+                (filterEnriched === 'yes' && !!c.apex_enrichment_data) ||
+                (filterEnriched === 'no' && !c.apex_enrichment_data);
             return matchesSearch && matchesTier && matchesEnriched;
         })
         .sort((a, b) => {
@@ -447,7 +448,7 @@ export default function ContactsView() {
                                     </div>
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                    {c.enrichment_status === 'completed' ? (
+                                    {(c.enrichment_status === 'completed' || c.apex_enrichment_data) ? (
                                         <span className="text-green-400" title="Enriched"><Check size={18} /></span>
                                     ) : (
                                         <span className="text-gray-600" title="Not enriched"><Clock size={18} /></span>
@@ -526,7 +527,7 @@ export default function ContactsView() {
                                 {c.email && <Mail size={14} />}
                                 {c.phone && <Phone size={14} />}
                                 {c.linkedin_url && <Linkedin size={14} />}
-                                {c.enrichment_status === 'completed' && <Zap size={14} className="text-purple-400" />}
+                                {(c.enrichment_status === 'completed' || c.apex_enrichment_data) && <Zap size={14} className="text-purple-400" />}
                             </div>
                         </div>
                     </Link>
@@ -600,7 +601,7 @@ export default function ContactsView() {
                                         <div className="flex items-center gap-1 text-gray-600">
                                             {c.email && <Mail size={12} />}
                                             {c.phone && <Phone size={12} />}
-                                            {c.enrichment_status === 'completed' && <Zap size={12} className="text-purple-400" />}
+                                            {(c.enrichment_status === 'completed' || c.apex_enrichment_data) && <Zap size={12} className="text-purple-400" />}
                                         </div>
                                         {c.match_score !== undefined && (
                                             <span className="text-white font-bold text-sm">{Math.round(c.match_score)}</span>

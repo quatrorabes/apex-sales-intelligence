@@ -113,6 +113,41 @@ function extractSection(content: string | null, sectionType: string): string {
 }
 
 // Parse **Title:** sections with bullet points
+
+// Parse markdown ## and ### sections (for company intelligence)
+function parseMarkdownSections(text: string): ParsedSection[] {
+  if (!text) return [];
+  
+  const sections: ParsedSection[] = [];
+  
+  // Split on ## headers (level 2)
+  const parts = text.split(/(?=^##\s)/m).filter(p => p.trim());
+  
+  for (const part of parts) {
+    const lines = part.split('\n');
+    const headerLine = lines[0] || '';
+    
+    // Extract title from ## Header or ### Header
+    const titleMatch = headerLine.match(/^#{2,3}\s+(.+)/);
+    if (!titleMatch) continue;
+    
+    const title = titleMatch[1].trim();
+    const body = lines.slice(1).join('\n').trim();
+    
+    // Extract bullet points and content
+    const contentItems = body
+      .split('\n')
+      .map(l => l.replace(/^[-•*]\s*/, '').replace(/\*\*/g, '').trim())
+      .filter(l => l.length > 0 && !l.startsWith('##'));
+    
+    if (title && contentItems.length > 0) {
+      sections.push({ title, content: contentItems });
+    }
+  }
+  
+  return sections;
+}
+
 function parseStarSections(text: string): ParsedSection[] {
   if (!text) return [];
   
@@ -388,7 +423,11 @@ export default function ContactDetailPage() {
 
   // Parse subsections
   const personCards = parseStarSections(personSection);
-  const companyCards = parseNumberedSections(companySection);
+  const companyCards = (() => {
+    const numbered = parseNumberedSections(companySection);
+    if (numbered.length > 0) return numbered;
+    return parseMarkdownSections(companySection);
+  })();
   const salesCards = parseStarSections(salesSection);
   
   console.log('Person cards:', personCards.length, personCards.map(c => c.title));
