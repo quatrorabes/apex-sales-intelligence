@@ -260,7 +260,7 @@ export default function ContactDetailPage() {
   const fetchContact = async () => {
     try {
       const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}`);
-      setContact(await res.json());
+      const data = await res.json(); setContact(data.contact);
     } catch (e) {
       console.error(e);
     } finally {
