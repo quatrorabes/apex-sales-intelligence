@@ -3,7 +3,7 @@
  * Centralized API endpoint management
  */
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-production-production.up.railway.app';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-i7b0.onrender.com';
 
 export const API_ENDPOINTS = {
   health: `${API_BASE_URL}/api/health`,

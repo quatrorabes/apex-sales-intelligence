@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-production-production.up.railway.app';
+const API_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-i7b0.onrender.com';
 
 interface Contact {
   id: number;
