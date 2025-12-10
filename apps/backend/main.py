@@ -1,3 +1,6 @@
+cd ~/projects/apex/apex-sales-intelligence/apps/backend
+
+cat > main.py << 'EOF'
 #!/usr/bin/env python3
 """
 Apex Sales Intelligence Backend - COMPLETE FastAPI Implementation
@@ -22,19 +25,9 @@ import json
 
 load_dotenv()
 
-try:
-    from enrichment_analytics import get_enrichment_analytics
-    logger.info("✅ Enrichment analytics module loaded")
-except ImportError as e:
-    logger.warning(f"⚠️ Enrichment analytics unavailable: {e}")
-    get_enrichment_analytics = None
-    get_enrichment_analytics = None
-
+# SET UP LOGGING FIRST
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-sys.path.insert(0, str(Path(__file__).parent / 'intelligence' / 'engines' / 'enrichment'))
-from enhanced_enrichment import EnhancedEnrichment
 
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -52,11 +45,9 @@ def get_db():
 
 app = FastAPI(title="Apex Sales Intelligence API", version="2.0")
 
-
-
 # CORS - Includes Vercel production domain
 ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS", 
+    "ALLOWED_ORIGINS",
     "http://localhost:5173,http://localhost:8000,https://apex-sales-intelligence.vercel.app"
 ).split(",")
 
@@ -68,20 +59,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize enrichment engine (after app = FastAPI...)
+# Initialize enrichment engine
+sys.path.insert(0, str(Path(__file__).parent / 'intelligence' / 'engines' / 'enrichment'))
+enrichment_engine = None
 try:
+    from enhanced_enrichment import EnhancedEnrichment
     enrichment_engine = EnhancedEnrichment()
-    print("✅ Enrichment engine loaded successfully")
+    logger.info("✅ Enrichment engine loaded successfully")
 except Exception as e:
-    print(f"⚠️ Enrichment engine failed to load: {e}")
+    logger.warning(f"⚠️ Enrichment engine failed to load: {e}")
     enrichment_engine = None
 
 # ==================== SYSTEM ROUTES ====================
-
 @app.get("/", tags=["System"])
 async def root():
     return {"status": "running", "service": "apex-backend", "version": "2.0"}
-
 
 @app.get("/health", tags=["System"])
 async def health():
@@ -95,21 +87,19 @@ async def health():
             "status": "healthy",
             "database": "connected",
             "contacts": count,
+            "enrichment_engine": "loaded" if enrichment_engine else "unavailable",
             "service": "apex-backend",
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
-
 @app.get("/api/debug/routes", tags=["System"])
 async def debug_routes():
     routes = [{"path": r.path, "methods": list(r.methods) if r.methods else []} for r in app.routes]
     return {"total": len(routes), "routes": routes}
 
-
 # ==================== DASHBOARD ====================
-
 @app.get("/api/todays-board", tags=["Dashboard"])
 async def todays_board():
     try:
@@ -132,7 +122,7 @@ async def todays_board():
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enriched = 1")
             enriched = cursor.fetchone()["count"]
             
-            # High priority (using match_tier or urgency_level)
+            # High priority
             cursor.execute("""
                 SELECT COUNT(*) as count FROM contacts 
                 WHERE match_tier = 'HIGH' OR urgency_level = 'HIGH'
@@ -148,38 +138,33 @@ async def todays_board():
             
             cursor.close()
             
-        return {
-            "success": True,
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M:%S"),
-            "stats": {
-                "total_contacts": total,
-                "enriched": enriched,
-                "high_match": high_priority,
-                "medium_match": 0,
-                "low_match": 0,
-                "cold_call_queue": in_call_queue
-            },
-            "segments": {
-                "high": [dict(c) for c in contacts[:10]],
-                "medium": [],
-                "low": []
-            },
-            "top_priority": [dict(c) for c in contacts[:20]],
-            "cold_call_stats": {
-                "total": in_call_queue,
-                "new": 0,
-                "meeting_set": 0
+            return {
+                "success": True,
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "stats": {
+                    "total_contacts": total,
+                    "enriched": enriched,
+                    "high_match": high_priority,
+                    "medium_match": 0,
+                    "low_match": 0,
+                    "cold_call_queue": in_call_queue
+                },
+                "segments": {
+                    "high": [dict(c) for c in contacts[:10]],
+                    "medium": [],
+                    "low": []
+                },
+                "top_priority": [dict(c) for c in contacts[:20]],
+                "cold_call_stats": {
+                    "total": in_call_queue,
+                    "new": 0,
+                    "meeting_set": 0
+                }
             }
-        }
-    
-            
-        
     except Exception as e:
         logger.error(f"todays_board error: {e}")
         raise HTTPException(500, detail=str(e))
-        
-
 
 @app.get("/api/dashboard/stats", tags=["Dashboard"])
 async def dashboard_stats():
@@ -197,14 +182,11 @@ async def dashboard_stats():
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.get("/api/user/profile", tags=["User"])
 async def user_profile(user_id: str = "default"):
     return {"user_id": user_id, "full_name": "Sales User", "company": "Apex Sales", "configured": False}
 
-
 # ==================== ANALYTICS ====================
-
 @app.get("/api/analytics", tags=["Analytics"])
 async def get_analytics(range: str = "all"):
     try:
@@ -232,7 +214,6 @@ async def get_analytics(range: str = "all"):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.get("/api/analytics/dashboard", tags=["Analytics"])
 async def analytics_dashboard():
     try:
@@ -249,29 +230,7 @@ async def analytics_dashboard():
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-@app.get("/api/analytics/enrichment", tags=["Analytics"])
-async def enrichment_analytics(days: int = Query(30, ge=1, le=365)):
-    """
-    Get comprehensive enrichment analytics
-    
-    Query Parameters:
-    - days: Number of days to analyze (default 30, max 365)
-    """
-    if not get_enrichment_analytics:
-        raise HTTPException(500, detail="Analytics module not available")
-        
-    try:
-        analytics = get_enrichment_analytics(days=days)
-        return {
-            "success": True,
-            "analytics": analytics,
-            "generated_at": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Enrichment analytics error: {e}")
-        raise HTTPException(500, detail=str(e))
 # ==================== CONTACTS CRUD ====================
-
 @app.get("/api/contacts", tags=["Contacts"])
 async def get_contacts(limit: int = 50, offset: int = 0):
     try:
@@ -285,7 +244,6 @@ async def get_contacts(limit: int = 50, offset: int = 0):
         return {"contacts": contacts, "total": total, "limit": limit, "offset": offset}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.get("/api/contacts/{contact_id}", tags=["Contacts"])
 async def get_contact(contact_id: int):
@@ -303,7 +261,6 @@ async def get_contact(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/contacts", tags=["Contacts"])
 async def create_contact(request: Request):
     try:
@@ -320,7 +277,6 @@ async def create_contact(request: Request):
         return {"success": True, "id": contact_id}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.put("/api/contacts/{contact_id}", tags=["Contacts"])
 async def update_contact(contact_id: int, request: Request):
@@ -342,7 +298,6 @@ async def update_contact(contact_id: int, request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.delete("/api/contacts/{contact_id}", tags=["Contacts"])
 async def delete_contact(contact_id: int):
     try:
@@ -355,9 +310,7 @@ async def delete_contact(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== SMART LISTS ====================
-
 @app.get("/api/smart-lists", tags=["Smart Lists"])
 async def get_smart_lists():
     try:
@@ -376,7 +329,6 @@ async def get_smart_lists():
         return {"lists": lists}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.get("/api/smart-lists/{list_id}/contacts", tags=["Smart Lists"])
 async def get_smart_list_contacts(list_id: str, limit: int = 50, offset: int = 0):
@@ -401,9 +353,7 @@ async def get_smart_list_contacts(list_id: str, limit: int = 50, offset: int = 0
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== COLD CALL QUEUE ====================
-
 @app.get("/api/cold-call/queue", tags=["Cold Call"])
 async def cold_call_queue(status: str = "all"):
     try:
@@ -415,7 +365,6 @@ async def cold_call_queue(status: str = "all"):
         return {"queue": contacts, "count": len(contacts), "status": status}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.post("/api/cold-call/queue/{contact_id}/attempt", tags=["Cold Call"])
 async def log_call_attempt(contact_id: int, request: Request):
@@ -431,7 +380,6 @@ async def log_call_attempt(contact_id: int, request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.put("/api/cold-call/queue/{contact_id}/status", tags=["Cold Call"])
 async def update_call_status(contact_id: int, request: Request):
     try:
@@ -446,7 +394,6 @@ async def update_call_status(contact_id: int, request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/cold-call/queue/{contact_id}/promote", tags=["Cold Call"])
 async def promote_contact(contact_id: int):
     try:
@@ -459,17 +406,15 @@ async def promote_contact(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== ENRICHMENT ====================
-
 @app.post("/api/contacts/{contact_id}/enrich", tags=["Enrichment"])
 async def enrich_contact(contact_id: int):
     """
     Deep enrichment with 3-stage Perplexity search
     """
     if not enrichment_engine:
-        raise HTTPException(500, detail="Enrichment engine not available")
-        
+        raise HTTPException(503, detail="Enrichment engine not available")
+    
     try:
         # Get contact data
         with get_db() as conn:
@@ -478,23 +423,20 @@ async def enrich_contact(contact_id: int):
             contact = cursor.fetchone()
             if not contact:
                 raise HTTPException(404, detail="Contact not found")
-                
+            
             # Mark as enriching
             cursor.execute("UPDATE contacts SET enrichment_status = 'enriching' WHERE id = %s", (contact_id,))
             conn.commit()
             cursor.close()
-            
+        
         # Convert to dict for enrichment engine
         contact_dict = dict(contact)
         
-        # Call your working enrichment engine
-        print(f"\n{'='*70}")
-        print(f"🚀 Starting enrichment for {contact_dict.get('name')} (ID: {contact_id})")
-        print(f"{'='*70}")
+        # Call enrichment engine
+        logger.info(f"🚀 Starting enrichment for {contact_dict.get('name')} (ID: {contact_id})")
         
         enrichment_result = enrichment_engine.enrich_contact(contact_dict)
         
-
         # Save results to database
         with get_db() as conn:
             cursor = conn.cursor()
@@ -514,6 +456,7 @@ async def enrich_contact(contact_id: int):
                     enrichment_status = 'completed',
                     enriched_at = NOW(),
                     enrichment_data = %s,
+                    enriched = 1,
                     match_score = COALESCE(match_score, 0) + 20
                 WHERE id = %s
             """, (
@@ -522,11 +465,8 @@ async def enrich_contact(contact_id: int):
             ))
             conn.commit()
             cursor.close()
-            
-        print(f"\n{'='*70}")
-        print(f"✅ Enrichment completed for contact {contact_id}")
-        print(f"   Profile length: {len(profile_text)} chars")
-        print(f"{'='*70}\n")
+        
+        logger.info(f"✅ Enrichment completed for contact {contact_id} ({len(profile_text)} chars)")
         
         return {
             "success": True,
@@ -534,35 +474,35 @@ async def enrich_contact(contact_id: int):
             "profile_length": len(profile_text),
             "status": "completed"
         }
-    
+        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Enrichment error for contact {contact_id}: {e}")
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
-            conn.commit()
-            cursor.close()
+        # Mark as failed
+        try:
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (contact_id,))
+                conn.commit()
+                cursor.close()
+        except:
+            pass
         raise HTTPException(500, detail=str(e))
-
-
 
 @app.post("/api/contacts/{contact_id}/reset-enrichment", tags=["Enrichment"])
 async def reset_enrichment(contact_id: int):
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("UPDATE contacts SET enrichment_status = NULL, enrichment_data = NULL, enriched_at = NULL WHERE id = %s", (contact_id,))
+            cursor.execute("UPDATE contacts SET enrichment_status = NULL, enrichment_data = NULL, enriched_at = NULL, enriched = 0 WHERE id = %s", (contact_id,))
             conn.commit()
             cursor.close()
         return {"success": True}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== BATCH OPERATIONS ====================
-
 @app.post("/api/batch/enrich", tags=["Batch"])
 async def batch_enrich(request: Request):
     try:
@@ -581,14 +521,13 @@ async def batch_enrich(request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/batch/rescore", tags=["Batch"])
 async def batch_rescore():
     try:
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                UPDATE contacts SET 
+                UPDATE contacts SET
                     match_score = 50 + 
                         CASE WHEN enrichment_status = 'completed' THEN 20 ELSE 0 END +
                         CASE WHEN company IS NOT NULL THEN 10 ELSE 0 END +
@@ -608,9 +547,7 @@ async def batch_rescore():
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== GENERATION ENDPOINTS ====================
-
 @app.post("/api/contacts/{contact_id}/generate-persona", tags=["Generation"])
 async def generate_persona(contact_id: int):
     try:
@@ -631,7 +568,6 @@ async def generate_persona(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/contacts/{contact_id}/generate-call-script", tags=["Generation"])
 async def generate_call_script(contact_id: int):
     try:
@@ -651,7 +587,6 @@ async def generate_call_script(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/contacts/{contact_id}/generate-linkedin", tags=["Generation"])
 async def generate_linkedin(contact_id: int):
     try:
@@ -669,7 +604,6 @@ async def generate_linkedin(contact_id: int):
         raise
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.post("/api/contacts/{contact_id}/generate-email", tags=["Generation"])
 async def generate_email(contact_id: int):
@@ -693,7 +627,6 @@ async def generate_email(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/contacts/{contact_id}/generate-outreach", tags=["Generation"])
 async def generate_outreach(contact_id: int, request: Request):
     try:
@@ -711,7 +644,6 @@ async def generate_outreach(contact_id: int, request: Request):
         raise
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.post("/api/contacts/{contact_id}/generate-sequence", tags=["Generation"])
 async def generate_sequence(contact_id: int):
@@ -736,13 +668,10 @@ async def generate_sequence(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== CONTACT EXTRAS ====================
-
 @app.get("/api/contacts/{contact_id}/activities", tags=["Contacts"])
 async def get_contact_activities(contact_id: int):
     return {"activities": [], "contact_id": contact_id}
-
 
 @app.get("/api/contacts/{contact_id}/meeting-prep", tags=["Contacts"])
 async def get_meeting_prep(contact_id: int):
@@ -760,7 +689,6 @@ async def get_meeting_prep(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.get("/api/contacts/{contact_id}/icp-match", tags=["Contacts"])
 async def get_icp_match(contact_id: int):
     try:
@@ -777,7 +705,6 @@ async def get_icp_match(contact_id: int):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.put("/api/contacts/{contact_id}/tier", tags=["Contacts"])
 async def update_contact_tier(contact_id: int, request: Request):
     try:
@@ -792,13 +719,10 @@ async def update_contact_tier(contact_id: int, request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== ENROLLMENTS ====================
-
 @app.get("/api/contacts/{contact_id}/enrollments", tags=["Enrollments"])
 async def get_contact_enrollments(contact_id: int):
     return {"enrollments": [], "contact_id": contact_id}
-
 
 @app.post("/api/contacts/{contact_id}/enroll", tags=["Enrollments"])
 async def enroll_contact(contact_id: int, request: Request):
@@ -813,19 +737,15 @@ async def enroll_contact(contact_id: int, request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.post("/api/enrollments/{enrollment_id}/advance", tags=["Enrollments"])
 async def advance_enrollment(enrollment_id: int):
     return {"success": True, "enrollment_id": enrollment_id}
-
 
 @app.get("/api/enrollments/{enrollment_id}/status", tags=["Enrollments"])
 async def get_enrollment_status(enrollment_id: int):
     return {"enrollment_id": enrollment_id, "status": "active", "current_step": 1, "total_steps": 5}
 
-
 # ==================== CADENCE ====================
-
 @app.get("/api/cadence-queue", tags=["Cadence"])
 async def get_cadence_queue():
     try:
@@ -837,7 +757,6 @@ async def get_cadence_queue():
         return {"queue": contacts, "count": len(contacts)}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.get("/api/cadence-stats", tags=["Cadence"])
 async def get_cadence_stats():
@@ -851,23 +770,18 @@ async def get_cadence_stats():
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== IMPORT/EXPORT ====================
-
 @app.post("/api/contacts/import", tags=["Import"])
 async def import_contacts():
     return {"success": True, "imported": 0, "message": "Import queued"}
-
 
 @app.get("/api/import/status", tags=["Import"])
 async def get_import_status():
     return {"status": "idle", "progress": 0, "total": 0}
 
-
 @app.post("/api/hubspot/import", tags=["Import"])
 async def hubspot_import():
     return {"success": True, "message": "HubSpot import queued"}
-
 
 @app.get("/api/contacts/export", tags=["Export"])
 async def export_contacts(format: str = "json"):
@@ -881,9 +795,7 @@ async def export_contacts(format: str = "json"):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 # ==================== SETTINGS ====================
-
 @app.get("/api/settings/playbook", tags=["Settings"])
 async def get_settings_playbook():
     try:
@@ -894,7 +806,6 @@ async def get_settings_playbook():
         return {"configured": False}
     except Exception as e:
         raise HTTPException(500, detail=str(e))
-
 
 @app.post("/api/settings/playbook", tags=["Settings"])
 async def save_settings_playbook(request: Request):
@@ -907,14 +818,11 @@ async def save_settings_playbook(request: Request):
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
 @app.get("/api/user/proof-points", tags=["User"])
 async def get_user_proof_points():
     return {"proof_points": [{"id": 1, "title": "90% Approval Rate"}, {"id": 2, "title": "Fast Close"}]}
 
-
 # ==================== STARTUP ====================
-
 @app.on_event("startup")
 async def startup_event():
     logger.info("Apex Backend v2.0 starting...")
@@ -928,4 +836,6 @@ async def startup_event():
             cursor.close()
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
-        
+EOF
+
+echo "✅ main.py created successfully!"
