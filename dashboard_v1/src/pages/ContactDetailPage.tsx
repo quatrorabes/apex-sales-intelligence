@@ -309,7 +309,7 @@ export default function ContactDetailPage() {
   // =============================================================================
   // PARSE ENRICHMENT DATA
   // =============================================================================
-  const raw = contact.enrichment_data || '';
+  const raw = contact.profile_content || '';
   const isEnriched = contact.enrichment_status === 'enriched' && raw.length > 100;
 
   const personSection = extractSection(raw, 'person');
