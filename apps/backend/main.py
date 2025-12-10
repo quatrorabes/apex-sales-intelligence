@@ -466,6 +466,7 @@ async def enrich_contact(contact_id: int):
         
         enrichment_result = enrichment_engine.enrich_contact(contact_dict)
         
+    
         # Save results to database
         with get_db() as conn:
             cursor = conn.cursor()
@@ -480,8 +481,8 @@ async def enrich_contact(contact_id: int):
                     match_score = COALESCE(match_score, 0) + 20
                 WHERE id = %s
             """, (
-                enrichment_result.get('profile_text', ''),
-                str(enrichment_result),
+                enrichment_result.get('profile_text', ''),  # ✅ Use profile_text
+                json.dumps(enrichment_result),              # ✅ Convert to JSON string
                 contact_id
             ))
             conn.commit()
@@ -489,8 +490,10 @@ async def enrich_contact(contact_id: int):
             
         print(f"\n{'='*70}")
         print(f"✅ Enrichment completed for contact {contact_id}")
-        print(f"   Profile length: {len(enrichment_result.get('profile_content', ''))} chars")
+        print(f"   Profile length: {len(enrichment_result.get('profile_text', ''))} chars")  # ✅ Fix this too
         print(f"{'='*70}\n")
+        
+        
         
         return {
             "success": True,
