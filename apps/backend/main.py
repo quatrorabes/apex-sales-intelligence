@@ -22,6 +22,14 @@ import json
 
 load_dotenv()
 
+try:
+    from enrichment_analytics import get_enrichment_analytics
+    logger.info("✅ Enrichment analytics module loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ Enrichment analytics unavailable: {e}")
+    get_enrichment_analytics = None
+    get_enrichment_analytics = None
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -241,7 +249,27 @@ async def analytics_dashboard():
     except Exception as e:
         raise HTTPException(500, detail=str(e))
 
-
+@app.get("/api/analytics/enrichment", tags=["Analytics"])
+async def enrichment_analytics(days: int = Query(30, ge=1, le=365)):
+    """
+    Get comprehensive enrichment analytics
+    
+    Query Parameters:
+    - days: Number of days to analyze (default 30, max 365)
+    """
+    if not get_enrichment_analytics:
+        raise HTTPException(500, detail="Analytics module not available")
+        
+    try:
+        analytics = get_enrichment_analytics(days=days)
+        return {
+            "success": True,
+            "analytics": analytics,
+            "generated_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Enrichment analytics error: {e}")
+        raise HTTPException(500, detail=str(e))
 # ==================== CONTACTS CRUD ====================
 
 @app.get("/api/contacts", tags=["Contacts"])
