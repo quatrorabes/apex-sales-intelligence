@@ -1,114 +1,59 @@
-import { useEffect, useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import {
+  ArrowLeft, Mail, Phone, Building2, MapPin, Linkedin, Globe,
+  Sparkles, TrendingUp, MessageSquare, Calendar, Star, Zap,
+  Clock, Target, Users, Award, Briefcase, ChevronDown, ChevronRight,
+  RefreshCw, Loader2, ExternalLink
+} from 'lucide-react';
+import { QualificationTab } from '../components/QualificationTab';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://apex-backend-production-production.up.railway.app';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://apex-backend-i7b0.onrender.com';
 
 interface Contact {
   id: number;
   name: string;
-  firstname: string;
-  lastname: string;
-  email: string;
-  phone: string;
-  phone_mobile?: string;
-  company: string;
-  title: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  title?: string;
   linkedin_url?: string;
   enrichment_status?: string;
+  enrichment_data?: string;
   enriched_at?: string;
-  mdcp_score?: number;
-  priority_score?: number;
-  profile_content?: string;
+  match_score?: number;
+  match_tier?: string;
 }
 
-type TabKey = 'overview' | 'professional' | 'company' | 'pain' | 'sales' | 'outreach';
-
-const TABS: { key: TabKey; label: string; icon: string }[] = [
-  { key: 'overview', label: 'Overview', icon: '📋' },
-  { key: 'professional', label: 'Professional', icon: '🧠' },
-  { key: 'company', label: 'Company', icon: '🏢' },
-  { key: 'pain', label: 'Pain Points', icon: '🎯' },
-  { key: 'sales', label: 'Sales Intel', icon: '💰' },
-  { key: 'outreach', label: 'Outreach', icon: '📧' },
-];
-
-// Parse by ## headers - match YOUR api.py output
-function parseProfileContent(content: string): Record<TabKey, string> {
-  const result: Record<TabKey, string> = {
-    overview: '',
-    professional: '',
-    company: '',
-    pain: '',
-    sales: '',
-    outreach: ''
-  };
-  
-  if (!content) return result;
-  
-  // Split on ## headers
-  const sections = content.split(/(?=^## )/m);
-  
-  for (const section of sections) {
-    const headerMatch = section.match(/^## ([^\n]+)/);
-    if (!headerMatch) continue;
-    
-    const header = headerMatch[1].toUpperCase();
-    const sectionContent = section.trim();
-    
-    // Map headers to tabs
-    if (header.includes('OVERVIEW') || header.includes('PROFILE OVERVIEW')) {
-      result.overview += sectionContent + '\n\n';
-    } else if (header.includes('BACKGROUND') || header.includes('PROFESSIONAL')) {
-      result.professional += sectionContent + '\n\n';
-    } else if (header.includes('PERSONALITY') || header.includes('MYERS') || header.includes('DISC')) {
-      result.professional += sectionContent + '\n\n';
-    } else if (header.includes('COMPANY') || header.includes('ORGANIZATION') || header.includes('BOK') || header.includes('BUSINESS')) {
-      result.company += sectionContent + '\n\n';
-    } else if (header.includes('PAIN') || header.includes('CHALLENGE')) {
-      result.pain += sectionContent + '\n\n';
-    } else if (header.includes('INSIGHT') || header.includes('STRATEGIC') || header.includes('TRIGGER') || header.includes('OPPORTUNITY')) {
-      result.sales += sectionContent + '\n\n';
-    } else if (header.includes('OPENING') || header.includes('OUTREACH') || header.includes('RECOMMENDED') || header.includes('ENGAGEMENT')) {
-      result.outreach += sectionContent + '\n\n';
-    } else if (header.includes('NOTE') || header.includes('ADDITIONAL')) {
-      result.sales += sectionContent + '\n\n';
-    }
-  }
-  
-  // Trim all
-  for (const key of Object.keys(result) as TabKey[]) {
-    result[key] = result[key].trim();
-  }
-  
-  // If nothing parsed, put everything in overview
-  if (!Object.values(result).some(v => v.length > 0)) {
-    result.overview = content;
-  }
-  
-  return result;
-}
-
-export default function ContactDetail() {
+export function ContactDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [mainTab, setMainTab] = useState<'overview' | 'intelligence' | 'fit' | 'qualification'>('overview');
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    overview: true,
+    background: false,
+    company: false,
+    opportunities: true
+  });
 
-  useEffect(() => { fetchContact(); }, [id]);
+  useEffect(() => {
+    if (id) {
+      fetchContact();
+    }
+  }, [id]);
 
   const fetchContact = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/contacts/${id}`);
-      if (!res.ok) throw new Error('Contact not found');
-      setContact(await res.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load');
+      const response = await fetch(`${API_BASE_URL}/api/contacts/${id}`);
+      if (!response.ok) throw new Error('Failed to fetch contact');
+      const data = await response.json();
+      setContact(data.contact);
+    } catch (error) {
+      console.error('Error fetching contact:', error);
     } finally {
       setLoading(false);
     }
@@ -116,143 +61,327 @@ export default function ContactDetail() {
 
   const handleEnrich = async () => {
     if (!id) return;
-    setEnriching(true);
     try {
-      const res = await fetch(`${API_URL}/api/contacts/${id}/enrich`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        const poll = setInterval(async () => {
-          const s = await (await fetch(`${API_URL}/api/contacts/${id}/enrichment-status`)).json();
-          if (s.status === 'completed' || s.status === 'failed') {
-            clearInterval(poll);
-            fetchContact();
-            setEnriching(false);
-          }
-        }, 2000);
-        setTimeout(() => { clearInterval(poll); fetchContact(); setEnriching(false); }, 120000);
-      } else {
-        alert('Enrichment failed: ' + (data.error || 'Unknown'));
-        setEnriching(false);
-      }
-    } catch { setEnriching(false); }
+      setEnriching(true);
+      const response = await fetch(`${API_BASE_URL}/api/contacts/${id}/enrich`, {
+        method: 'POST'
+      });
+      if (!response.ok) throw new Error('Enrichment failed');
+      const result = await response.json();
+      console.log('✅ Enrichment completed:', result);
+      await fetchContact();
+      setMainTab('intelligence');
+    } catch (error) {
+      console.error('❌ Enrichment error:', error);
+      alert('Enrichment failed. Please try again.');
+    } finally {
+      setEnriching(false);
+    }
   };
 
-  const handleReset = async () => {
-    if (!id || !confirm('Reset enrichment?')) return;
-    await fetch(`${API_URL}/api/contacts/${id}/reset-enrichment`, { method: 'POST' });
-    fetchContact();
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
   };
 
-  const tabContent = useMemo(() => {
-    if (!contact?.profile_content) return {} as Record<TabKey, string>;
-    return parseProfileContent(contact.profile_content);
-  }, [contact?.profile_content]);
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <p className="text-gray-600">Loading contact...</p>
+        </div>
+      </div>
+    );
+  }
 
-  if (loading) return <div className="col-span-12 flex justify-center py-20"><div className="animate-spin h-8 w-8 border-2 border-azure-500 border-t-transparent rounded-full" /></div>;
-  if (error || !contact) return <div className="col-span-12"><button onClick={() => navigate(-1)} className="text-azure-400 mb-4">← Back</button><div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-6 text-rose-400">{error || 'Not found'}</div></div>;
+  if (!contact) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-xl text-gray-600 mb-4">Contact not found</p>
+          <button
+            onClick={() => navigate('/contacts')}
+            className="text-blue-600 hover:text-blue-700 flex items-center gap-2 mx-auto"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Contacts
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  const score = contact.mdcp_score || contact.priority_score || 0;
-  const isEnriched = contact.enrichment_status === 'completed';
-  const isProcessing = contact.enrichment_status === 'processing' || enriching;
+  let enrichmentData: any = null;
+  try {
+    if (contact.enrichment_data) {
+      enrichmentData = typeof contact.enrichment_data === 'string'
+        ? JSON.parse(contact.enrichment_data)
+        : contact.enrichment_data;
+    }
+  } catch (error) {
+    console.error('Error parsing enrichment data:', error);
+  }
+
+  const sections = enrichmentData?.sections || {};
+  const hasEnrichment = contact.enrichment_status === 'completed' && enrichmentData;
 
   return (
-    <>
-      {/* Back */}
-      <div className="col-span-12">
-        <button onClick={() => navigate(-1)} className="text-azure-400 hover:text-azure-300 text-sm">← Back</button>
-      </div>
+    <div className="min-h-screen bg-gray-50 pb-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Header */}
+        <button
+          onClick={() => navigate('/contacts')}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Contacts
+        </button>
 
-      {/* Header */}
-      <div className="col-span-12 bg-void-850 border border-glass-border rounded-xl p-6">
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-50">{contact.name}</h1>
-            <p className="text-slate-300">{contact.title}</p>
-            <p className="text-slate-500">{contact.company}</p>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{contact.name}</h1>
+              {contact.match_tier && (
+                <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mb-3 ${
+                  contact.match_tier === 'HIGH' ? 'bg-green-100 text-green-800' :
+                  contact.match_tier === 'MEDIUM' ? 'bg-blue-100 text-blue-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {contact.match_tier} Priority
+                </span>
+              )}
+              {contact.title && contact.company && (
+                <p className="text-gray-600 mb-4">
+                  {contact.title} at {contact.company}
+                </p>
+              )}
+              
+              <div className="flex flex-wrap gap-4 text-sm">
+                {contact.email && (
+                  <a href={`mailto:${contact.email}`} className="flex items-center gap-2 text-blue-600 hover:text-blue-700">
+                    <Mail className="w-4 h-4" />
+                    {contact.email}
+                  </a>
+                )}
+                {contact.phone && (
+                  <a href={`tel:${contact.phone}`} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
+                    <Phone className="w-4 h-4" />
+                    {contact.phone}
+                  </a>
+                )}
+                {contact.linkedin_url && (
+                  <a 
+                    href={contact.linkedin_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
+                  >
+                    <Linkedin className="w-4 h-4" />
+                    LinkedIn
+                  </a>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleEnrich}
+                disabled={enriching || contact.enrichment_status === 'enriching'}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {enriching || contact.enrichment_status === 'enriching' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Enriching...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    {hasEnrichment ? 'Re-enrich' : 'Enrich Profile'}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-          <div className="text-center bg-void-900 rounded-xl px-6 py-4 border border-glass-border">
-            <div className="text-4xl font-bold text-azure-400">{score.toFixed(0)}</div>
-            <div className="text-xs text-slate-500">MDCP</div>
-          </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-4 border-t border-glass-border text-sm">
-          {contact.email && <div><div className="text-xs text-slate-500 mb-1">EMAIL</div><a href={`mailto:${contact.email}`} className="text-azure-400">{contact.email}</a></div>}
-          {contact.phone && <div><div className="text-xs text-slate-500 mb-1">PHONE</div><a href={`tel:${contact.phone}`} className="text-azure-400">{contact.phone}</a></div>}
-          {contact.phone_mobile && <div><div className="text-xs text-slate-500 mb-1">MOBILE</div><a href={`tel:${contact.phone_mobile}`} className="text-azure-400">{contact.phone_mobile}</a></div>}
-          {contact.linkedin_url && <div><div className="text-xs text-slate-500 mb-1">LINKEDIN</div><a href={contact.linkedin_url} target="_blank" className="text-azure-400">Profile →</a></div>}
-        </div>
-
-        <div className="flex items-center gap-4 mt-6 pt-4 border-t border-glass-border">
-          {isProcessing ? (
-            <span className="px-4 py-2 bg-amber-500/20 text-amber-400 rounded-lg text-sm flex items-center gap-2">
-              <span className="animate-spin h-4 w-4 border-2 border-amber-400 border-t-transparent rounded-full"></span> Enriching...
-            </span>
-          ) : isEnriched ? (
-            <span className="px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg text-sm">✓ Enriched</span>
-          ) : (
-            <span className="px-4 py-2 bg-slate-500/20 text-slate-400 rounded-lg text-sm">⏳ Pending</span>
-          )}
-          <button onClick={handleEnrich} disabled={isProcessing} className="px-5 py-2 bg-azure-600 hover:bg-azure-500 text-white font-semibold rounded-lg disabled:opacity-50 text-sm">
-            {isProcessing ? '⚡ Processing...' : isEnriched ? '🔄 Re-Enrich' : '⚡ Enrich Now'}
-          </button>
-          {isEnriched && <button onClick={handleReset} className="text-slate-400 hover:text-rose-400 text-sm">Reset</button>}
-          {contact.enriched_at && <span className="text-xs text-slate-500 ml-auto">Last: {new Date(contact.enriched_at).toLocaleString()}</span>}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      {isEnriched && (
-        <div className="col-span-12 bg-void-850 border border-glass-border rounded-xl p-1.5 flex gap-1 overflow-x-auto">
-          {TABS.map((tab) => (
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-gray-200 bg-white rounded-t-lg px-4">
+          {[
+            { id: 'overview', label: 'Overview', icon: Users },
+            { id: 'intelligence', label: 'AI Intelligence', icon: Sparkles },
+            { id: 'fit', label: 'Why We Fit', icon: Target },
+            { id: 'qualification', label: 'Qualification', icon: Award }
+          ].map(({ id, label, icon: Icon }) => (
             <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                activeTab === tab.key ? 'bg-azure-600 text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-void-800'
+              key={id}
+              onClick={() => setMainTab(id as any)}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
+                mainTab === id
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
               }`}
             >
-              <span>{tab.icon}</span>
-              <span>{tab.label}</span>
-              {tabContent[tab.key]?.length > 0 && activeTab !== tab.key && <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span>}
+              <Icon className="w-4 h-4" />
+              {label}
             </button>
           ))}
         </div>
-      )}
 
-      {/* Content */}
-      {isEnriched && (
-        <div className="col-span-12 bg-void-850 border border-glass-border rounded-xl p-6 md:p-8">
-          {tabContent[activeTab] ? (
-            <div className="prose prose-invert prose-sm max-w-none
-              prose-headings:text-slate-100 prose-headings:font-semibold
-              prose-h2:text-lg prose-h2:text-azure-400 prose-h2:border-b prose-h2:border-glass-border prose-h2:pb-2 prose-h2:mb-4 prose-h2:mt-6 first:prose-h2:mt-0
-              prose-h3:text-base prose-h3:text-slate-200 prose-h3:mt-4 prose-h3:mb-2
-              prose-p:text-slate-300 prose-p:leading-relaxed
-              prose-strong:text-slate-100
-              prose-ul:text-slate-300 prose-li:my-0.5
-              prose-table:text-sm
-              prose-th:bg-void-900 prose-th:text-slate-400 prose-th:font-medium prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:border-b prose-th:border-glass-border
-              prose-td:px-4 prose-td:py-2 prose-td:border-b prose-td:border-glass-border/50 prose-td:text-slate-300
-              prose-blockquote:border-l-azure-500 prose-blockquote:bg-azure-500/10 prose-blockquote:text-azure-200 prose-blockquote:px-4 prose-blockquote:py-3 prose-blockquote:rounded-r-lg prose-blockquote:not-italic
-            ">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{tabContent[activeTab]}</ReactMarkdown>
+        {/* Content */}
+        <div className="bg-white rounded-b-lg shadow-sm border border-t-0 border-gray-200">
+          
+          {/* OVERVIEW TAB */}
+          {mainTab === 'overview' && (
+            <div className="p-6">
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Contact Information
+                </h3>
+                <dl className="grid grid-cols-2 gap-4">
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Name</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{contact.name}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Company</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{contact.company || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Title</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{contact.title || 'N/A'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-gray-500">Match Score</dt>
+                    <dd className="mt-1 text-sm text-gray-900">{contact.match_score || 0}</dd>
+                  </div>
+                </dl>
+              </div>
             </div>
-          ) : (
-            <p className="text-slate-500 text-center py-8">No content for this section.</p>
           )}
-        </div>
-      )}
 
-      {/* Empty State */}
-      {!isEnriched && !isProcessing && (
-        <div className="col-span-12 bg-void-850 border border-glass-border rounded-xl p-12 text-center">
-          <div className="text-6xl mb-4">🤖</div>
-          <h3 className="text-xl font-bold text-slate-50 mb-2">Ready for Intelligence</h3>
-          <p className="text-slate-400 mb-6">Click "Enrich Now" to generate AI-powered insights.</p>
-          <button onClick={handleEnrich} className="px-8 py-3 bg-azure-600 hover:bg-azure-500 text-white font-semibold rounded-xl">⚡ Enrich Now</button>
+          {/* INTELLIGENCE TAB */}
+          {mainTab === 'intelligence' && (
+            <div className="p-6">
+              {!hasEnrichment ? (
+                <div className="text-center py-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border-2 border-dashed border-blue-200">
+                  <Sparkles className="w-16 h-16 text-blue-400 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">No AI Intelligence Yet</h3>
+                  <p className="text-gray-600 mb-6">
+                    Enrich this contact to generate deep sales intelligence powered by AI
+                  </p>
+                  <button
+                    onClick={handleEnrich}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    <Zap className="w-4 h-4" />
+                    Enrich Now
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {sections.overview && (
+                    <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleSection('overview')}
+                        className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <h3 className="text-lg font-semibold text-gray-900">Professional Overview</h3>
+                        {expandedSections.overview ? (
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                        )}
+                      </button>
+                      {expandedSections.overview && (
+                        <div className="px-6 pb-6 text-gray-700 whitespace-pre-wrap">
+                          {sections.overview}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {sections.company_info && sections.company_info.trim() && (
+                    <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleSection('company')}
+                        className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <h3 className="text-lg font-semibold text-gray-900">Company Intelligence</h3>
+                        {expandedSections.company ? (
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                        )}
+                      </button>
+                      {expandedSections.company && (
+                        <div className="px-6 pb-6 text-gray-700 whitespace-pre-wrap">
+                          {sections.company_info}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {sections.sales_opportunities && sections.sales_opportunities.trim() && (
+                    <div className="mb-4 border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleSection('opportunities')}
+                        className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50 transition-colors"
+                      >
+                        <h3 className="text-lg font-semibold text-gray-900">Sales Opportunities</h3>
+                        {expandedSections.opportunities ? (
+                          <ChevronDown className="w-5 h-5 text-gray-400" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                        )}
+                      </button>
+                      {expandedSections.opportunities && (
+                        <div className="px-6 pb-6 text-gray-700 whitespace-pre-wrap">
+                          {sections.sales_opportunities}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-6 pt-6 border-t border-gray-200 flex items-center justify-between text-sm text-gray-500">
+                    <span>
+                      Enriched {contact.enriched_at ? new Date(contact.enriched_at).toLocaleDateString() : 'recently'}
+                    </span>
+                    {enrichmentData?.character_count && (
+                      <span>{enrichmentData.character_count.toLocaleString()} characters</span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* FIT TAB */}
+          {mainTab === 'fit' && (
+            <div className="p-6">
+              <div className="text-center py-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border-2 border-dashed border-blue-200">
+                <Target className="w-16 h-16 text-blue-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">ICP Analysis Coming Soon</h3>
+                <p className="text-gray-600">
+                  Set up your Ideal Customer Profile to see how well this contact matches
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* QUALIFICATION TAB */}
+          {mainTab === 'qualification' && (
+            <div className="p-6">
+              <QualificationTab contactId={parseInt(id!)} />
+            </div>
+          )}
+
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }

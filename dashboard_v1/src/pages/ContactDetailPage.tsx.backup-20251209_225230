@@ -6,7 +6,6 @@ import {
   AlertTriangle, DollarSign, Zap, Shield, BarChart3, Lightbulb, 
   CheckCircle2, XCircle, Layers, UserCheck, Download, Loader2, X 
 } from 'lucide-react';
-import { QualificationTab } from '../components/QualificationTab';
 
 // =============================================================================
 // TYPES
@@ -594,4 +593,3 @@ export default function ContactDetailPage() {
   );
 }
 
-export { ContactDetailPage };

@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-route
 import LandingPage from './components/LandingPage';
 import TodaysBoard from './components/TodaysBoard';
 import ContactsView from './components/ContactsView';
-import { ContactDetailPage as ContactDetail } from './pages/ContactDetailPage';
+import { ContactDetailPage as ContactDetail } from './components/ContactDetailPage';
 import ColdCallQueue from './components/ColdCallQueue';
 import Analytics from './components/Analytics';
 import SmartLists from './components/SmartLists';
