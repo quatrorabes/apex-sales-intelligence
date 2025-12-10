@@ -1,6 +1,4 @@
-cd ~/projects/apex/apex-sales-intelligence/apps/backend
 
-cat > main.py << 'EOF'
 #!/usr/bin/env python3
 """
 Apex Sales Intelligence Backend - COMPLETE FastAPI Implementation
@@ -836,6 +834,4 @@ async def startup_event():
             cursor.close()
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
-EOF
-
-echo "✅ main.py created successfully!"
+        
