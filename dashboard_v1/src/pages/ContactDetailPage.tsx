@@ -30,35 +30,75 @@ interface Contact {
 // =============================================================================
 function extractSection(content: string | null, sectionType: string): string {
   if (!content) return '';
-  
-  const markers: Record<string, RegExp> = {
-    person: /===\s*PERSON RESEARCH[^=]*===/i,
-    company: /===\s*COMPANY RESEARCH[^=]*===/i,
-    sales: /===\s*SALES INTELLIGENCE\s*===/i,
-    personality: /###?\s*PERSONALITY ANALYSIS/i
-  };
-  
-  const marker = markers[sectionType];
-  if (!marker) return '';
-  
-  const match = content.match(marker);
-  if (!match || match.index === undefined) return '';
-  
-  const startIdx = match.index + match[0].length;
-  const afterMarker = content.substring(startIdx);
-  
-  // Find next major section
-  const nextMatch = afterMarker.match(/===\s*(PERSON|COMPANY|SALES)|###?\s*PERSONALITY/i);
-  if (nextMatch && nextMatch.index !== undefined) {
-    return afterMarker.substring(0, nextMatch.index).trim();
-  }
-  
-  return afterMarker.trim();
-}
 
-interface ParsedSection {
-  title: string;
-  content: string[];
+  // Detect format: JSON blob vs Markdown
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('"')) {
+    // JSON format - parse and extract
+    try {
+      const data = JSON.parse(trimmed.startsWith('"') ? trimmed : trimmed);
+      const jsonMap: Record<string, string[]> = {
+        person: ['EXECUTIVE SUMMARY', 'EXECUTIVE_SUMMARY', 'summary', 'overview'],
+        company: ['COMPANY', 'company_overview', 'company'],
+        sales: ['PAIN_POINTS', 'PAIN POINTS', 'OPPORTUNITIES', 'BUYING_TRIGGERS', 'pain_points'],
+        personality: ['PERSONALITY_ASSESSMENT', 'PERSONALITY', 'personality']
+      };
+      const keys = jsonMap[sectionType] || [];
+      for (const key of keys) {
+        if (data[key]) {
+          return Array.isArray(data[key]) ? data[key].join('\n- ') : String(data[key]);
+        }
+      }
+      return '';
+    } catch {
+      // Not valid JSON, try markdown
+    }
+  }
+
+  // Markdown format - multiple pattern support
+  const markdownPatterns: Record<string, RegExp[]> = {
+    person: [
+      /===\s*PERSON RESEARCH[^=]*===/i,
+      /##\s*.+–\s*Professional Profile/i,
+      /###?\s*Overview/i,
+      /###?\s*Background/i
+    ],
+    company: [
+      /===\s*COMPANY RESEARCH[^=]*===/i,
+      /##\s*.+–\s*Company Intelligence/i,
+      /###?\s*Company Overview/i
+    ],
+    sales: [
+      /===\s*SALES INTELLIGENCE\s*===/i,
+      /##\s*Sales Opportunities/i,
+      /###?\s*Trigger Events/i,
+      /###?\s*Pain Points/i
+    ],
+    personality: [
+      /###?\s*PERSONALITY ANALYSIS/i,
+      /###?\s*Personality\s*[&]?\s*Working Style/i,
+      /###?\s*Communication style/i
+    ]
+  };
+
+  const patterns = markdownPatterns[sectionType] || [];
+  
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match && match.index !== undefined) {
+      const startIdx = match.index;
+      const afterMarker = content.substring(startIdx);
+      
+      // Find next major section (## or === or ---)
+      const nextMatch = afterMarker.substring(match[0].length).match(/\n##\s|\n===|\n---/);
+      if (nextMatch && nextMatch.index !== undefined) {
+        return afterMarker.substring(0, match[0].length + nextMatch.index).trim();
+      }
+      return afterMarker.trim();
+    }
+  }
+
+  return '';
 }
 
 // Parse **Title:** sections with bullet points
