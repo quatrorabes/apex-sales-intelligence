@@ -307,6 +307,16 @@ export default function ContactDetailPage() {
   if (!contact) return <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-[#8b919a]">Contact not found</div>;
 
   // =============================================================================
+
+  // Safety check - prevent crash during re-renders
+  if (!contact) {
+    return (
+      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-gray-400">
+        Loading contact data...
+      </div>
+    );
+  }
+
   // PARSE ENRICHMENT DATA
   // =============================================================================
   const raw = contact.profile_content || '';
