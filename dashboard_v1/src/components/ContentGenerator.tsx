@@ -21,16 +21,19 @@ export const ContentGenerator: React.FC<ContentGeneratorProps> = ({ contactId, c
       switch (activeTab) {
         case 'email':
           // TODO: Email generation endpoint - not yet implemented in v2 API
+          // // TODO: Email generation endpoint - not yet implemented in v2 API
           // const emailResult = await apiClient.generateEmail(contactId, {});
           content = emailResult.content || emailResult.email || 'Email generated successfully';
           break;
         case 'linkedin':
           // TODO: LinkedIn generation endpoint - not yet implemented in v2 API
+          // // TODO: LinkedIn generation endpoint - not yet implemented in v2 API
           // const linkedInResult = await apiClient.generateLinkedInMessage(contactId, {});
           content = linkedInResult.content || linkedInResult.message || 'LinkedIn message generated';
           break;
         case 'call':
           // TODO: Call script generation endpoint - not yet implemented in v2 API
+          // // TODO: Call script generation endpoint - not yet implemented in v2 API
           // const callResult = await apiClient.generateCallScript(contactId, {});
           content = callResult.content || callResult.script || 'Call script generated';
           break;
