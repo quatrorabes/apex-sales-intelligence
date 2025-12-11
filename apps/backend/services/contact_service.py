@@ -95,12 +95,14 @@ def get_contact(contact_id: str) -> Optional[dict]:
 
 def get_all_contacts(limit: int = 50, offset: int = 0) -> List[dict]:
     """Get paginated list of contacts"""
+    from datetime import datetime, date
+    
     conn = get_db()
     cursor = conn.cursor()
-    
+
     is_pg = _is_postgres(conn)
     placeholder = '%s' if is_pg else '?'
-    
+
     cursor.execute(f"""
         SELECT id, hubspot_id, first_name, last_name, email, phone,
                title, company, industry, linkedin_url,
@@ -109,8 +111,18 @@ def get_all_contacts(limit: int = 50, offset: int = 0) -> List[dict]:
         ORDER BY created_at DESC
         LIMIT {placeholder} OFFSET {placeholder}
     """, (limit, offset))
+
+    contacts = []
+    for row in cursor.fetchall():
+        contact = {}
+        for key, value in dict(row).items():
+            # Convert datetime/date objects to ISO strings
+            if isinstance(value, (datetime, date)):
+                contact[key] = value.isoformat()
+            else:
+                contact[key] = value
+        contacts.append(contact)
     
-    contacts = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return contacts
 
