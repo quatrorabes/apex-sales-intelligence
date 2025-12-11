@@ -40,9 +40,17 @@ export default function Contacts() {
 
   const fetchContacts = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/v2/contacts?limit=500`);
+      const res = await fetch(`${API_URL}/api/v2/contacts/?limit=500`);
       const data = await res.json();
-      setContacts(data.contacts || []);
+      
+      // Transform backend data to match frontend interface
+      const transformedContacts = (data.contacts || []).map((c: any) => ({
+        ...c,
+        name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+        mdcp_score: c.unified_qualification_score || 0
+      }));
+      
+      setContacts(transformedContacts);
     } catch (err) {
       console.error('Failed to fetch contacts:', err);
     } finally {
