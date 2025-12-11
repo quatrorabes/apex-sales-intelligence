@@ -146,3 +146,25 @@ async def bulk_enrich(limit: int = 10):
             results.append({"id": contact["id"], "status": "error", "error": str(e)})
     
     return {"processed": len(results), "results": results}
+
+@router.post("/sync/hubspot")
+async def sync_from_hubspot(limit: int = 100):
+    """Sync contacts from HubSpot"""
+    from services.hubspot_sync_v2 import sync_hubspot_contacts
+    
+    try:
+        stats = sync_hubspot_contacts(limit)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/sync/hubspot")
+async def sync_from_hubspot(limit: int = 100):
+    """Sync contacts from HubSpot"""
+    from services.hubspot_sync_v2 import sync_hubspot_contacts
+    
+    try:
+        stats = sync_hubspot_contacts(limit)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
