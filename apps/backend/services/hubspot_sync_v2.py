@@ -64,20 +64,20 @@ class HubSpotSyncV2:
                         # Apply filters if enabled
                         if apply_filters:
                             # Must have email
-                            email = props.get("email", "").strip()
+                            email = props.get("email", "").strip() if props.get
                             if not email:
                                 stats["skipped"] += 1
                                 continue
                             
                             # Must have company
-                            company = props.get("company", "").strip()
+                            company = props.get("company", "").strip() if props.get
                             if not company:
                                 stats["skipped"] += 1
                                 continue
                             
                             # Must have name
-                            first_name = props.get("firstname", "").strip()
-                            last_name = props.get("lastname", "").strip()
+                            first_name = props.get("firstname", "").strip() if props.get
+                            last_name = props.get("lastname", "").strip() if props.get
                             if not first_name and not last_name:
                                 stats["skipped"] += 1
                                 continue

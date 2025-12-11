@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, RefreshCw, Filter, Download, TrendingUp } from 'lucide-react';
-import { apiClient } from '../utils/api';
+import { getContact, getContacts, enrichContact, getStats } from '@/config/api';
 import { Contact } from '../types';
 import ContactDetailModal from './ContactDetailModal';
 import { useTheme } from '../theme/ThemeProvider';
@@ -19,7 +19,7 @@ export const ContactsBoard: React.FC = () => {
   const loadContacts = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.getContacts({ limit: 100 });
+      const data = await getContacts(100); const response = { contacts: data.contacts, total: data.total };
       setContacts(response.contacts || []);
     } catch (error) {
       console.error('Failed to load contacts:', error);

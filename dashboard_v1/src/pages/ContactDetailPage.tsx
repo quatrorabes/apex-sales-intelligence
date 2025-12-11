@@ -60,33 +60,22 @@ function extractSection(content: string | null, sectionType: string): string {
     person: [
       /===\s*PERSON RESEARCH[^=]*===/i,
       /##\s*.+–\s*Professional Profile/i,
-      /##\s*1\.\s*Overview/i,
-      /##\s*2\.\s*Professional Background/i,
       /###?\s*Overview/i,
       /###?\s*Background/i
     ],
     company: [
       /===\s*COMPANY RESEARCH[^=]*===/i,
       /##\s*.+–\s*Company Intelligence/i,
-      /##\s*8\.\s*Company Overview/i,
-      /##\s*\d+\.\s*Company/i,
       /###?\s*Company Overview/i
     ],
     sales: [
       /===\s*SALES INTELLIGENCE\s*===/i,
       /##\s*Sales Opportunities/i,
-      /##\s*\d+\.\s*Pain Points/i,
-      /##\s*\d+\.\s*Trigger/i,
       /###?\s*Trigger Events/i,
-      /###?\s*Pain Points/i,
-      /PAIN.?POINTS/i,
-      /OPPORTUNITIES/i
+      /###?\s*Pain Points/i
     ],
     personality: [
       /###?\s*PERSONALITY ANALYSIS/i,
-      /##\s*6\.\s*Personality/i,
-      /##\s*7\.\s*Myers-Briggs/i,
-      /##\s*\d+\.\s*Personality/i,
       /###?\s*Personality\s*[&]?\s*Working Style/i,
       /###?\s*Communication style/i
     ]
@@ -113,41 +102,6 @@ function extractSection(content: string | null, sectionType: string): string {
 }
 
 // Parse **Title:** sections with bullet points
-
-// Parse markdown ## and ### sections (for company intelligence)
-function parseMarkdownSections(text: string): ParsedSection[] {
-  if (!text) return [];
-  
-  const sections: ParsedSection[] = [];
-  
-  // Split on ## headers (level 2)
-  const parts = text.split(/(?=^##\s)/m).filter(p => p.trim());
-  
-  for (const part of parts) {
-    const lines = part.split('\n');
-    const headerLine = lines[0] || '';
-    
-    // Extract title from ## Header or ### Header
-    const titleMatch = headerLine.match(/^#{2,3}\s+(.+)/);
-    if (!titleMatch) continue;
-    
-    const title = titleMatch[1].trim();
-    const body = lines.slice(1).join('\n').trim();
-    
-    // Extract bullet points and content
-    const contentItems = body
-      .split('\n')
-      .map(l => l.replace(/^[-•*]\s*/, '').replace(/\*\*/g, '').trim())
-      .filter(l => l.length > 0 && !l.startsWith('##'));
-    
-    if (title && contentItems.length > 0) {
-      sections.push({ title, content: contentItems });
-    }
-  }
-  
-  return sections;
-}
-
 function parseStarSections(text: string): ParsedSection[] {
   if (!text) return [];
   
@@ -229,7 +183,6 @@ function parseMBTI(text: string) {
     }
   });
   
-  return { type: typeMatch?.[1] || 'N/A', confidence: confMatch?.[1] || 'Medium', dimensions };
 }
 
 function parseDISC(text: string) {
@@ -422,12 +375,9 @@ export default function ContactDetailPage() {
   console.log('Personality section:', personalitySection.length, 'chars');
 
   // Parse subsections
-  const personCards = parseStarSections(personSection);
-  const companyCards = (() => {
-    const numbered = parseNumberedSections(companySection);
-    if (numbered.length > 0) return numbered;
-    return parseMarkdownSections(companySection);
-  })();
+  const _personCards = parseStarSections(personSection);
+  const personCards = _personCards.length > 20 ? [] : _personCards;
+  const companyCards = parseNumberedSections(companySection);
   const salesCards = parseStarSections(salesSection);
   
   console.log('Person cards:', personCards.length, personCards.map(c => c.title));
@@ -538,13 +488,9 @@ export default function ContactDetailPage() {
               <Card key={i} title={s.title} icon={getIcon(s.title)} color="text-orange-400">
                 <BulletList items={s.content} color="text-orange-400" />
               </Card>
-            )) : salesSection ? (
-              <Card title="Sales Intelligence" icon={<TrendingUp size={18} />} color="text-orange-400">
-                <div className="text-gray-300 whitespace-pre-wrap text-sm">{salesSection}</div>
-              </Card>
-            ) : (
+            )) : (
               <Card title="Sales Intelligence" icon={<TrendingUp size={18} />}>
-                <p className="text-gray-400">No sales intelligence available. Enrich this contact to generate insights.</p>
+                <p>No sales intelligence available. Enrich this contact to generate insights.</p>
               </Card>
             )}
           </div>
@@ -557,11 +503,7 @@ export default function ContactDetailPage() {
               <Card key={i} title={s.title} icon={getIcon(s.title)}>
                 <BulletList items={s.content} />
               </Card>
-            )) : personSection ? (
-              <Card title="Professional Profile" icon={<User size={18} />}>
-                <div className="text-gray-300 whitespace-pre-wrap text-sm">{personSection}</div>
-              </Card>
-            ) : (
+            )) : (
               <Card title="Overview" icon={<User size={18} />}>
                 <DataRow label="Name" value={`${contact.firstname} ${contact.lastname}`} />
                 <DataRow label="Title" value={contact.title} />
@@ -580,14 +522,10 @@ export default function ContactDetailPage() {
               <Card key={i} title={s.title} icon={getIcon(s.title)} color="text-emerald-400">
                 <BulletList items={s.content} color="text-emerald-400" />
               </Card>
-            )) : companySection ? (
-              <Card title="Company Intelligence" icon={<Building2 size={18} />} color="text-emerald-400">
-                <div className="text-gray-300 whitespace-pre-wrap text-sm">{companySection}</div>
-              </Card>
-            ) : (
+            )) : (
               <Card title="Company" icon={<Building2 size={18} />}>
                 <DataRow label="Company" value={contact.company} />
-                <p className="mt-2 text-gray-400">No company data available.</p>
+                <p className="mt-2 text-[#8b919a]">No company data available.</p>
               </Card>
             )}
           </div>

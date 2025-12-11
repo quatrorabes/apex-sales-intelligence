@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Wand2, Mail, Phone, Linkedin, Copy, Check, Loader } from 'lucide-react';
-import { apiClient } from '../utils/api';
+import { getContact, getContacts, enrichContact, getStats } from '@/config/api';
 
 interface ContentGeneratorProps {
   contactId: number;
@@ -20,15 +20,18 @@ export const ContentGenerator: React.FC<ContentGeneratorProps> = ({ contactId, c
       
       switch (activeTab) {
         case 'email':
-          const emailResult = await apiClient.generateEmail(contactId, {});
+          // TODO: Email generation endpoint - not yet implemented in v2 API
+          // const emailResult = await apiClient.generateEmail(contactId, {});
           content = emailResult.content || emailResult.email || 'Email generated successfully';
           break;
         case 'linkedin':
-          const linkedInResult = await apiClient.generateLinkedInMessage(contactId, {});
+          // TODO: LinkedIn generation endpoint - not yet implemented in v2 API
+          // const linkedInResult = await apiClient.generateLinkedInMessage(contactId, {});
           content = linkedInResult.content || linkedInResult.message || 'LinkedIn message generated';
           break;
         case 'call':
-          const callResult = await apiClient.generateCallScript(contactId, {});
+          // TODO: Call script generation endpoint - not yet implemented in v2 API
+          // const callResult = await apiClient.generateCallScript(contactId, {});
           content = callResult.content || callResult.script || 'Call script generated';
           break;
       }

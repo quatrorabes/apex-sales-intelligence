@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader, AlertCircle, CheckCircle2, Sparkles, Brain, RefreshCw, Download, Upload } from 'lucide-react';
 import { Contact } from '../types';
-import { apiClient } from '../utils/api';
+import { getContact, getContacts, enrichContact, getStats } from '@/config/api';
 import { PersonaBadge } from './PersonaBadge';
 import { BatchProgress } from './BatchProgress';
 import ContactDetailModal from './ContactDetailModal';
@@ -33,7 +33,7 @@ export const ContactEnrichmentView: React.FC = () => {
   const loadContacts = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.getContacts({ limit: 200 });
+      const data = await getContacts(200); const response = { contacts: data.contacts, total: data.total };
       setContacts(response.contacts || []);
     } catch (error) {
       console.error('Failed to load contacts:', error);
@@ -90,7 +90,7 @@ export const ContactEnrichmentView: React.FC = () => {
       );
 
       try {
-        await apiClient.enrichContact(job.contactId);
+        await enrichContact(job.contactId);
         
         // Update to completed
         setEnrichmentJobs(prev => 

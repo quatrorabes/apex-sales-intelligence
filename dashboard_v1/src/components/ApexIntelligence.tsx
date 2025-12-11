@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Brain, Zap, TrendingUp, Users, Target, Loader, AlertCircle } from 'lucide-react';
-import { apiClient } from '../utils/api';
+import { getContact, getContacts, enrichContact, getStats } from '@/config/api';
 import { Contact } from '../types';
 
 interface ApexInsight {
