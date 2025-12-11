@@ -277,44 +277,6 @@ def get_contact_by_hubspot_id(hubspot_id: str) -> Optional[dict]:
         return contact
     return None
 
-def import_from_csv(csv_data: List[dict]) -> int:
-    """Import contacts from CSV data"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    is_pg = _is_postgres(conn)
-    placeholder = '%s' if is_pg else '?'
-    
-    imported = 0
-    for row in csv_data:
-        if not all([row.get('first_name'), row.get('last_name'), 
-                   row.get('email'), row.get('company')]):
-            continue
-        
-        contact_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
-        
-        try:
-            cursor.execute(f"""
-                INSERT INTO contacts (
-                    id, first_name, last_name, email, phone,
-                    title, company, industry, linkedin_url,
-                    created_at, updated_at, enrichment_status
-                ) VALUES ({', '.join([placeholder] * 12)})
-            """, (
-                contact_id, row.get('first_name'), row.get('last_name'),
-                row.get('email'), row.get('phone'), row.get('title'),
-                row.get('company'), row.get('industry'), row.get('linkedin_url'),
-                now, now, 'pending'
-            ))
-            imported += 1
-        except Exception as e:
-            continue
-    
-    conn.commit()
-    conn.close()
-    return imported
-
 def bulk_enrich(limit: int = 10) -> dict:
     """Get contacts needing enrichment"""
     conn = get_db()
