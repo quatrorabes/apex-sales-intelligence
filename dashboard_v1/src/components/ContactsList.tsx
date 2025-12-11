@@ -39,7 +39,7 @@ export default function ContactsList() {
     const fetchContacts = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`${API_URL}/api/contacts?limit=${limit}&offset=${page * limit}`);
+            const res = await fetch(`${API_URL}/api/v2/contacts?limit=${limit}&offset=${page * limit}`);
             const data = await res.json();
             setContacts(data.contacts || []);
             setTotal(data.total || 0);

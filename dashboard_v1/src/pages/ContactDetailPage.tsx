@@ -298,7 +298,7 @@ export default function ContactDetailPage() {
 
   const fetchContact = async () => {
     try {
-      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}`);
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/v2/contacts/${id}`);
       const data = await res.json(); setContact(data.contact);
     } catch (e) {
       console.error(e);
@@ -310,9 +310,9 @@ export default function ContactDetailPage() {
   const handleEnrich = async () => {
     setEnriching(true);
     try {
-      await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/enrich`, { method: 'POST' });
+      await fetch(`https://apex-backend-i7b0.onrender.com/api/v2/contacts/${id}/enrich`, { method: 'POST' });
       const poll = setInterval(async () => {
-        const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/enrichment-status`);
+        const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/v2/contacts/${id}/enrichment-status`);
         const data = await res.json();
         if (data.status === 'enriched' || data.status === 'error') {
           clearInterval(poll);
@@ -328,7 +328,7 @@ export default function ContactDetailPage() {
   const handleDownload = async () => {
     setGenerating(true);
     try {
-      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/generate-persona`, { method: 'POST' });
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/v2/contacts/${id}/generate-persona`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.files?.pdf_landscape) {

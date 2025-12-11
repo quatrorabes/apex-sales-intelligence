@@ -37,7 +37,7 @@ export default function ActivityTimeline({ contactId }: { contactId: number }) {
 
     const fetchActivities = async () => {
         try {
-            const res = await fetch(`${API_URL}/api/contacts/${contactId}/activities`);
+            const res = await fetch(`${API_URL}/api/v2/contacts/${contactId}/activities`);
             const data = await res.json();
             setActivities(data.activities || []);
         } catch (e) {

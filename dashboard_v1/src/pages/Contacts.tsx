@@ -40,7 +40,7 @@ export default function Contacts() {
 
   const fetchContacts = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/contacts?limit=500`);
+      const res = await fetch(`${API_URL}/api/v2/contacts?limit=500`);
       const data = await res.json();
       setContacts(data.contacts || []);
     } catch (err) {

@@ -18,7 +18,7 @@ export function QualificationTab({ contactId }: QualificationTabProps) {
   const fetchQualification = async () => {
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/contacts/${contactId}/qualification-report?framework=HYBRID`
+        `${API_BASE_URL}/api/v2/contacts/${contactId}/qualification-report?framework=HYBRID`
       );
       const data = await response.json();
       if (data.success) {

@@ -63,7 +63,7 @@ export default function EnrollCadenceModal({ contactId, contactName, isOpen, onC
     
     setEnrolling(true);
     try {
-      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contactId}/enroll`, {
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/v2/contacts/${contactId}/enroll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cadence_id: selectedId })

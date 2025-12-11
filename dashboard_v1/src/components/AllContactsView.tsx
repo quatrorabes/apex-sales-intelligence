@@ -30,7 +30,7 @@ export default function AllContactsView() {
     const fetchContacts = async () => {
         try {
             setLoading(true);
-            const response = await fetch('https://apex-backend-i7b0.onrender.com/api/contacts?limit=200');
+            const response = await fetch('https://apex-backend-i7b0.onrender.com/api/v2/contacts?limit=200');
             const data = await response.json();
             setContacts(data.contacts || []);
         } catch (error) {

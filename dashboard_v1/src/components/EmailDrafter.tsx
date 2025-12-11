@@ -49,7 +49,7 @@ export default function EmailDrafter({ contactId, contactName, contactEmail }: E
         setLoading(true);
         setSequence(null);
         try {
-            const res = await fetch(`${API_URL}/api/contacts/${contactId}/generate-email`, {
+            const res = await fetch(`${API_URL}/api/v2/contacts/${contactId}/generate-email`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ template, context: customContext })
@@ -69,7 +69,7 @@ export default function EmailDrafter({ contactId, contactName, contactEmail }: E
         setLoading(true);
         setDraft(null);
         try {
-            const res = await fetch(`${API_URL}/api/contacts/${contactId}/generate-sequence`, {
+            const res = await fetch(`${API_URL}/api/v2/contacts/${contactId}/generate-sequence`, {
                 method: 'POST'
             });
             const data = await res.json();
