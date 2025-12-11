@@ -200,3 +200,54 @@ def delete_contact(contact_id: str) -> bool:
     conn.close()
     
     return deleted
+
+def import_from_csv(csv_data: List[dict]) -> int:
+    """Import contacts from CSV data"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    imported = 0
+    for row in csv_data:
+        # Skip if missing required fields
+        if not all([row.get('first_name'), row.get('last_name'), 
+                   row.get('email'), row.get('company')]):
+            continue
+        
+        contact_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+        
+        try:
+            cursor.execute(f"""
+                INSERT INTO contacts (
+                    id, first_name, last_name, email, phone,
+                    title, company, industry, linkedin_url,
+                    created_at, updated_at, enrichment_status
+                ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                          {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                          {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (
+                contact_id,
+                row.get('first_name'),
+                row.get('last_name'),
+                row.get('email'),
+                row.get('phone'),
+                row.get('title'),
+                row.get('company'),
+                row.get('industry'),
+                row.get('linkedin_url'),
+                now,
+                now,
+                'pending'
+            ))
+            imported += 1
+        except Exception as e:
+            print(f"Error importing {row.get('email')}: {e}")
+            continue
+    
+    conn.commit()
+    conn.close()
+    
+    return imported
