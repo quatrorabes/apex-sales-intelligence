@@ -585,7 +585,7 @@ async def list_contacts(
                 query += " AND apex_score >= %s"
                 params.append(min_apex_score)
             
-            query += " ORDER BY COALESCE(unified_qualification_score, apex_score, priority_score, 0) DESC, id DESC LIMIT %s OFFSET %s"
+            query += " ORDER BY COALESCE(unified_qualification_score, 0, priority_score, 0) DESC, id DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])
             
             cursor.execute(query, params)
@@ -1194,7 +1194,7 @@ async def todays_board():
             
             cursor.execute("""
                 SELECT * FROM contacts 
-                ORDER BY COALESCE(unified_qualification_score, apex_score, priority_score, 0) DESC, 
+                ORDER BY COALESCE(unified_qualification_score, 0, priority_score, 0) DESC, 
                          id DESC 
                 LIMIT 20
             """)
@@ -1681,7 +1681,7 @@ async def cold_call_queue():
             cursor.execute("""
                 SELECT * FROM contacts
                 WHERE cadence_status = 'active'
-                ORDER BY COALESCE(unified_qualification_score, apex_score, 0) DESC
+                ORDER BY COALESCE(unified_qualification_score, 0, 0) DESC
                 LIMIT 20
             """)
             queue = [dict(row) for row in cursor.fetchall()]
