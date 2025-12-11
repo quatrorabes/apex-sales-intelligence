@@ -16,8 +16,8 @@ from services.contact_service import (
     update_contact, delete_contact, save_enrichment, 
     get_stats, import_from_csv, get_contact_by_hubspot_id
 )
-from intelligence.engines.enrichment.structured_enrichment import enrich_contact
 
+from services.enrichment_adapter import enrich_and_save
 router = APIRouter(prefix="/api/v2/contacts", tags=["contacts"])
 
 # =============================================================================
@@ -100,25 +100,10 @@ async def delete_single_contact(contact_id: str):
 @router.post("/{contact_id}/enrich")
 async def enrich_single_contact(contact_id: str):
     """Enrich a contact with AI-generated intelligence"""
-    contact = get_contact(contact_id)
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    
-    # Run enrichment
-    enrichment = await enrich_contact(
-        first_name=contact["first_name"],
-        last_name=contact["last_name"],
-        title=contact.get("title", ""),
-        company=contact.get("company", ""),
-        email=contact.get("email", "")
-    )
-    
-    if not enrichment:
-        raise HTTPException(status_code=500, detail="Enrichment failed")
-    
-    # Save to database
-    updated = save_enrichment(contact_id, enrichment.model_dump())
-    return updated
+    result = enrich_and_save(contact_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Enrichment failed"))
+    return get_contact(contact_id)
 
 @router.post("/import/csv")
 async def import_csv(file: UploadFile = File(...)):
