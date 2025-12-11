@@ -47,13 +47,23 @@ class ContactUpdate(BaseModel):
 @router.get("/")
 async def list_contacts(limit: int = 100, offset: int = 0):
     """List all contacts with pagination"""
-    contacts = get_all_contacts(limit=limit, offset=offset)
-    stats = get_stats()
-    return {
-        "contacts": contacts,
-        "total": stats["total_contacts"],
-        "enriched": stats["enriched_contacts"]
-    }
+    try:
+        contacts = get_all_contacts(limit=limit, offset=offset)
+        stats = get_stats()
+        return {
+            "contacts": contacts,
+            "total": stats.get("total_contacts", len(contacts)),
+            "enriched": stats.get("enriched_contacts", 0)
+        }
+    except Exception as e:
+        print(f"Error in list_contacts: {e}")
+        # Return contacts anyway, even if stats fails
+        contacts = get_all_contacts(limit=limit, offset=offset)
+        return {
+            "contacts": contacts,
+            "total": len(contacts),
+            "enriched": 0
+        }
 
 @router.get("/stats")
 async def contact_stats():
