@@ -168,14 +168,16 @@ def get_stats() -> dict:
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM contacts")
-    total = cursor.fetchone()[0]
+    is_pg = _is_postgres(conn)
     
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment IS NOT NULL")
-    enriched = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) as count FROM contacts")
+    total = cursor.fetchone()['count'] if is_pg else cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'pending'")
-    pending = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment IS NOT NULL")
+    enriched = cursor.fetchone()['count'] if is_pg else cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'pending'")
+    pending = cursor.fetchone()['count'] if is_pg else cursor.fetchone()[0]
     
     conn.close()
     
@@ -184,6 +186,7 @@ def get_stats() -> dict:
         "enriched_contacts": enriched,
         "pending_enrichment": pending
     }
+
 
 def delete_contact(contact_id: str) -> bool:
     """Delete a contact"""
