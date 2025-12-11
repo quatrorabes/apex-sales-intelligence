@@ -46,6 +46,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# =============================================================================
+# V2 API ROUTES (Clean Schema)
+# =============================================================================
+from api.routes.contacts_v2 import router as contacts_v2_router
+app.include_router(contacts_v2_router)
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set")
@@ -1738,3 +1745,5 @@ async def startup_event():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+
+# =============================================================================
