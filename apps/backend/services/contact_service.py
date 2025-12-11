@@ -1,20 +1,36 @@
 """
-Contact Service - CRUD operations for contacts with PostgreSQL/SQLite
+Contact Service - CRUD operations for contacts (PostgreSQL + SQLite)
 """
-import sqlite3
+import os
 import json
 import uuid
-import os
 from datetime import datetime
-from typing import Optional, List
-
-# Path to database
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'apex.db')
+from typing import Optional, List, Dict
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Connect to PostgreSQL (production) or SQLite (local)"""
+    DATABASE_URL = os.getenv('DATABASE_URL')
+    
+    if DATABASE_URL and DATABASE_URL.startswith('postgresql'):
+        # Production: PostgreSQL
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    else:
+        # Local: SQLite
+        import sqlite3
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'apex.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def _is_postgres(conn):
+    """Check if connection is PostgreSQL"""
+    try:
+        import psycopg2
+        return isinstance(conn, psycopg2.extensions.connection)
+    except ImportError:
+        return False
 
 # =============================================================================
 # CRUD OPERATIONS
@@ -36,86 +52,87 @@ def create_contact(
     contact_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     
-    cursor.execute("""
-        INSERT INTO contacts (id, hubspot_id, first_name, last_name, email, phone, title, company, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (contact_id, hubspot_id, first_name, last_name, email, phone, title, company, now, now))
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    cursor.execute(f"""
+        INSERT INTO contacts (
+            id, hubspot_id, first_name, last_name, email, phone, 
+            title, company, created_at, updated_at, enrichment_status
+        ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                  {placeholder}, {placeholder}, {placeholder}, {placeholder}, 
+                  {placeholder}, {placeholder}, {placeholder})
+    """, (contact_id, hubspot_id, first_name, last_name, email, phone, 
+          title, company, now, now, 'pending'))
     
     conn.commit()
     conn.close()
     
     return get_contact(contact_id)
 
-
 def get_contact(contact_id: str) -> Optional[dict]:
-    """Get a contact by ID"""
+    """Get single contact by ID"""
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    cursor.execute(f"SELECT * FROM contacts WHERE id = {placeholder}", (contact_id,))
     row = cursor.fetchone()
     conn.close()
     
-    if not row:
-        return None
-    
-    return _row_to_dict(row)
+    if row:
+        contact = dict(row)
+        # Parse enrichment JSON if string
+        if contact.get('enrichment') and isinstance(contact['enrichment'], str):
+            try:
+                contact['enrichment'] = json.loads(contact['enrichment'])
+            except:
+                pass
+        return contact
+    return None
 
-
-def get_contact_by_hubspot_id(hubspot_id: str) -> Optional[dict]:
-    """Get a contact by HubSpot ID"""
+def get_all_contacts(limit: int = 50, offset: int = 0) -> List[dict]:
+    """Get paginated list of contacts"""
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM contacts WHERE hubspot_id = ?", (hubspot_id,))
-    row = cursor.fetchone()
-    conn.close()
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
     
-    if not row:
-        return None
-    
-    return _row_to_dict(row)
-
-
-def get_all_contacts(limit: int = 100, offset: int = 0) -> List[dict]:
-    """Get all contacts with pagination"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT * FROM contacts 
-        ORDER BY updated_at DESC 
-        LIMIT ? OFFSET ?
+    cursor.execute(f"""
+        SELECT id, hubspot_id, first_name, last_name, email, phone,
+               title, company, industry, linkedin_url,
+               enrichment_status, enriched_at, created_at, updated_at
+        FROM contacts
+        ORDER BY created_at DESC
+        LIMIT {placeholder} OFFSET {placeholder}
     """, (limit, offset))
     
-    rows = cursor.fetchall()
+    contacts = [dict(row) for row in cursor.fetchall()]
     conn.close()
-    
-    return [_row_to_dict(row) for row in rows]
+    return contacts
 
-
-def update_contact(contact_id: str, **kwargs) -> Optional[dict]:
-    """Update a contact"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Build update query
-    updates = []
-    values = []
-    for key, value in kwargs.items():
-        if key in ['first_name', 'last_name', 'email', 'phone', 'title', 'company', 'hubspot_id']:
-            updates.append(f"{key} = ?")
-            values.append(value)
-    
+def update_contact(contact_id: str, **updates) -> Optional[dict]:
+    """Update contact fields"""
     if not updates:
         return get_contact(contact_id)
     
-    updates.append("updated_at = ?")
-    values.append(datetime.utcnow().isoformat())
-    values.append(contact_id)
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    # Build SET clause
+    set_clause = ', '.join([f"{k} = {placeholder}" for k in updates.keys()])
+    values = list(updates.values()) + [datetime.utcnow().isoformat(), contact_id]
     
     cursor.execute(f"""
-        UPDATE contacts SET {', '.join(updates)} WHERE id = ?
+        UPDATE contacts 
+        SET {set_clause}, updated_at = {placeholder}
+        WHERE id = {placeholder}
     """, values)
     
     conn.commit()
@@ -123,18 +140,22 @@ def update_contact(contact_id: str, **kwargs) -> Optional[dict]:
     
     return get_contact(contact_id)
 
-
-def save_enrichment(contact_id: str, enrichment_data: dict) -> Optional[dict]:
-    """Save enrichment data for a contact"""
+def save_enrichment(contact_id: str, enrichment_data: dict) -> dict:
+    """Save enrichment data to contact"""
     conn = get_db()
     cursor = conn.cursor()
     
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
     now = datetime.utcnow().isoformat()
     
-    cursor.execute("""
+    cursor.execute(f"""
         UPDATE contacts 
-        SET enrichment = ?, enriched_at = ?, updated_at = ?
-        WHERE id = ?
+        SET enrichment = {placeholder},
+            enrichment_status = 'enriched',
+            enriched_at = {placeholder},
+            updated_at = {placeholder}
+        WHERE id = {placeholder}
     """, (json.dumps(enrichment_data), now, now, contact_id))
     
     conn.commit()
@@ -142,64 +163,40 @@ def save_enrichment(contact_id: str, enrichment_data: dict) -> Optional[dict]:
     
     return get_contact(contact_id)
 
-
-def delete_contact(contact_id: str) -> bool:
-    """Delete a contact"""
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    cursor.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
-    deleted = cursor.rowcount > 0
-    
-    conn.commit()
-    conn.close()
-    
-    return deleted
-
-
-def import_from_csv(csv_data: List[dict]) -> List[dict]:
-    """Import contacts from CSV data"""
-    created = []
-    for row in csv_data:
-        contact = create_contact(
-            first_name=row.get('first_name', row.get('firstname', '')),
-            last_name=row.get('last_name', row.get('lastname', '')),
-            email=row.get('email'),
-            phone=row.get('phone'),
-            title=row.get('title', row.get('jobtitle', '')),
-            company=row.get('company')
-        )
-        created.append(contact)
-    return created
-
-
-def _row_to_dict(row) -> dict:
-    """Convert SQLite row to dictionary"""
-    d = dict(row)
-    if d.get('enrichment'):
-        d['enrichment'] = json.loads(d['enrichment'])
-    return d
-
-
-# =============================================================================
-# STATS
-# =============================================================================
-
 def get_stats() -> dict:
-    """Get contact statistics"""
+    """Get aggregate statistics"""
     conn = get_db()
     cursor = conn.cursor()
     
     cursor.execute("SELECT COUNT(*) FROM contacts")
     total = cursor.fetchone()[0]
     
-    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enriched_at IS NOT NULL")
+    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment IS NOT NULL")
     enriched = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'pending'")
+    pending = cursor.fetchone()[0]
     
     conn.close()
     
     return {
         "total_contacts": total,
         "enriched_contacts": enriched,
-        "pending_enrichment": total - enriched
+        "pending_enrichment": pending
     }
+
+def delete_contact(contact_id: str) -> bool:
+    """Delete a contact"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    cursor.execute(f"DELETE FROM contacts WHERE id = {placeholder}", (contact_id,))
+    deleted = cursor.rowcount > 0
+    
+    conn.commit()
+    conn.close()
+    
+    return deleted
