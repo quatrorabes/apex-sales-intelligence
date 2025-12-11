@@ -518,7 +518,7 @@ async def health():
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
             enriched = cursor.fetchone()["count"]
             
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE apex_score IS NOT NULL")
+            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE unified_qualification_score IS NOT NULL")
             scored = cursor.fetchone()["count"]
             
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE bant_total_score > 0")
@@ -551,6 +551,52 @@ async def health():
 # ============================================================================
 # CONTACT CRUD ENDPOINTS
 # ============================================================================
+
+
+
+# ============================================================================
+# V2 CONTACTS ENDPOINT (Frontend Primary)
+# ============================================================================
+
+@app.get("/api/v2/contacts", tags=["Contacts V2"])
+async def list_contacts_v2(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """V2 Contacts endpoint - returns data in format frontend expects"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    id, name, email, company, title, phone, linkedin_url,
+                    enrichment_status, enriched_at, created_at, updated_at,
+                    unified_qualification_score, apex_score, mdcp_score, rss_score,
+                    vertical, persona_type
+                FROM contacts
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """, (limit, offset))
+            
+            contacts = [dict(row) for row in cursor.fetchall()]
+            
+            cursor.execute("SELECT COUNT(*) as count FROM contacts")
+            total = cursor.fetchone()["count"]
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "contacts": contacts,
+                "total": total,
+                "limit": limit,
+                "offset": offset
+            }
+    except Exception as e:
+        logger.error(f"v2_contacts error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/contacts", tags=["Contacts"])
 async def list_contacts(
@@ -585,7 +631,7 @@ async def list_contacts(
                 query += " AND apex_score >= %s"
                 params.append(min_apex_score)
             
-            query += " ORDER BY COALESCE(unified_qualification_score, 0, priority_score, 0) DESC, id DESC LIMIT %s OFFSET %s"
+            query += " ORDER BY COALESCE(unified_qualification_score, 0) DESC, id DESC LIMIT %s OFFSET %s"
             params.extend([limit, offset])
             
             cursor.execute(query, params)
@@ -1155,7 +1201,7 @@ async def get_apex_scores(
             query = """
                 SELECT id, name, company, title, vertical, apex_score, mdcp_score, rss_score, persona_type
                 FROM contacts
-                WHERE apex_score IS NOT NULL
+                WHERE unified_qualification_score IS NOT NULL
                     AND apex_score >= %s
                     AND apex_score <= %s
             """
@@ -1194,7 +1240,7 @@ async def todays_board():
             
             cursor.execute("""
                 SELECT * FROM contacts 
-                ORDER BY COALESCE(unified_qualification_score, 0, priority_score, 0) DESC, 
+                ORDER BY COALESCE(unified_qualification_score, 0) DESC, 
                          id DESC 
                 LIMIT 20
             """)
@@ -1265,7 +1311,7 @@ async def get_analytics():
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
             enriched = cursor.fetchone()["count"]
             
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE apex_score IS NOT NULL")
+            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE unified_qualification_score IS NOT NULL")
             scored = cursor.fetchone()["count"]
             
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE bant_total_score > 0")
@@ -1286,7 +1332,7 @@ async def get_analytics():
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE cadence_status = 'active'")
             in_cadence = cursor.fetchone()["count"]
             
-            cursor.execute("SELECT AVG(apex_score) as avg_score FROM contacts WHERE apex_score IS NOT NULL")
+            cursor.execute("SELECT AVG(apex_score) as avg_score FROM contacts WHERE unified_qualification_score IS NOT NULL")
             avg_apex = cursor.fetchone()["avg_score"]
             
             cursor.execute("SELECT AVG(unified_qualification_score) as avg_score FROM contacts WHERE unified_qualification_score > 0")
@@ -1651,7 +1697,7 @@ async def get_smart_lists():
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed' AND enriched_at >= NOW() - INTERVAL '7 days'")
             recently_enriched = cursor.fetchone()["count"]
             
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE bant_qualification_status = 'HIGHLY_QUALIFIED'")
+            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE bant_total_score >= 80")
             bant_qualified = cursor.fetchone()["count"]
             
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE spice_qualification_status = 'ADVANCING'")
@@ -1681,7 +1727,7 @@ async def cold_call_queue():
             cursor.execute("""
                 SELECT * FROM contacts
                 WHERE cadence_status = 'active'
-                ORDER BY COALESCE(unified_qualification_score, 0, 0) DESC
+                ORDER BY COALESCE(unified_qualification_score, 0) DESC
                 LIMIT 20
             """)
             queue = [dict(row) for row in cursor.fetchall()]
