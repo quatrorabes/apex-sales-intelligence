@@ -251,3 +251,90 @@ def import_from_csv(csv_data: List[dict]) -> int:
     conn.close()
     
     return imported
+
+def get_contact_by_hubspot_id(hubspot_id: str) -> Optional[dict]:
+    """Get contact by HubSpot ID"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    cursor.execute(
+        f"SELECT * FROM contacts WHERE hubspot_id = {placeholder}",
+        (hubspot_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        contact = dict(row)
+        if contact.get('enrichment') and isinstance(contact['enrichment'], str):
+            try:
+                contact['enrichment'] = json.loads(contact['enrichment'])
+            except:
+                pass
+        return contact
+    return None
+
+def import_from_csv(csv_data: List[dict]) -> int:
+    """Import contacts from CSV data"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    imported = 0
+    for row in csv_data:
+        if not all([row.get('first_name'), row.get('last_name'), 
+                   row.get('email'), row.get('company')]):
+            continue
+        
+        contact_id = str(uuid.uuid4())
+        now = datetime.utcnow().isoformat()
+        
+        try:
+            cursor.execute(f"""
+                INSERT INTO contacts (
+                    id, first_name, last_name, email, phone,
+                    title, company, industry, linkedin_url,
+                    created_at, updated_at, enrichment_status
+                ) VALUES ({', '.join([placeholder] * 12)})
+            """, (
+                contact_id, row.get('first_name'), row.get('last_name'),
+                row.get('email'), row.get('phone'), row.get('title'),
+                row.get('company'), row.get('industry'), row.get('linkedin_url'),
+                now, now, 'pending'
+            ))
+            imported += 1
+        except Exception as e:
+            continue
+    
+    conn.commit()
+    conn.close()
+    return imported
+
+def bulk_enrich(limit: int = 10) -> dict:
+    """Get contacts needing enrichment"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    is_pg = _is_postgres(conn)
+    placeholder = '%s' if is_pg else '?'
+    
+    cursor.execute(f"""
+        SELECT id, first_name, last_name, email, company, title
+        FROM contacts
+        WHERE enrichment_status = 'pending'
+        ORDER BY created_at DESC
+        LIMIT {placeholder}
+    """, (limit,))
+    
+    contacts = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    return {
+        "contacts": contacts,
+        "count": len(contacts)
+    }
