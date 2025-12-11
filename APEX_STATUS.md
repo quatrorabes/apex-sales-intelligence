@@ -15,7 +15,11 @@
 
 - Contact list and ContactDetailPage are wired to the v2 backend and read enrichment from PostgreSQL. [file:15][file:17]
 - ContactDetailPage maps enrichment.sections into Overview, Company, Sales Intel, Personality, and Raw tabs.
-- Remaining enhancements: richer Sales Intel cards, personality content once backend emits personality_and_communication, and additional pages (Deals, Signals, Analytics).
+- **DEC 11 Update:** Sales Intel tab now displays TWO granular cards:
+  - "Pain Points & Buying Triggers" (with AlertCircle icon) pulls from `sections.pain_points_and_challenges`
+  - "Budget & Decision Authority" (with DollarSign icon) pulls from `sections.budget_and_authority`
+  - Both cards use the `SectionCard` component with icons for visual hierarchy
+- Remaining enhancements: personality content once backend emits personality_and_communication, and additional pages (Deals, Signals, Analytics).
 
 ## Backend Status
 
@@ -33,4 +37,3 @@
   - Assume GitHub (main branch) is the truth; avoid describing architecture only in chat.
 - Before cutting a release or promoting to production:
   - Confirm this document matches the deployed stack (frontend routes, API bases, and critical endpoints).
-
