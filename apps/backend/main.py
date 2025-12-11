@@ -26,6 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
+    redirect_slashes=False,
     title="Apex Sales Intelligence API v2.0",
     description="Multi-vertical sales intelligence with APEX, BANT, and SPICE qualification frameworks",
     version="2.0.0"
