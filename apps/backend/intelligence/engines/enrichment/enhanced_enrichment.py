@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
-Apex Enrichment Engine - Multi-Stage Search Strategy
-Does 3 targeted searches then combines for rich profiles
-Target: 8000+ character profiles
+APEX Enrichment Engine - Multi-Stage Strategy
+Dec 11, 2025 - Fixed version matching Dec 5 architecture
+
+Architecture:
+- Stage 1-3: Perplexity research (raw data collection)
+- Stage 4: GPT-4 structured parsing (clean sections)
 """
 import os
 import logging
@@ -13,7 +16,7 @@ import time
 logger = logging.getLogger(__name__)
 
 class EnhancedEnrichment:
-    """Multi-stage search for comprehensive enrichment"""
+    """Multi-stage enrichment: Perplexity research → GPT-4 structured parsing"""
     
     def __init__(self):
         self.perplexity_key = os.getenv('PERPLEXITY_API_KEY')
@@ -27,15 +30,13 @@ class EnhancedEnrichment:
         self.openai_client = OpenAI(api_key=self.openai_key)
         self.perplexity_url = "https://api.perplexity.ai/chat/completions"
         
-        logger.info("✅ EnhancedEnrichment initialized (Multi-Stage Search)")
+        logger.info("✅ EnhancedEnrichment initialized")
     
     def enrich_contact(self, contact: dict) -> dict:
-        """Main enrichment pipeline with 3-stage search"""
+        """Main enrichment pipeline with 4-stage search"""
         name = contact.get('name', '') or f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
         company = contact.get('company', '')
         title = contact.get('title', '')
-        email = contact.get('email', '')
-        phone = contact.get('phone', '')
         linkedin = contact.get('linkedin_url', '')
         
         logger.info("=" * 70)
@@ -45,25 +46,25 @@ class EnhancedEnrichment:
         logger.info("=" * 70)
         
         try:
-            # STAGE 1: LinkedIn/Person Search
+            # STAGE 1: Person Research (Perplexity)
             logger.info("📡 STAGE 1: Searching LinkedIn for person profile...")
             person_data = self._search_person(name, company, linkedin)
             logger.info(f"   ✅ Got {len(person_data)} chars")
             time.sleep(1)  # Rate limit
             
-            # STAGE 2: Company/News Search
+            # STAGE 2: Company Research (Perplexity)
             logger.info("📡 STAGE 2: Searching company news and intel...")
             company_data = self._search_company(company)
             logger.info(f"   ✅ Got {len(company_data)} chars")
             time.sleep(1)  # Rate limit
             
-            # STAGE 3: Combined Person+Company Context
+            # STAGE 3: Sales Context (Perplexity)
             logger.info("📡 STAGE 3: Searching person+company relationships...")
-            combined_data = self._search_combined(name, company, title)
-            logger.info(f"   ✅ Got {len(combined_data)} chars")
+            sales_data = self._search_sales_context(name, company, title)
+            logger.info(f"   ✅ Got {len(sales_data)} chars")
             
             # Combine all research
-            total_research = f"""# Research Data for {name} at {company}
+            combined_research = f"""# Research Data for {name} at {company}
 
 ## Person Profile Data
 {person_data}
@@ -71,28 +72,28 @@ class EnhancedEnrichment:
 ## Company Intelligence Data
 {company_data}
 
-## Combined Context & Relationships
-{combined_data}
+## Sales & Relationship Context
+{sales_data}
 """
             
-            logger.info(f"📊 Total research: {len(total_research)} chars")
+            logger.info(f"📊 Total research: {len(combined_research)} chars")
             
-            # STAGE 4: Generate Profile from Combined Data
-            logger.info("🧠 STAGE 4: Generating structured profile...")
-            profile = self._generate_profile(total_research, contact)
+            # STAGE 4: Parse with GPT-4 (NOT Perplexity - this was the bug!)
+            logger.info("🧠 STAGE 4: Generating structured profile with GPT-4...")
+            structured_profile = self._parse_with_gpt4(combined_research, contact)
             
-            if not profile or len(profile) < 500:
-                logger.warning(f"⚠️ Short profile: {len(profile) if profile else 0} chars")
-                # Use raw research if generation fails
-                profile = total_research if len(total_research) > 500 else self._create_minimal_profile(contact)
+            if not structured_profile or len(structured_profile) < 500:
+                logger.warning(f"⚠️ Short profile: {len(structured_profile) if structured_profile else 0} chars")
+                # Use raw research if parsing fails
+                structured_profile = combined_research if len(combined_research) > 500 else self._create_minimal_profile(contact)
             
-            logger.info(f"✅ COMPLETE: {len(profile)} chars")
+            logger.info(f"✅ COMPLETE: {len(structured_profile)} chars")
             logger.info("=" * 70)
             
             return {
                 'success': True,
-                'profile_text': profile,
-                'character_count': len(profile)
+                'profile_text': structured_profile,
+                'character_count': len(structured_profile)
             }
             
         except Exception as e:
@@ -111,7 +112,7 @@ class EnhancedEnrichment:
         if linkedin:
             query = f"{name} {company} site:linkedin.com OR {linkedin}"
         else:
-            query = f"{name} {company} site:linkedin.com professional profile background education"
+            query = f"{name} {company} site:linkedin.com professional profile background education career"
         
         return self._perplexity_search(query, "person profile")
     
@@ -120,10 +121,10 @@ class EnhancedEnrichment:
         query = f"{company} company news funding leadership team products services market competitors recent announcements"
         return self._perplexity_search(query, "company intelligence")
     
-    def _search_combined(self, name: str, company: str, title: str) -> str:
+    def _search_sales_context(self, name: str, company: str, title: str) -> str:
         """Stage 3: Person+company combined context"""
-        query = f"{name} {title} {company} deals announcements achievements projects press mentions"
-        return self._perplexity_search(query, "combined context")
+        query = f"{name} {title} {company} deals announcements achievements projects press mentions challenges pain points"
+        return self._perplexity_search(query, "sales context")
     
     def _perplexity_search(self, query: str, search_type: str) -> str:
         """Execute a Perplexity search and return raw results"""
@@ -145,7 +146,7 @@ class EnhancedEnrichment:
                 }
             ],
             "temperature": 0.1,
-            "max_tokens": 3000,  # Increased from 2000
+            "max_tokens": 2000,
             "return_citations": True,
             "search_recency_filter": "month"
         }
@@ -155,7 +156,7 @@ class EnhancedEnrichment:
                 self.perplexity_url,
                 headers=headers,
                 json=payload,
-                timeout=90
+                timeout=60
             )
             
             response.raise_for_status()
@@ -170,7 +171,7 @@ class EnhancedEnrichment:
             # Add citations
             if 'citations' in data and data['citations']:
                 content += "\n\nSources:\n"
-                for i, citation in enumerate(data['citations'][:15], 1):  # Increased from 10
+                for i, citation in enumerate(data['citations'][:10], 1):
                     content += f"[{i}] {citation}\n"
             
             return content
@@ -179,195 +180,92 @@ class EnhancedEnrichment:
             logger.error(f"❌ Search failed for {search_type}: {e}")
             return ""
     
-    def _generate_profile(self, research_data: str, contact: dict) -> str:
-        """Generate comprehensive structured profile from combined research"""
-        name = contact.get('name', 'Unknown')
-        company = contact.get('company', '')
+    def _parse_with_gpt4(self, research_data: str, contact: dict) -> str:
+        """
+        Stage 4: Use GPT-4 to parse raw research into structured sections
         
-        prompt = f"""Using the research data below, create a COMPREHENSIVE sales intelligence profile (target 8000+ characters).
+        KEY FIX: Using GPT-4 instead of Perplexity avoids the 8K context limit error
+        """
+        name = contact.get('name', 'Unknown')
+        company = contact.get('company', 'Unknown Company')
+        title = contact.get('title', 'Unknown Title')
+        
+        # Truncate research to fit within GPT-4's context window
+        # Leave room for prompt (~1500 tokens) + response (3000 tokens)
+        max_research_chars = 12000  # ~3000 tokens
+        truncated_research = research_data[:max_research_chars]
+        
+        prompt = f"""Using the research data below, create a structured sales intelligence profile for {name}.
 
 **RESEARCH DATA:**
-{research_data}
+{truncated_research}
 
 ---
 
-**Generate a DETAILED profile with these sections:**
+**Generate a profile with EXACTLY these section headers (include the ## markdown):**
 
-## {name} - Professional Profile
+## overview
+[2-3 sentences summarizing current role, key responsibilities, and company context]
 
-### Overview
-- Current role, organization, and tenure
-- Key responsibilities and areas of focus
-- Reporting structure and team size (if available)
+## background_and_experience
+[Career history, achievements, expertise - use bullet points with "-"]
 
-### Background & Experience
-- Complete career history with dates and companies
-- Major achievements and notable projects
-- Industry expertise and specializations
-- Awards and recognition
+## company_overview
+[Company description, size, industry, business model - bullet points]
 
-### Education & Credentials
-- Degrees, institutions, and graduation years
-- Certifications and professional development
-- Academic achievements
+## market_position
+[Industry category, competitors, market advantages - bullet points]
 
-### Personality & Working Style
-- Professional strengths and leadership approach (inferred)
-- Communication style and preferences
-- Decision-making patterns
-- Core values and motivations (based on public statements)
+## leadership_and_culture
+[CEO/leadership team, company culture, values - bullet points]
 
-### Social Presence & Engagement
-- LinkedIn activity, posts, and engagement topics
-- Twitter/X presence and thought leadership
-- Speaking engagements and conference appearances
-- Published articles or media mentions
+## recent_activity_and_news
+[Recent company news, funding, launches, press - bullet points]
 
-## {company} - Company Intelligence
+## pain_points_and_challenges
+[Role-specific and industry challenges they face - bullet points]
 
-### Company Overview
-- Business model, mission, and value proposition
-- Founded date, headquarters, and locations
-- Company size (employees, revenue if public)
-- Ownership structure (public/private/PE-backed)
+## budget_and_authority
+[Decision-making power, budget ownership, procurement influence - bullet points]
 
-### Products & Services
-- Core offerings and product lines
-- Target markets and customer segments
-- Pricing models and go-to-market strategy
-
-### Market Position
-- Industry category and market size
-- Top 3-5 competitors
-- Competitive advantages and differentiators
-- Market share and growth trajectory
-
-### Leadership & Culture
-- CEO and executive team background
-- Board members and advisors
-- Company culture and values
-- Employee sentiment (if available)
-
-### Recent Activity & News
-- Funding rounds, M&A, or IPO activity
-- Product launches and major announcements
-- Partnerships and strategic initiatives
-- Leadership changes or organizational shifts
-- Press coverage and media mentions
-
-## Sales Opportunities
-
-### Trigger Events - Why Reach Out NOW
-- Recent company events creating urgency
-- Budget cycle timing and fiscal indicators
-- Expansion signals or hiring patterns
-- Technology changes or migrations
-- Competitive pressures or market shifts
-
-### Pain Points & Challenges
-- Industry-specific challenges they're facing
-- Role-specific pain points based on title
-- Problems our solution could address
-- Current gap analysis
-
-### Budget & Authority
-- Decision-making level and influence
-- Budget ownership and approval process
-- Typical vendor evaluation criteria
-- Procurement cycle and timeline
-
-### Engagement Strategy
-- Best communication channels (email/phone/LinkedIn)
-- Optimal timing for outreach
-- Referral and warm introduction paths
-- Mutual connections or shared affiliations
-- Content preferences and interests
-
-### Value Proposition Alignment
-- Key talking points specific to their role
-- Case studies or testimonials from similar companies
-- ROI metrics they care about
-- Success metrics and KPIs for their position
-
-### Competitive Intelligence
-- Current solutions they're likely using
-- Vendor relationships and contracts
-- Technology stack (if known)
-- Integration requirements
-
-## Strategic Summary
-
-### Opportunity Assessment
-- **Opportunity Level:** HIGH / MEDIUM / LOW (with specific reasoning)
-- **Close Probability:** Percentage estimate with justification
-- **Deal Size Potential:** Estimated value and time to close
-
-### Top 5 Reasons to Engage
-1. [Specific trigger or pain point]
-2. [Budget/timing indicator]
-3. [Strategic fit factor]
-4. [Competitive advantage]
-5. [Relationship leverage point]
-
-### Recommended Opening Line
-[Specific, personalized opening that references recent activity, shared connection, or relevant pain point]
-
-### 30/60/90 Day Engagement Plan
-- **Days 1-30:** [Initial outreach strategy]
-- **Days 31-60:** [Follow-up and value demonstration]
-- **Days 61-90:** [Proposal and closing activities]
+## personality_and_communication
+[Inferred communication style, professional traits, preferences - bullet points]
 
 ---
 
-**CRITICAL INSTRUCTIONS:**
+**CRITICAL RULES:**
 - Use ONLY verifiable facts from the research data
-- Be COMPREHENSIVE - aim for 8000+ characters
-- Include specific names, dates, numbers, and details
-- No disclaimers, apologies, or explanations of limitations
-- If a section lacks data, briefly note it and move on
-- Focus on actionable, sales-relevant insights
-- Be specific and detailed in every section
+- Keep each section concise (3-5 bullet points maximum)
+- Use the EXACT section headers shown above with ##
+- Use "-" for bullet points, not "*" or numbers
+- If a section lacks data, write "- Limited information available"
+- No disclaimers, apologies, or meta-commentary
+- Be specific with names, dates, numbers, companies
 """
-
-        headers = {
-            "Authorization": f"Bearer {self.perplexity_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "sonar-pro",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are an expert sales intelligence analyst. Create comprehensive, detailed, actionable profiles. Be thorough and specific. Target 8000+ characters."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "temperature": 0.3,
-            "max_tokens": 4500  # Increased from 3000 to allow longer outputs
-        }
         
         try:
-            response = requests.post(
-                self.perplexity_url,
-                headers=headers,
-                json=payload,
-                timeout=120  # Increased timeout for longer generation
+            response = self.openai_client.chat.completions.create(
+                model="gpt-4",  # Standard GPT-4 (8K context)
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert sales intelligence analyst. Parse research into structured, actionable sections using exact headers provided. Be concise and factual."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.2,
+                max_tokens=3000
             )
             
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'choices' in data and len(data['choices']) > 0:
-                return data['choices'][0]['message']['content']
-            
-            return ""
+            return response.choices[0].message.content
             
         except Exception as e:
-            logger.error(f"❌ Profile generation failed: {e}")
+            logger.error(f"❌ GPT-4 parsing failed: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
     
     def _create_minimal_profile(self, contact: dict) -> str:
@@ -376,18 +274,20 @@ class EnhancedEnrichment:
         title = contact.get('title', 'Position unknown')
         company = contact.get('company', 'Company unknown')
         
-        return f"""## {name}
-**{title}** at **{company}**
+        return f"""## overview
+{name} - {title} at {company}
 
-### Sales Opportunities
-✅ Contact verified - ready for outreach
-🎯 Research {company}'s recent activity before reaching out
-💡 Personalize based on their role as {title}
+## background_and_experience
+- Limited public information available
+- Direct research recommended
 
-### Next Steps
-1. Search for recent {company} news and developments
-2. Identify relevant case studies or solutions
-3. Craft personalized outreach referencing their specific challenges
+## company_overview
+- {company}
+- Further research needed
 
-*Note: Limited public information available. Direct research recommended.*
+## pain_points_and_challenges
+- Industry-standard challenges likely apply
+
+## budget_and_authority
+- {title} level suggests relevant authority
 """
