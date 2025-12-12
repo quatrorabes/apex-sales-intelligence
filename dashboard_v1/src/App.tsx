@@ -1,8 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { TodaysBoard } from './components/TodaysBoard';
 import { ContactDetailPage } from './pages/ContactDetailPage';
-import { Settings } from './components/Settings';
-// import { AllContactsView } from './pages/AllContactsView'; // If you have this
+import Settings from './components/Settings';
 
 function App() {
   return (
