@@ -114,3 +114,63 @@ async def get_raw_enrichment(contact_id: str) -> Dict[str, Any]:
             "has_sections": 'sections' in enrichment if isinstance(enrichment, dict) else False,
         }
     }
+
+@router.get("/{contact_id}/enrichment/personality")
+async def get_personality_analysis(contact_id: str) -> Dict[str, Any]:
+    """Get personality and communication style analysis for Personality tab."""
+    contact = get_contact_from_db(contact_id)
+    
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    enrichment = contact.get('enrichment') or {}
+    if isinstance(enrichment, str):
+        try:
+            enrichment = json.loads(enrichment)
+        except:
+            enrichment = {}
+    
+    sections = enrichment.get('sections', {}) if isinstance(enrichment, dict) else {}
+    
+    # Extract personality-related sections
+    personality_data = sections.get('personality_profile', '')
+    communication_style = sections.get('communication_style', '')
+    
+    return {
+        "contact_id": contact_id,
+        "enriched_at": contact.get('enriched_at'),
+        "enrichment_status": contact.get('enrichment_status', 'pending'),
+        "personality": personality_data,
+        "communication_style": communication_style,
+        "has_data": bool(personality_data or communication_style)
+    }
+
+@router.get("/{contact_id}/enrichment/icp")
+async def get_icp_match(contact_id: str) -> Dict[str, Any]:
+    """Get ICP match analysis for Why We Fit tab."""
+    contact = get_contact_from_db(contact_id)
+    
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    enrichment = contact.get('enrichment') or {}
+    if isinstance(enrichment, str):
+        try:
+            enrichment = json.loads(enrichment)
+        except:
+            enrichment = {}
+    
+    sections = enrichment.get('sections', {}) if isinstance(enrichment, dict) else {}
+    
+    # Extract ICP-related sections
+    icp_analysis = sections.get('icp_match', '')
+    fit_score = sections.get('fit_score', '')
+    
+    return {
+        "contact_id": contact_id,
+        "enriched_at": contact.get('enriched_at'),
+        "enrichment_status": contact.get('enrichment_status', 'pending'),
+        "icp_match": icp_analysis,
+        "fit_score": fit_score,
+        "has_data": bool(icp_analysis or fit_score)
+    }
