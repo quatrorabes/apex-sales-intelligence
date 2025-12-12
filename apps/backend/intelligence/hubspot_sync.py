@@ -38,7 +38,7 @@ class HubSpotSync:
             "limit": limit,
             "properties": [
                 "firstname", "lastname", "email", "phone", "company",
-                "jobtitle", "industry", "linkedin_url", "hs_object_id",
+                "jobtitle", "industry", "hs_linkedin_url", "hs_object_id",
                 "hs_analytics_source", "hs_lead_status", "lifecyclestage",
                 "numemployees", "annualrevenue", "city", "state", "website"
             ]
@@ -101,7 +101,7 @@ class HubSpotSync:
                         props.get("company"),
                         props.get("jobtitle"),
                         props.get("industry"),
-                        props.get("linkedin_url"),
+                        props.get("hs_linkedin_url"),
                         datetime.now().isoformat(),
                         hubspot_id
                     ))
@@ -122,7 +122,7 @@ class HubSpotSync:
                         props.get("company"),
                         props.get("jobtitle"),
                         props.get("industry"),
-                        props.get("linkedin_url"),
+                        props.get("hs_linkedin_url"),
                         datetime.now().isoformat(),
                         datetime.now().isoformat(),
                         "pending"
