@@ -53,6 +53,8 @@ app.add_middleware(
 # =============================================================================
 from api.routes.contacts_v2 import router as contacts_v2_router
 app.include_router(contacts_v2_router)
+from api.routes.contacts_v2_enrichment import router as contacts_v2_enrichment_router
+app.include_router(contacts_v2_enrichment_router)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
@@ -1079,7 +1081,7 @@ async def qualify_contact_spice(contact_id: int, spice_data: SPICEQualification)
         logger.error(f"SPICE qualification error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/contacts/{contact_id}/qualification-report", tags=["Qualification"])
+@app.get("/api/v2/contacts/{contact_id}/qualification-report", tags=["Qualification"])
 async def get_qualification_report(contact_id: int, framework: str = Query('HYBRID', regex='^(APEX|BANT|SPICE|HYBRID)$')):
     """Get comprehensive qualification report"""
     try:
