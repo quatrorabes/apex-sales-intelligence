@@ -74,7 +74,7 @@ def sync_contacts():
     while True:
         try:
             response = hubspot_client.crm.contacts.basic_api.get_page(
-                limit=100,
+                limit=200,
                 after=after,
                 properties=properties,
                 archived=False
