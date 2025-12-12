@@ -70,7 +70,7 @@ class HubSpotSyncV2:
                                 continue
                             
                             # Must have company
-                            company = props.get("company", "").strip() if props.get("company") else ""
+                            company = props.get("company", "").strip() if props.get
                             if not company:
                                 stats["skipped"] += 1
                                 continue
