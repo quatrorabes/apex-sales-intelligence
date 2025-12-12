@@ -1,40 +1,37 @@
 """
 V2 Contact Enrichment & Analytics Routes
-Provides enrichment data for ContactDetailPage Intelligence/Qualification tabs.
-
-CRITICAL: This is a READ-ONLY data delivery layer.
-- Does NOT modify enrichment engine
-- Does NOT call Perplexity
-- Only reads and formats existing enrichment data from Postgres
 """
 
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 import sys
 from pathlib import Path
-
-# Add intelligence path
-BACKEND_DIR = Path(__file__).parent.parent
-sys.path.insert(0, str(BACKEND_DIR.parent))
-
-try:
-    from services.postgres_contact_service import get_contact
-except ImportError:
-    # Fallback
-    def get_contact(contact_id: str):
-        return None
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import os
 
 router = APIRouter(prefix="/api/v2/contacts", tags=["Enrichment V2"])
 
+DATABASE_URL = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://")
+
+def get_contact_from_db(contact_id: str):
+    """Get contact directly from Postgres"""
+    try:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+        contact = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return dict(contact) if contact else None
+    except Exception as e:
+        print(f"Error fetching contact: {e}")
+        return None
+
 @router.get("/{contact_id}/enrichment/analytics")
 async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
-    """
-    Get enrichment analytics for Intelligence/Qualification tabs.
-    Frontend components using this:
-    - ContactDetailPage.tsx (Intelligence tab)
-    - QualificationTab.tsx (MDCP/BANT/SPICE scores)
-    """
-    contact = get_contact(contact_id)
+    """Get enrichment analytics for Intelligence/Qualification tabs."""
+    contact = get_contact_from_db(contact_id)
     
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -57,7 +54,7 @@ async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
         "enriched_at": contact.get('enriched_at'),
         "enrichment_status": contact.get('enrichment_status', 'pending'),
         
-        # Intelligence sections (for Intelligence tab)
+        # Intelligence sections
         "sections": {
             "overview": sections.get('overview', ''),
             "company_overview": sections.get('company_overview', ''),
@@ -67,7 +64,7 @@ async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
             "opportunity_insights": sections.get('opportunity_insights', ''),
         },
         
-        # Qualification scores (for Qualification tab)
+        # Qualification scores
         "scores": {
             "mdcp": contact.get('mdcp_score', 0),
             "bant": contact.get('bant_total_score', 0),
