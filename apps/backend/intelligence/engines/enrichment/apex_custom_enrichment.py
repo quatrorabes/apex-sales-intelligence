@@ -49,9 +49,12 @@ class ApexCustomEnrichment:
         logger.info(f"{'='*90}")
         
         # Validate required fields
-        if not all([name, company, linkedin_url]):
-            logger.error("❌ Missing required fields: name, company, or linkedin_url")
-            return {'status': 'error', 'error': 'Missing required fields'}
+            logger.error("❌ Missing required fields: name, company")
+                    return {'status': 'error', 'error': 'Missing required fields'}
+        
+                # Warn if LinkedIn URL is missing
+                if not linkedin_url:
+                                logger.warning("⚠️ Missing LinkedIn profile may affect enrichment results")return {'status': 'error', 'error': 'Missing required fields'}
         
         # ===================================================================
         # STAGE 1: RAW DATA GATHERING (Perplexity)
