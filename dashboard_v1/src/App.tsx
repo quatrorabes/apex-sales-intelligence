@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { TodaysBoard } from './components/TodaysBoard';
 import { ContactDetailPage } from './pages/ContactDetailPage';
+import { Settings } from './components/Settings';
 // import { AllContactsView } from './pages/AllContactsView'; // If you have this
 
 function App() {
@@ -11,6 +12,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<TodaysBoard />} />
           {/* <Route path="/contacts" element={<AllContactsView />} /> */}
+                      <Route path="/settings" element={<Settings />} />
           <Route path="/contacts/:id" element={<ContactDetailPage />} />
         </Routes>
       </div>
