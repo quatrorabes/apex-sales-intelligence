@@ -54,7 +54,19 @@ class ApexCustomEnrichment:
         
                 # Warn if LinkedIn URL is missing
                 if not linkedin_url:
-                                logger.warning("⚠️ Missing LinkedIn profile may affect enrichment results")return {'status': 'error', 'error': 'Missing required fields'}
+                                log
+                    
+                # Attempt to discover LinkedIn URL if missing
+                if not linkedin_url:
+                                logger.info("🔍 Attempting to discover LinkedIn URL...")
+                                discovered_url = self._discover_linkedin_url(name, company)
+                                if discovered_url:
+                                                    linkedin_url = discovered_url
+                                                    logger.info(f"✅ Found LinkedIn URL: {linkedin_url}")
+                                                    # Update contact in database
+                        contact['linkedin_url'] = linkedin_url
+                    else:
+                        logger.warning("❌ Could not discover LinkedIn URL")ger.warning("⚠️ Missing LinkedIn profile may affect enrichment results")return {'status': 'error', 'error': 'Missing required fields'}
         
         # ===================================================================
         # STAGE 1: RAW DATA GATHERING (Perplexity)
@@ -714,6 +726,30 @@ Keep professional and appropriate."""
         if not self.perplexity_key:
             logger.warning("⚠️ Perplexity API key not configured")
             return None
+
+            def _discover_linkedin_url(self, name: str, company: str) -> Optional[str]:
+                        """Discover LinkedIn URL using Perplexity search"""
+                        prompt = f"""Find the exact LinkedIn profile URL for:
+                        Name: {name}
+                        Company: {company}
+
+                        Return ONLY the LinkedIn URL in this exact format:
+                        https://www.linkedin.com/in/username
+
+                        If you cannot find a LinkedIn profile, return: NOT_FOUND"""
+
+                try:
+                                result = self._call_perplexity(prompt, max_tokens=200)
+                                if result and 'linkedin.com/in/' in result and 'NOT_FOUND' not in result:
+                                                    # Extract URL using regex
+                                                    import re
+                                                    match = re.search(r'https?://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+', result)
+                                                    if match:
+                                                                            return match.group(0)
+                                                                    return None
+                                            except Exception as e:
+                                                            logger.error(f"LinkedIn discovery error: {e}")
+                                                            return None
         
         try:
             response = requests.post(
