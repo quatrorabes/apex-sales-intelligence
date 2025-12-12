@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import Dict, Any, List
 import sys
 import json
-from datetime import datetime
+from datetime import import datetime
 from pathlib import Path
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -38,27 +38,36 @@ def get_contact_from_db(contact_id: str):
 async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
     """Get enrichment analytics for Intelligence/Qualification tabs."""
     contact = get_contact_from_db(contact_id)
-
+    
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-
+    
     # Parse enrichment JSON
     enrichment = contact.get('enrichment') or {}
-
+    
     # Handle both v1 (string) and v2 (dict) formats
     if isinstance(enrichment, str):
         try:
             enrichment = json.loads(enrichment)
         except:
             enrichment = {}
-
-    sections = enrichment.get('sections', {}) if isinstance(enrichment, dict) else {}
-
+    
+    # Check if this is v2 format (has 'sections' key) or v1 format (plain dict/string)
+    is_v2_format = isinstance(enrichment, dict) and 'sections' in enrichment
+    
+    if is_v2_format:
+        # V2 format: enrichment has structured sections
+        sections = enrichment.get('sections', {})
+    else:
+        # V1 format: enrichment is a plain dict or has no sections structure
+        # Return empty sections for v1 - these need to be migrated
+        sections = {}
+    
     return {
         "contact_id": contact_id,
         "enriched_at": contact.get('enriched_at'),
         "enrichment_status": contact.get('enrichment_status', 'pending'),
-
+        
         # Intelligence sections
         "sections": {
             "overview": sections.get('overview', ''),
@@ -68,7 +77,7 @@ async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
             "sales_intel": sections.get('sales_intel', ''),
             "opportunity_insights": sections.get('opportunity_insights', ''),
         },
-
+        
         # Qualification scores
         "scores": {
             "mdcp": contact.get('mdcp_score', 0),
@@ -77,43 +86,33 @@ async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
             "apex": contact.get('apex_score', 0),
             "unified": contact.get('unified_qualification_score', 0),
         },
-
+        
         # Metadata
         "metadata": {
             "total_sections": len([s for s in sections.values() if s]),
             "character_count": sum(len(str(v)) for v in sections.values()),
             "has_pain_points": bool(sections.get('pain_points_and_challenges')),
             "has_budget_info": bool(sections.get('budget_and_authority')),
+            "format": "v2" if is_v2_format else "v1"
         }
     }
 
 
 @router.get("/{contact_id}/enrichment/raw")
 async def get_raw_enrichment(contact_id: str) -> Dict[str, Any]:
-    """Get raw enrichment data for Raw Data tab."""
+    """Get raw enrichment data (for debugging)"""
     contact = get_contact_from_db(contact_id)
-
+    
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
-
-    enrichment = contact.get('enrichment') or {}
-    if isinstance(enrichment, str):
-        try:
-            enrichment = json.loads(enrichment)
-        except:
-            enrichment = {}
-
+    
     return {
         "contact_id": contact_id,
+        "enrichment": contact.get('enrichment'),
         "enriched_at": contact.get('enriched_at'),
         "enrichment_status": contact.get('enrichment_status', 'pending'),
-        "raw_data": enrichment,
-        "metadata": {
-            "size_bytes": len(json.dumps(enrichment)),
-            "keys": list(enrichment.keys()) if isinstance(enrichment, dict) else [],
-            "has_sections": 'sections' in enrichment if isinstance(enrichment, dict) else False,
-        }
     }
+
 
 @router.get("/{contact_id}/enrichment/personality")
 async def get_personality_analysis(contact_id: str) -> Dict[str, Any]:
@@ -130,7 +129,9 @@ async def get_personality_analysis(contact_id: str) -> Dict[str, Any]:
         except:
             enrichment = {}
     
-    sections = enrichment.get('sections', {}) if isinstance(enrichment, dict) else {}
+    # Check if v2 format
+    is_v2_format = isinstance(enrichment, dict) and 'sections' in enrichment
+    sections = enrichment.get('sections', {}) if is_v2_format else {}
     
     # Extract personality-related sections
     personality_data = sections.get('personality_profile', '')
@@ -144,6 +145,7 @@ async def get_personality_analysis(contact_id: str) -> Dict[str, Any]:
         "communication_style": communication_style,
         "has_data": bool(personality_data or communication_style)
     }
+
 
 @router.get("/{contact_id}/enrichment/icp")
 async def get_icp_match(contact_id: str) -> Dict[str, Any]:
@@ -160,7 +162,9 @@ async def get_icp_match(contact_id: str) -> Dict[str, Any]:
         except:
             enrichment = {}
     
-    sections = enrichment.get('sections', {}) if isinstance(enrichment, dict) else {}
+    # Check if v2 format
+    is_v2_format = isinstance(enrichment, dict) and 'sections' in enrichment
+    sections = enrichment.get('sections', {}) if is_v2_format else {}
     
     # Extract ICP-related sections
     icp_analysis = sections.get('icp_match', '')
