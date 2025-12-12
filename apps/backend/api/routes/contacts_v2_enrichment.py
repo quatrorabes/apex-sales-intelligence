@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from typing import Dict, Any, List
 import sys
 import json
-from datetime import import datetime
+from datetime import datetime
 from pathlib import Path
 import psycopg2
 from psycopg2.extras import RealDictCursor
