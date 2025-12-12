@@ -819,12 +819,10 @@ async def enrich_contact(contact_id: int):
             cursor = conn.cursor()
 
             profile_text = enrichment_result.get('profile_text', '')
-            enrichment_json = json.dumps({
-                'profile_text': profile_text,
-                'character_count': len(profile_text),
-                'enriched_at': datetime.now().isoformat(),
-                'success': True
-            })
+            # Parse enrichment into structured sections
+            raw_profile = enrichment_result.get('profile_text', '')
+            enrichment_object = integrate_enrichment_result(raw_profile)
+            enrichment_json = json.dumps(enrichment_object)
 
             cursor.execute("""
                 UPDATE contacts SET
