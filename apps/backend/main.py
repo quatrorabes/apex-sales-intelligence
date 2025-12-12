@@ -57,8 +57,10 @@ from api.routes.contacts_v2_enrichment import router as contacts_v2_enrichment_r
 app.include_router(contacts_v2_enrichment_router)
 from api.routes.enrichment_apex_custom import router as apex_enrichment_router
 from api.routes.enrichment_premium import router as premium_enrichment_router
+from api.routes.playbook import router as playbook_router
 app.include_router(premium_enrichment_router)
 app.include_router(apex_enrichment_router)
+app.include_router(playbook_router)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
