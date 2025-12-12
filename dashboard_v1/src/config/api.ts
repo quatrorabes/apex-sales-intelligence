@@ -4,7 +4,7 @@
  * Backend: https://apex-backend-i7b0.onrender.com (FastAPI v2)
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 
   'https://apex-backend-i7b0.onrender.com';
 
 console.log('🔧 APEX API configured:', API_BASE_URL);
