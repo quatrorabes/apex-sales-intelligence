@@ -439,8 +439,7 @@ export default function Settings() {
     setSyncingHubspot(true);
     setHubspotResult(null);
     try {
-      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/hubspot/sync', { method: 'POST' });
-      const data = await res.json();
+      const res = await fetch('https://apex-backend-i7b0.onrender.com/api/v2/contacts/sync/hubspot/filtered', { method: 'POST' });      const data = await res.json();
       if (data.success) {
         setHubspotResult({ imported: data.imported, skipped: data.skipped });
       } else {
