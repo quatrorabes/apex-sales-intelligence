@@ -184,7 +184,7 @@ async def sync_from_hubspot_filtered():
         """Sync qualified contacts from HubSpot with filters (max 200)"""
         from intelligence.hubspot_sync_filtered import sync_contacts
 
-    try:
+        try:
                 count = sync_contacts()
                 return {"status": "success", "imported": count}
             except Exception as e:
