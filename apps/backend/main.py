@@ -1800,3 +1800,115 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
 
 # =============================================================================
+
+# ============================================================================
+# TODAYS BOARD ENDPOINT (for Dashboard v1 TodaysBoard component)
+# ============================================================================
+
+@app.get("/api/todays-board", tags=["Dashboard"])
+async def get_todays_board():
+    """Get aggregated dashboard data for TodaysBoard component"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Get all contacts with scores
+            cursor.execute("""
+                SELECT 
+                    id, first_name, last_name, email, phone, company, title,
+                    apex_score, unified_qualification_score, enrichment_status,
+                    enriched_at, match_tier
+                FROM contacts
+                ORDER BY COALESCE(apex_score, 0) DESC
+            """)
+            
+            contacts = [dict(row) for row in cursor.fetchall()]
+            
+            # Calculate stats
+            total = len(contacts)
+            enriched = sum(1 for c in contacts if c.get('enrichment_status') == 'completed')
+            
+            # Segment by apex_score (HIGH >= 75, MEDIUM 50-74, LOW < 50)
+            high_contacts = [c for c in contacts if c.get('apex_score', 0) >= 75]
+            medium_contacts = [c for c in contacts if 50 <= c.get('apex_score', 0) < 75]
+            low_contacts = [c for c in contacts if c.get('apex_score', 0) < 50]
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "date": datetime.now().strftime("%B %d, %Y"),
+                "time": datetime.now().strftime("%I:%M %p"),
+                "stats": {
+                    "total_contacts": total,
+                    "enriched": enriched,
+                    "high_match": len(high_contacts),
+                    "medium_match": len(medium_contacts),
+                    "low_match": len(low_contacts),
+                    "cold_call_queue": len(low_contacts)
+                },
+                "segments": {
+                    "high": [
+                        {
+                            "id": c['id'],
+                            "first_name": c.get('first_name'),
+                            "last_name": c.get('last_name'),
+                            "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+                            "email": c.get('email'),
+                            "phone": c.get('phone'),
+                            "company": c.get('company'),
+                            "title": c.get('title'),
+                            "match_score": c.get('apex_score', 0),
+                            "match_tier": "HIGH",
+                            "enrichment_status": c.get('enrichment_status'),
+                            "enriched_at": c.get('enriched_at')
+                        }
+                        for c in high_contacts[:20]
+                    ],
+                    "medium": [
+                        {
+                            "id": c['id'],
+                            "first_name": c.get('first_name'),
+                            "last_name": c.get('last_name'),
+                            "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+                            "email": c.get('email'),
+                            "phone": c.get('phone'),
+                            "company": c.get('company'),
+                            "title": c.get('title'),
+                            "match_score": c.get('apex_score', 0),
+                            "match_tier": "MEDIUM",
+                            "enrichment_status": c.get('enrichment_status'),
+                            "enriched_at": c.get('enriched_at')
+                        }
+                        for c in medium_contacts[:20]
+                    ],
+                    "low": [
+                        {
+                            "id": c['id'],
+                            "first_name": c.get('first_name'),
+                            "last_name": c.get('last_name'),
+                            "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+                            "email": c.get('email'),
+                            "phone": c.get('phone'),
+                            "company": c.get('company'),
+                            "title": c.get('title'),
+                            "match_score": c.get('apex_score', 0),
+                            "match_tier": "LOW",
+                            "enrichment_status": c.get('enrichment_status'),
+                            "enriched_at": c.get('enriched_at')
+                        }
+                        for c in low_contacts[:20]
+                    ]
+                },
+                "top_priority": high_contacts[:5],
+                "cold_call_stats": {
+                    "total": total,
+                    "new": len([c for c in contacts if c.get('enrichment_status') != 'completed']),
+                    "meeting_set": 0
+                }
+            }
+    
+    except Exception as e:
+        logger.error(f"Todays board error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
