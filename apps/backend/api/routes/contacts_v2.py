@@ -57,7 +57,6 @@ async def list_contacts(limit: int = 100, offset: int = 0):
         }
     except Exception as e:
         print(f"Error in list_contacts: {e}")
-        # Return contacts anyway, even if stats fails
         contacts = get_all_contacts(limit=limit, offset=offset)
         return {
             "contacts": contacts,
@@ -94,7 +93,7 @@ async def get_single_contact(contact_id: str):
 @router.put("/{contact_id}")
 async def update_single_contact(contact_id: str, data: ContactUpdate):
     """Update a contact"""
-    updates = {k: v for k, v in data.dict().items() if v is not None}
+    updates = {k: v for k, v in data.model_dump().items() if v is not None}
     contact = update_contact(contact_id, **updates)
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -140,15 +139,8 @@ async def bulk_enrich(limit: int = 10):
     results = []
     for contact in unenriched[:limit]:
         try:
-            enrichment = await enrich_contact(
-                first_name=contact["first_name"],
-                last_name=contact["last_name"],
-                title=contact.get("title", ""),
-                company=contact.get("company", ""),
-                email=contact.get("email", "")
-            )
-            if enrichment:
-                save_enrichment(contact["id"], enrichment.model_dump())
+            result = enrich_and_save(contact["id"])
+            if result.get("success"):
                 results.append({"id": contact["id"], "status": "success"})
             else:
                 results.append({"id": contact["id"], "status": "failed"})
@@ -168,24 +160,13 @@ async def sync_from_hubspot(limit: int = 100):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/sync/hubspot")
-async def sync_from_hubspot(limit: int = 100):
-    """Sync contacts from HubSpot"""
-    from services.hubspot_sync_v2 import sync_hubspot_contacts
-    
-    try:
-        stats = sync_hubspot_contacts(limit)
-        return stats
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.post("/sync/hubspot/filtered")
 async def sync_from_hubspot_filtered():
-        """Sync qualified contacts from HubSpot with filters (max 200)"""
-        from intelligence.hubspot_sync_filtered import sync_contacts
-
+    """Sync qualified contacts from HubSpot with filters (max 200)"""
+    from intelligence.hubspot_sync_filtered import sync_contacts
+    
     try:
-                count = sync_contacts()
-                return {"status": "success", "imported": count}
+        count = sync_contacts()
+        return {"status": "success", "imported": count}
     except Exception as e:
-                        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
