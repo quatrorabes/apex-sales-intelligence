@@ -99,6 +99,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/board" element={<TodaysBoard />} />
+      <Route path="/todays-board" element={<Navigate to="/board" replace />} />
         <Route path="/contacts" element={<ContactsView />} />
         <Route path="/contacts/:id" element={<ContactDetailPage />} />
         <Route path="/cold-call" element={<ColdCallQueue />} />
