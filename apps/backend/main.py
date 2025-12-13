@@ -1706,7 +1706,7 @@ async def get_smart_lists():
             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE bant_total_score >= 80")
             bant_qualified = cursor.fetchone()["count"]
             
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE spice_qualification_status = 'ADVANCING'")
+            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE spice_total_score >= 70")
             spice_advancing = cursor.fetchone()["count"]
             
             cursor.close()
