@@ -210,3 +210,4 @@ function ContactRow({ contact }: ContactRowProps) {
 }
 
 export default TodaysBoard;
+export default TodaysBoard;
