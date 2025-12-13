@@ -170,3 +170,4 @@ async def sync_from_hubspot_filtered():
         return {"status": "success", "imported": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        
