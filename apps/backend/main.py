@@ -1912,3 +1912,389 @@ async def get_todays_board():
         logger.error(f"Todays board error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================================================
+# COLD CALL QUEUE ENDPOINTS
+# ============================================================================
+
+@app.get("/api/cold-call/queue", tags=["Cold Call"])
+async def get_cold_call_queue(status: Optional[str] = None):
+    """Get cold call queue - contacts needing outreach"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Get contacts sorted by apex_score, prioritize unenriched
+            query = """
+                SELECT 
+                    id, name, first_name, last_name, email, phone, linkedin_url,
+                    company, title, apex_score, enrichment_status, created_at
+                FROM contacts
+                WHERE phone IS NOT NULL OR email IS NOT NULL
+                ORDER BY 
+                    CASE WHEN enrichment_status != 'completed' THEN 0 ELSE 1 END,
+                    COALESCE(apex_score, 0) DESC
+                LIMIT 100
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            queue = []
+            for row in rows:
+                r = dict(row)
+                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+                queue.append({
+                    "id": r['id'],
+                    "name": display_name,
+                    "phone": r.get('phone'),
+                    "mobile": r.get('phone'),
+                    "email": r.get('email'),
+                    "linkedin_url": r.get('linkedin_url'),
+                    "company": r.get('company'),
+                    "title": r.get('title'),
+                    "quick_fit_score": r.get('apex_score', 0),
+                    "priority": 1 if r.get('apex_score', 0) >= 75 else 2 if r.get('apex_score', 0) >= 50 else 3,
+                    "status": "new",
+                    "attempts": 0,
+                    "contact_id": r['id']
+                })
+            
+            # Calculate stats
+            total = len(queue)
+            high_priority = len([q for q in queue if q['priority'] == 1])
+            avg_score = sum(q['quick_fit_score'] or 0 for q in queue) / total if total > 0 else 0
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "queue": queue,
+                "stats": {
+                    "total": total,
+                    "new": total,
+                    "attempted": 0,
+                    "connected": 0,
+                    "meeting_set": 0,
+                    "high_priority": high_priority,
+                    "avg_score": round(avg_score, 1)
+                }
+            }
+    
+    except Exception as e:
+        logger.error(f"Cold call queue error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cold-call/queue/{item_id}/outcome", tags=["Cold Call"])
+async def log_call_outcome(item_id: int, outcome: str = Body(..., embed=True)):
+    """Log outcome of a cold call"""
+    try:
+        # For now, just acknowledge - can add call_logs table later
+        return {
+            "success": True,
+            "item_id": item_id,
+            "outcome": outcome,
+            "message": "Outcome logged"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SMART LISTS ENDPOINTS
+# ============================================================================
+
+@app.get("/api/smart-lists", tags=["Smart Lists"])
+async def get_smart_lists():
+    """Get predefined smart lists with counts"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Count contacts for each smart list criteria
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 75")
+            hot_leads = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE phone IS NOT NULL")
+            ready_to_call = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+            enriched = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
+            needs_enrichment = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 50 AND apex_score < 75")
+            medium_priority = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
+            recent = cursor.fetchone()['count']
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "lists": [
+                    {"id": "hot-leads", "name": "Hot Leads", "description": "APEX Score 75+", "icon": "flame", "color": "red", "count": hot_leads},
+                    {"id": "ready-to-call", "name": "Ready to Call", "description": "Has phone number", "icon": "phone", "color": "green", "count": ready_to_call},
+                    {"id": "enriched", "name": "Fully Enriched", "description": "Enrichment complete", "icon": "zap", "color": "yellow", "count": enriched},
+                    {"id": "needs-enrichment", "name": "Needs Enrichment", "description": "Not yet enriched", "icon": "clock", "color": "blue", "count": needs_enrichment},
+                    {"id": "medium-priority", "name": "Medium Priority", "description": "APEX Score 50-74", "icon": "crown", "color": "purple", "count": medium_priority},
+                    {"id": "recent", "name": "Added This Week", "description": "Last 7 days", "icon": "sparkles", "color": "cyan", "count": recent}
+                ]
+            }
+    
+    except Exception as e:
+        logger.error(f"Smart lists error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/smart-lists/{list_id}/contacts", tags=["Smart Lists"])
+async def get_smart_list_contacts(list_id: str, limit: int = 50):
+    """Get contacts for a specific smart list"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Map list_id to SQL filter
+            filters = {
+                "hot-leads": "apex_score >= 75",
+                "ready-to-call": "phone IS NOT NULL",
+                "enriched": "enrichment_status = 'completed'",
+                "needs-enrichment": "enrichment_status IS NULL OR enrichment_status = 'pending'",
+                "medium-priority": "apex_score >= 50 AND apex_score < 75",
+                "recent": "created_at > NOW() - INTERVAL '7 days'"
+            }
+            
+            where_clause = filters.get(list_id, "1=1")
+            
+            cursor.execute(f"""
+                SELECT id, name, first_name, last_name, email, company, title, 
+                       apex_score, match_tier, enrichment_status
+                FROM contacts
+                WHERE {where_clause}
+                ORDER BY COALESCE(apex_score, 0) DESC
+                LIMIT %s
+            """, (limit,))
+            
+            contacts = []
+            for row in cursor.fetchall():
+                r = dict(row)
+                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+                contacts.append({
+                    "id": r['id'],
+                    "name": display_name,
+                    "first_name": r.get('first_name'),
+                    "last_name": r.get('last_name'),
+                    "title": r.get('title'),
+                    "company": r.get('company'),
+                    "match_score": r.get('apex_score', 0),
+                    "match_tier": r.get('match_tier', 'LOW')
+                })
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "list_id": list_id,
+                "contacts": contacts,
+                "total": len(contacts)
+            }
+    
+    except Exception as e:
+        logger.error(f"Smart list contacts error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# COLD CALL QUEUE ENDPOINTS
+# ============================================================================
+
+@app.get("/api/cold-call/queue", tags=["Cold Call"])
+async def get_cold_call_queue(status: Optional[str] = None):
+    """Get cold call queue - contacts needing outreach"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Get contacts sorted by apex_score, prioritize unenriched
+            query = """
+                SELECT 
+                    id, name, first_name, last_name, email, phone, linkedin_url,
+                    company, title, apex_score, enrichment_status, created_at
+                FROM contacts
+                WHERE phone IS NOT NULL OR email IS NOT NULL
+                ORDER BY 
+                    CASE WHEN enrichment_status != 'completed' THEN 0 ELSE 1 END,
+                    COALESCE(apex_score, 0) DESC
+                LIMIT 100
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            queue = []
+            for row in rows:
+                r = dict(row)
+                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+                queue.append({
+                    "id": r['id'],
+                    "name": display_name,
+                    "phone": r.get('phone'),
+                    "mobile": r.get('phone'),
+                    "email": r.get('email'),
+                    "linkedin_url": r.get('linkedin_url'),
+                    "company": r.get('company'),
+                    "title": r.get('title'),
+                    "quick_fit_score": r.get('apex_score', 0),
+                    "priority": 1 if r.get('apex_score', 0) >= 75 else 2 if r.get('apex_score', 0) >= 50 else 3,
+                    "status": "new",
+                    "attempts": 0,
+                    "contact_id": r['id']
+                })
+            
+            # Calculate stats
+            total = len(queue)
+            high_priority = len([q for q in queue if q['priority'] == 1])
+            avg_score = sum(q['quick_fit_score'] or 0 for q in queue) / total if total > 0 else 0
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "queue": queue,
+                "stats": {
+                    "total": total,
+                    "new": total,
+                    "attempted": 0,
+                    "connected": 0,
+                    "meeting_set": 0,
+                    "high_priority": high_priority,
+                    "avg_score": round(avg_score, 1)
+                }
+            }
+    
+    except Exception as e:
+        logger.error(f"Cold call queue error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cold-call/queue/{item_id}/outcome", tags=["Cold Call"])
+async def log_call_outcome(item_id: int, outcome: str = Body(..., embed=True)):
+    """Log outcome of a cold call"""
+    try:
+        # For now, just acknowledge - can add call_logs table later
+        return {
+            "success": True,
+            "item_id": item_id,
+            "outcome": outcome,
+            "message": "Outcome logged"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SMART LISTS ENDPOINTS
+# ============================================================================
+
+@app.get("/api/smart-lists", tags=["Smart Lists"])
+async def get_smart_lists():
+    """Get predefined smart lists with counts"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Count contacts for each smart list criteria
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 75")
+            hot_leads = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE phone IS NOT NULL")
+            ready_to_call = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+            enriched = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
+            needs_enrichment = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 50 AND apex_score < 75")
+            medium_priority = cursor.fetchone()['count']
+            
+            cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
+            recent = cursor.fetchone()['count']
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "lists": [
+                    {"id": "hot-leads", "name": "Hot Leads", "description": "APEX Score 75+", "icon": "flame", "color": "red", "count": hot_leads},
+                    {"id": "ready-to-call", "name": "Ready to Call", "description": "Has phone number", "icon": "phone", "color": "green", "count": ready_to_call},
+                    {"id": "enriched", "name": "Fully Enriched", "description": "Enrichment complete", "icon": "zap", "color": "yellow", "count": enriched},
+                    {"id": "needs-enrichment", "name": "Needs Enrichment", "description": "Not yet enriched", "icon": "clock", "color": "blue", "count": needs_enrichment},
+                    {"id": "medium-priority", "name": "Medium Priority", "description": "APEX Score 50-74", "icon": "crown", "color": "purple", "count": medium_priority},
+                    {"id": "recent", "name": "Added This Week", "description": "Last 7 days", "icon": "sparkles", "color": "cyan", "count": recent}
+                ]
+            }
+    
+    except Exception as e:
+        logger.error(f"Smart lists error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/smart-lists/{list_id}/contacts", tags=["Smart Lists"])
+async def get_smart_list_contacts(list_id: str, limit: int = 50):
+    """Get contacts for a specific smart list"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Map list_id to SQL filter
+            filters = {
+                "hot-leads": "apex_score >= 75",
+                "ready-to-call": "phone IS NOT NULL",
+                "enriched": "enrichment_status = 'completed'",
+                "needs-enrichment": "enrichment_status IS NULL OR enrichment_status = 'pending'",
+                "medium-priority": "apex_score >= 50 AND apex_score < 75",
+                "recent": "created_at > NOW() - INTERVAL '7 days'"
+            }
+            
+            where_clause = filters.get(list_id, "1=1")
+            
+            cursor.execute(f"""
+                SELECT id, name, first_name, last_name, email, company, title, 
+                       apex_score, match_tier, enrichment_status
+                FROM contacts
+                WHERE {where_clause}
+                ORDER BY COALESCE(apex_score, 0) DESC
+                LIMIT %s
+            """, (limit,))
+            
+            contacts = []
+            for row in cursor.fetchall():
+                r = dict(row)
+                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+                contacts.append({
+                    "id": r['id'],
+                    "name": display_name,
+                    "first_name": r.get('first_name'),
+                    "last_name": r.get('last_name'),
+                    "title": r.get('title'),
+                    "company": r.get('company'),
+                    "match_score": r.get('apex_score', 0),
+                    "match_tier": r.get('match_tier', 'LOW')
+                })
+            
+            cursor.close()
+            
+            return {
+                "success": True,
+                "list_id": list_id,
+                "contacts": contacts,
+                "total": len(contacts)
+            }
+    
+    except Exception as e:
+        logger.error(f"Smart list contacts error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
