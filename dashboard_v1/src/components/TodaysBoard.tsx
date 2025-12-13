@@ -208,3 +208,5 @@ function ContactRow({ contact }: ContactRowProps) {
     </div>
   );
 }
+
+export default TodaysBoard;
