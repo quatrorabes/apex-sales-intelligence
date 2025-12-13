@@ -2298,3 +2298,17 @@ async def get_smart_list_contacts(list_id: str, limit: int = 50):
         logger.error(f"Smart list contacts error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/user/profile", tags=["User"])
+async def get_user_profile(user_id: str = "default"):
+    """Get user profile and preferences"""
+    return {
+        "success": True,
+        "user_id": user_id,
+        "name": "Sales User",
+        "role": "Sales Rep",
+        "preferences": {
+            "default_view": "board",
+            "notifications_enabled": True
+        }
+    }
