@@ -187,5 +187,5 @@ async def sync_from_hubspot_filtered():
         try:
                 count = sync_contacts()
                 return {"status": "success", "imported": count}
-            except Exception as e:
+    except Exception as e:
                         raise HTTPException(status_code=500, detail=str(e))
