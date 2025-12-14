@@ -13,7 +13,7 @@ import {
 const API_URL = 'https://apex-backend-i7b0.onrender.com';
 
 interface Contact {
-    id: number;
+    id: string | number;
     name?: string;
     first_name?: string;
     last_name?: string;
