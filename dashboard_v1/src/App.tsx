@@ -38,7 +38,7 @@ function AppContent() {
         <Route path="/board" element={<TodaysBoard />} />
         <Route path="/contacts" element={<ContactsView />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
-        <Route path="/queue" element={<ColdCallQueue />} />
+        <Route path="/cold-call" element={<ColdCallQueue />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/lists" element={<SmartLists />} />
         <Route path="/settings" element={<Settings />} />
