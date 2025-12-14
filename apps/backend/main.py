@@ -1759,6 +1759,39 @@ async def import_from_hubspot():
     }
 
 # ============================================================================
+# BATCH ENRICHMENT - DASHBOARD COMPATIBILITY
+# ============================================================================
+
+@app.post("/api/batch/enrich")
+async def batch_enrich_endpoint(request_body: dict = Body(...)):
+    """
+    POST /api/batch/enrich - Queue batch enrichment
+    Body: {"contact_ids": [1,2,3]} or {"limit": 10}
+    """
+    contact_ids = request_body.get("contact_ids", [])
+    limit = request_body.get("limit", 10)
+    
+    if not contact_ids:
+        try:
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id FROM contacts 
+                    WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
+                    LIMIT %s
+                """, (limit,))
+                contact_ids = [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+            
+    return {
+        "queued": contact_ids,
+        "status": "queued",
+        "count": len(contact_ids)
+    }
+    
+
+# ============================================================================
 # STARTUP
 # ============================================================================
 
@@ -2178,21 +2211,6 @@ async def get_cold_call_queue(status: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/cold-call/queue/{item_id}/outcome", tags=["Cold Call"])
-async def log_call_outcome(item_id: int, outcome: str = Body(..., embed=True)):
-    """Log outcome of a cold call"""
-    try:
-        # For now, just acknowledge - can add call_logs table later
-        return {
-            "success": True,
-            "item_id": item_id,
-            "outcome": outcome,
-            "message": "Outcome logged"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # ============================================================================
 # SMART LISTS ENDPOINTS
 # ============================================================================
@@ -2242,63 +2260,7 @@ async def get_smart_lists():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/smart-lists/{list_id}/contacts", tags=["Smart Lists"])
-async def get_smart_list_contacts(list_id: str, limit: int = 50):
-    """Get contacts for a specific smart list"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Map list_id to SQL filter
-            filters = {
-                "hot-leads": "apex_score >= 75",
-                "ready-to-call": "phone IS NOT NULL",
-                "enriched": "enrichment_status = 'completed'",
-                "needs-enrichment": "enrichment_status IS NULL OR enrichment_status = 'pending'",
-                "medium-priority": "apex_score >= 50 AND apex_score < 75",
-                "recent": "created_at > NOW() - INTERVAL '7 days'"
-            }
-            
-            where_clause = filters.get(list_id, "1=1")
-            
-            cursor.execute(f"""
-                SELECT id, name, first_name, last_name, email, company, title, 
-                       apex_score, match_tier, enrichment_status
-                FROM contacts
-                WHERE {where_clause}
-                ORDER BY COALESCE(apex_score, 0) DESC
-                LIMIT %s
-            """, (limit,))
-            
-            contacts = []
-            for row in cursor.fetchall():
-                r = dict(row)
-                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
-                contacts.append({
-                    "id": r['id'],
-                    "name": display_name,
-                    "first_name": r.get('first_name'),
-                    "last_name": r.get('last_name'),
-                    "title": r.get('title'),
-                    "company": r.get('company'),
-                    "match_score": r.get('apex_score', 0),
-                    "match_tier": r.get('match_tier', 'LOW')
-                })
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "list_id": list_id,
-                "contacts": contacts,
-                "total": len(contacts)
-            }
-    
-    except Exception as e:
-        logger.error(f"Smart list contacts error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
+        
 @app.get("/api/user/profile", tags=["User"])
 async def get_user_profile(user_id: str = "default"):
     """Get user profile and preferences"""
@@ -2312,3 +2274,4 @@ async def get_user_profile(user_id: str = "default"):
             "notifications_enabled": True
         }
     }
+    
