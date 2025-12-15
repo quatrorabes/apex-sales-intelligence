@@ -47,3 +47,9 @@ api.py.restored
 api\ copy*.py
 *.pyc
 __pycache__/
+# Python virtual environments
+.venv/
+venv/
+*/venv/
+**/.venv/
+**/venv/
