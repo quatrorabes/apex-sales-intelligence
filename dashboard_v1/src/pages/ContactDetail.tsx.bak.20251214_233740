@@ -8,15 +8,11 @@ import {
 } from 'lucide-react';
 import { QualificationTab } from '../components/QualificationTab';
 
-// Apex API base URL (prefer env; fallback for safety)
-const API_BASE = import.meta.env.VITE_API_URL || '${API_BASE}';
-
-
 // =============================================================================
 // TYPES
 // =============================================================================
 interface Contact {
-  id: string;
+  id: number;
   firstname: string;
   lastname: string;
   email: string;
@@ -27,37 +23,6 @@ interface Contact {
   enrichment: { sections?: { person_profile?: string; company_intelligence?: string; strategic_context?: string; fun_facts?: string; [key: string]: string | undefined } } | null;
   linkedin_url: string | null;
   last_enriched: string | null;
-  name?: string;
-  vertical?: string | null;
-  enriched_at?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-}
-
-// =============================================================================
-// API NORMALIZER - unwrap + snake_case -> UI fields
-// =============================================================================
-function normalizeContact(api: any): Contact {
-  return {
-    id: String(api?.id ?? ''),
-    firstname: api?.first_name ?? api?.firstname ?? '',
-    lastname: api?.last_name ?? api?.lastname ?? '',
-    email: api?.email ?? '',
-    phone: api?.phone ?? '',
-    company: api?.company ?? '',
-    title: api?.title ?? '',
-    enrichment_status: api?.enrichment_status ?? api?.enrichmentStatus ?? 'pending',
-    enrichment: api?.enrichment ?? null,
-    linkedin_url: api?.linkedin_url ?? api?.linkedinUrl ?? null,
-    last_enriched: api?.enriched_at ?? api?.last_enriched ?? null,
-
-    // Optional/common fields used around the page
-    name: api?.name ?? `${api?.first_name ?? ''} ${api?.last_name ?? ''}`.trim(),
-    vertical: api?.vertical ?? null,
-    enriched_at: api?.enriched_at ?? null,
-    created_at: api?.created_at ?? null,
-    updated_at: api?.updated_at ?? null,
-  };
 }
 
 // =============================================================================
@@ -333,16 +298,9 @@ export default function ContactDetailPage() {
 
   const fetchContact = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/contacts/${id}`);
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error((json && json.message) ? json.message : `HTTP ${res.status}`);
-      }
-
-      const apiContact = (json && typeof json === 'object' && 'contact' in json) ? (json as any).contact : json;
-      setContact(normalizeContact(apiContact));
-} catch (e) {
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}`);
+      const data = await res.json(); setContact(data.contact);
+    } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
@@ -352,9 +310,9 @@ export default function ContactDetailPage() {
   const handleEnrich = async () => {
     setEnriching(true);
     try {
-      await fetch(`${API_BASE}/api/contacts/${id}/enrich`, { method: 'POST' });
+      await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/enrich`, { method: 'POST' });
       const poll = setInterval(async () => {
-        const res = await fetch(`${API_BASE}/api/contacts/${id}/enrichment-status`);
+        const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/enrichment-status`);
         const data = await res.json();
         if (data.status === 'enriched' || data.status === 'error') {
           clearInterval(poll);
@@ -370,11 +328,11 @@ export default function ContactDetailPage() {
   const handleDownload = async () => {
     setGenerating(true);
     try {
-      const res = await fetch(`${API_BASE}/api/contacts/${id}/generate-persona`, { method: 'POST' });
+      const res = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${id}/generate-persona`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.files?.pdf_landscape) {
-          window.open(`${API_BASE}/api/download?path=${encodeURIComponent(data.files.pdf_landscape)}`, '_blank');
+          window.open(`https://apex-backend-i7b0.onrender.com/api/download?path=${encodeURIComponent(data.files.pdf_landscape)}`, '_blank');
         }
       }
     } catch (e) {

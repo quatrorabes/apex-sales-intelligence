@@ -334,15 +334,8 @@ export default function ContactDetailPage() {
   const fetchContact = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}`);
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error((json && json.message) ? json.message : `HTTP ${res.status}`);
-      }
-
-      const apiContact = (json && typeof json === 'object' && 'contact' in json) ? (json as any).contact : json;
-      setContact(normalizeContact(apiContact));
-} catch (e) {
+      const data = await res.json(); setContact(data.contact);
+    } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
