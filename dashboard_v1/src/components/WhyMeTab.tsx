@@ -39,7 +39,7 @@ export default function WhyMeTab({ contactId, contactName }: WhyMeTabProps) {
     const fetchWhyMe = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`${API_URL}/api/v2/contacts/${contactId}/why-me`);
+            const res = await fetch(`${API_URL}/api/contacts/${contactId}/why-me`);
             if (res.ok) {
                 const json = await res.json();
                 setData(json);
@@ -57,7 +57,7 @@ export default function WhyMeTab({ contactId, contactName }: WhyMeTabProps) {
         try {
             setGenerating(true);
             setError(null);
-            const res = await fetch(`${API_URL}/api/v2/contacts/${contactId}/why-me`, {
+            const res = await fetch(`${API_URL}/api/contacts/${contactId}/why-me`, {
                 method: 'POST'
             });
             const json = await res.json();

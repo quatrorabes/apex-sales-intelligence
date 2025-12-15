@@ -1,0 +1,4 @@
+-- Run in your PostgreSQL database
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS mobile_phone VARCHAR(50);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS hubspot_id VARCHAR(100);
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS hubspot_url VARCHAR(500);

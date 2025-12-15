@@ -130,7 +130,7 @@ export function ContactDetailPage(): JSX.Element {
       if (!id) return;
       setLoading(true);
       try {
-        const url = `${API_BASE}/api/v2/contacts/${id}`;
+        const url = `${API_BASE}/api/contacts/${id}`;
         console.log('[APEX] Fetching contact detail', url);
         const res = await fetch(url);
         if (!res.ok) {
@@ -167,7 +167,7 @@ export function ContactDetailPage(): JSX.Element {
       if (!id || mainTab !== 'fit') return;
       setLoadingICP(true);
       try {
-        const url = `${API_BASE}/api/v2/contacts/${id}/icp-match`;
+        const url = `${API_BASE}/api/contacts/${id}/icp-match`;
         console.log('[APEX] Fetching ICP match', url);
         const res = await fetch(url);
         if (!res.ok) {

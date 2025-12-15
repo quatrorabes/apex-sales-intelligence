@@ -51,7 +51,7 @@ export function ContactDetail() {
 	const fetchContact = async () => {
 		try {
 			setLoading(true);
-			const response = await fetch(`${API_BASE_URL}/api/v2/contacts/${id}`);
+			const response = await fetch(`${API_BASE_URL}/api/contacts/${id}`);
 			if (!response.ok) throw new Error('Failed to fetch contact');
 			const data = await response.json();
 			setContact(data.contact);
@@ -66,7 +66,7 @@ export function ContactDetail() {
 		if (!id) return;
 		try {
 			setEnriching(true);
-			const response = await fetch(`${API_BASE_URL}/api/v2/contacts/${id}/enrich`, {
+			const response = await fetch(`${API_BASE_URL}/api/contacts/${id}/enrich`, {
 				method: 'POST'
 			});
 			if (!response.ok) throw new Error('Enrichment failed');

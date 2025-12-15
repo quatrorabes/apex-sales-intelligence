@@ -1,0 +1,39 @@
+// ============================================================================
+// FIND THIS SECTION (around line 130):
+// ============================================================================
+// OLD CODE:
+const sections = enrichmentData?.sections || {};
+
+// REPLACE WITH:
+const getSections = () => {
+  if (!enrichmentData) return null;
+  
+  // NEW: Backend provides pre-parsed sections (version 2.0+)
+  if (enrichmentData.sections && Object.keys(enrichmentData.sections).length > 0) {
+    console.log("[APEX] Using backend-parsed sections", {
+      version: enrichmentData.version,
+      sectionCount: Object.keys(enrichmentData.sections).length,
+      format: enrichmentData.metadata?.format_detected
+    });
+    return enrichmentData.sections;
+  }
+  
+  // FALLBACK: Old data without sections - parse on frontend
+  if (enrichmentData.raw_profile) {
+    console.log("[APEX] Fallback to frontend parsing (legacy v1.0 data)");
+    return parseRawProfileLegacy(enrichmentData.raw_profile);
+  }
+  
+  return null;
+};
+
+const sections = getSections();
+
+// Map backend section keys to frontend display
+// Backend v2.0 uses: person_overview, company_overview, sales_opportunities, etc.
+const personSection = sections?.person_overview || sections?.person_profile || sections?.person_research || "";
+const companySection = sections?.company_overview || sections?.company_intelligence || sections?.company_research || "";
+const salesSection = sections?.sales_opportunities || sections?.sales_intelligence || "";
+
+// Keep all your existing parseRawProfileLegacy() function for backward compatibility
+// ... (no changes to that function)

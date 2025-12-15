@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+psycopg2-binary
+python-dotenv
+pydantic
+requests==2.31.0
+openai>=1.50.0
+python-multipart
+hubspot-api-client

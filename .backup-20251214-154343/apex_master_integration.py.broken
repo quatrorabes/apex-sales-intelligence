@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""
+apex_custom_enrichment.py
+APEX CUSTOM ENRICHMENT ENGINE
+Handles two-stage OpenAI enrichment with structured output parsing
+"""
+
+import os
+import json
+import logging
+from typing import Dict, Optional
+from datetime import datetime
+from openai import OpenAI
+
+logger = logging.getLogger("APEX_CUSTOM_ENRICHMENT")
+
+class ApexCustomEnrichment:
+    """Two-stage enrichment engine with OpenAI GPT-4"""
+    
+    def __init__(self, config):
+        self.config = config
+        self.openai_api_key = config.openai_api_key or os.getenv('OPENAI_API_KEY')
+        
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY not found in config or environment")
+        
+        self.client = OpenAI(api_key=self.openai_api_key)
+        logger.info("✅ ApexCustomEnrichment initialized with OpenAI")
+    
+    def enrich_contact_full(self, contact: Dict) -> Dict:
+        """
+        Execute two-stage enrichment:
+        Stage 1: Gather base data (already in contact dict)
+        Stage 2: GPT-4 synthesis + parsing
+        
+        Returns:
+        {
+            'status': 'success',
+            'profile_data': {
+                'synthesized_intelligence': '<full GPT output>',
+                'parsed_fields': {...}
+            },
+            'enrichment_notes': '<optional notes>'
+        }
+        """
+        try:
+            logger.info(f"🔍 Starting enrichment for: {contact.get('name', 'Unknown')}")
+            
+            # STAGE 1: Build context from existing data
+            stage1_context = self._build_context(contact)
+            
+            # STAGE 2: GPT-4 synthesis
+            gpt_output = self._call_openai_synthesis(stage1_context, contact)
+            
+            # STAGE 3: Parse structured fields
+            parsed_fields = self._parse_gpt_output(gpt_output)
+            
+            return {
+                'status': 'success',
+                'profile_data': {
+                    'synthesized_intelligence': gpt_output,
+                    'parsed_fields': parsed_fields
+                },
+                'enrichment_notes': f'Enriched with {len(parsed_fields)} fields'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Enrichment failed: {e}", exc_info=True)
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def _build_context(self, contact: Dict) -> str:
+        """Build enrichment context from contact data"""
+        context_parts = []
+        
+        if contact.get('name'):
+            context_parts.append(f"Name: {contact['name']}")
+        
+        if contact.get('title'):
+            context_parts.append(f"Title: {contact['title']}")
+        
+        if contact.get('company'):
+            context_parts.append(f"Company: {contact['company']}")
+        
+        if contact.get('linkedin_url'):
+            context_parts.append(f"LinkedIn: {contact['linkedin_url']}")
+        
+        if contact.get('email'):
+            context_parts.append(f"Email: {contact['email']}")
+        
+        if contact.get('phone'):
+            context_parts.append(f"Phone: {contact['phone']}")
+        
+        # Add any existing profile content as context
+        if contact.get('profile_content') and len(contact['profile_content']) > 100:
+            context_parts.append(f"\nExisting Profile:\n{contact['profile_content'][:1000]}")
+        
+        return "\n".join(context_parts) if context_parts else "Limited contact data available"
+    
+    def _call_openai_synthesis(self, context: str, contact: Dict) -> str:
+        """Call GPT-4 to synthesize enrichment intelligence"""
+        
+        system_prompt = """You are an expert B2B sales intelligence analyst. 
+Analyze the provided contact information and generate a comprehensive sales intelligence profile.
+Your output should be professional, actionable, and focused on enabling effective sales outreach.
+
+Structure your analysis with these sections:
+1. Executive Summary (2-3 sentences)
+2. Professional Background
+3. Communication Style & Preferences
+4. Key Pain Points (3-5 bullets)
+5. Recommended Talking Points (5-7 bullets)
+6. Personal Insights (interests, fun facts)
+7. Company Context
+8. Best Contact Channel Recommendation
+
+Be concise but thorough. Focus on actionable intelligence."""
+
+        user_prompt = f"""Analyze this B2B contact for sales intelligence:
+
+{context}
+
+Generate a comprehensive sales intelligence profile following the structure in the system prompt.
+Include specific, actionable insights for sales outreach."""
+
+        logger.info("📤 Calling OpenAI GPT-4...")
+        
+        response = self.client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=2000
+        )
+        
+        result = response.choices[0].message.content.strip()
+        logger.info(f"✅ GPT-4 response received ({len(result)} chars)")
+        
+        return result
+    
+    def _parse_gpt_output(self, gpt_output: str) -> Dict:
+        """Parse GPT output into structured fields"""
+        
+        parsed = {
+            'enrichment_confidence': 85,  # Default confidence
+            'enrichment_timestamp': datetime.now().isoformat()
+        }
+        
+        # Extract talking points (lines starting with bullets or numbers)
+        talking_points = []
+        for line in gpt_output.split('\n'):
+            line = line.strip()
+            if line.startswith(('•', '-', '*', '1.', '2.', '3.', '4.', '5.')):
+                clean_line = line.lstrip('•-*123456789. ')
+                if len(clean_line) > 10:  # Filter out short fragments
+                    talking_points.append(clean_line)
+        
+        if talking_points:
+            parsed['talking_points'] = talking_points[:7]  # Top 7
+        
+        # Extract pain points (look for "pain" section)
+        pain_section = False
+        pain_points = []
+        for line in gpt_output.split('\n'):
+            if 'pain' in line.lower() and ':' in line:
+                pain_section = True
+                continue
+            if pain_section and line.strip().startswith(('•', '-', '*', '1.', '2.', '3.')):
+                clean_line = line.strip().lstrip('•-*123456789. ')
+                if len(clean_line) > 10:
+                    pain_points.append(clean_line)
+            elif pain_section and not line.strip():
+                pain_section = False
+        
+        if pain_points:
+            parsed['pain_points'] = pain_points[:5]
+        
+        # Detect personality indicators (basic keyword detection)
+        if any(word in gpt_output.lower() for word in ['analytical', 'data-driven', 'metrics']):
+            parsed['disc_profile'] = 'Analytical/C'
+        elif any(word in gpt_output.lower() for word in ['decisive', 'direct', 'results']):
+            parsed['disc_profile'] = 'Driver/D'
+        elif any(word in gpt_output.lower() for word in ['collaborative', 'people', 'team']):
+            parsed['disc_profile'] = 'Influencer/I'
+        
+        # Extract best contact channel
+        if 'linkedin' in gpt_output.lower() and 'best' in gpt_output.lower():
+            parsed['best_contact_channel'] = 'LinkedIn'
+        elif 'email' in gpt_output.lower() and 'prefer' in gpt_output.lower():
+            parsed['best_contact_channel'] = 'Email'
+        elif 'phone' in gpt_output.lower() or 'call' in gpt_output.lower():
+            parsed['best_contact_channel'] = 'Phone'
+        else:
+            parsed['best_contact_channel'] = 'Email'  # Default
+        
+        # Look for social media mentions
+        if 'twitter' in gpt_output.lower() or '@' in gpt_output:
+            parsed['twitter_url'] = 'Mentioned in profile'
+        if 'instagram' in gpt_output.lower():
+            parsed['instagram_url'] = 'Mentioned in profile'
+        
+        return parsed

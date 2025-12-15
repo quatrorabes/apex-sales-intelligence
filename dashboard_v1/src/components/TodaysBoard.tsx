@@ -32,7 +32,7 @@ export function TodaysBoard(): JSX.Element {
     async function fetchDashboardData() {
       setLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/api/v2/contacts?limit=100`);
+        const res = await fetch(`${API_BASE}/api/contacts?limit=100`);
         if (!res.ok) throw new Error('Failed to fetch contacts');
         
         const data = await res.json();

@@ -1,0 +1,389 @@
+## 📋 APEX SALES INTELLIGENCE - THREAD TRANSFER DOCUMENT
+
+### December 6-7, 2025 | ~8 Hour Debugging Session
+
+***
+
+## 🏗️ PROJECT ARCHITECTURE
+
+### Repository
+```
+GitHub: https://github.com/quatrorabes/apex-sales-intelligence
+Local:  ~/projects/apex/apex-sales-intelligence
+```
+
+### Services
+
+| Service | Platform | URL |
+|---------|----------|-----|
+| **Backend API** | Railway | `https://apex-backend-production-production.up.railway.app` |
+| **Frontend** | Vercel | `https://apex-sales-intelligence.vercel.app` |
+| **Database** | Railway PostgreSQL | `hopper.proxy.rlwy.net:24065/railway` |
+
+### Directory Structure
+```
+apex-sales-intelligence/
+├── api.py                    # ✅ MAIN BACKEND - Flask API (48 routes)
+├── playbook_api.py           # Playbook routes (imported into api.py)
+├── playbook.json             # ICP/Playbook configuration
+├── requirements.txt          # Python dependencies
+├── Dockerfile                # Docker config for Railway
+├── railway.json              # Railway deploy settings
+├── railway.toml              # Railway config
+├── nixpacks.toml             # Nixpacks config
+│
+├── dashboard_v1/             # ✅ FRONTEND - React/Vite
+│   ├── src/
+│   │   ├── pages/            # Page components
+│   │   │   ├── ContactDetailPage.tsx
+│   │   │   ├── ContactDetail.tsx
+│   │   │   ├── ContactsPage.tsx
+│   │   │   ├── Contacts.tsx
+│   │   │   └── ...
+│   │   ├── components/       # Reusable components
+│   │   │   ├── ContactsView.tsx
+│   │   │   ├── ColdCallQueue.tsx
+│   │   │   ├── AllContactsView.tsx
+│   │   │   ├── OutreachGenerator.tsx
+│   │   │   └── ...
+│   │   ├── config/
+│   │   │   └── api.ts        # API_BASE_URL config
+│   │   └── utils/
+│   │       └── api.ts        # API client utility
+│   ├── .env.production       # VITE_API_URL for prod
+│   ├── .env.development      # VITE_API_URL for dev
+│   └── package.json
+│
+├── api.py.corrupted-*        # Backup files from debugging
+├── api.py.before-*           # More backups
+└── api.py.manual-backup-*    # Manual backups
+```
+
+***
+
+## 🔧 BACKEND DETAILS
+
+### Main File: `api.py`
+- **Framework:** Flask with Flask-CORS
+- **Database:** PostgreSQL via psycopg2
+- **Current Routes:** 48 (as of last clean commit)
+
+### Key Imports
+```python
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import psycopg2
+from psycopg2.extras import RealDictCursor
+```
+
+### Database Connection
+```python
+DATABASE_URL = os.environ.get('DATABASE_URL')  # Set in Railway
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.cursor_factory = RealDictCursor
+    return conn
+```
+
+### Critical Rule: Main Block MUST Be LAST
+```python
+# All @app.route decorators ABOVE this line
+# ============= RUN =============
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False)
+```
+
+### PostgreSQL Syntax (NOT SQLite!)
+```python
+# CORRECT - PostgreSQL
+cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+cursor.execute("SELECT * FROM contacts LIMIT %s OFFSET %s", (limit, offset))
+
+# WRONG - SQLite (will break!)
+cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,))
+```
+
+***
+
+## ✅ WORKING ENDPOINTS (48 Routes)
+
+### Core
+- `GET /` - Root
+- `GET /api/health` - Health check
+- `GET /api/debug/routes` - List all routes
+
+### Contacts
+- `GET /api/contacts` - List contacts
+- `GET /api/contacts/<id>` - Get single contact
+- `POST /api/contacts` - Create contact
+- `PUT /api/contacts/<id>` - Update contact
+- `DELETE /api/contacts/<id>` - Delete contact
+- `GET /api/contacts/search?q=` - Search contacts
+- `GET /api/contacts/export` - Export contacts
+
+### Enrichment
+- `POST /api/contacts/<id>/enrich` - Start enrichment
+- `GET /api/contacts/<id>/enrichment-status` - Check status
+- `POST /api/contacts/<id>/reset-enrichment` - Reset enrichment
+
+### Scoring
+- `POST /api/contacts/<id>/score` - Score contact
+- `PUT /api/contacts/<id>/tier` - Update tier
+- `POST /api/batch/rescore` - Rescore all
+
+### Generation
+- `POST /api/contacts/<id>/generate-persona`
+- `POST /api/contacts/<id>/generate-call-script`
+- `POST /api/contacts/<id>/generate-linkedin`
+- `POST /api/contacts/<id>/generate-email`
+- `POST /api/contacts/<id>/generate-outreach`
+- `POST /api/contacts/<id>/generate-sequence`
+- `GET /api/contacts/<id>/why-me`
+- `POST /api/contacts/<id>/why-me`
+- `GET /api/contacts/<id>/scripts`
+- `POST /api/contacts/<id>/scripts`
+
+### Smart Lists
+- `GET /api/smart-lists` - List all smart lists
+- `GET /api/smart-lists/<list_id>/contacts` - Get contacts in list
+
+### Analytics
+- `GET /api/analytics` - Basic analytics
+- `GET /api/dashboard/stats` - Dashboard stats
+
+### Cold Call
+- `GET /api/cold-call/queue` - Get queue
+- `POST /api/cold-call/log` - Log call
+- `POST /api/cold-call/queue/<id>/attempt`
+- `PUT /api/cold-call/queue/<id>/status`
+- `POST /api/cold-call/queue/<id>/promote`
+
+### Cadences
+- `GET /api/cadences` - List cadences
+- `GET /api/cadences/<id>` - Get cadence
+
+### Playbook
+- `GET /api/playbook` - Get playbook
+- `POST /api/playbook` - Save playbook
+
+### User
+- `GET /api/user/profile` - Get user profile
+
+### Bulk
+- `POST /api/batch/enrich` - Bulk enrich
+- `POST /api/contacts/bulk-enrich`
+- `POST /api/contacts/bulk-score`
+
+### Other
+- `GET /api/filters` - Get filter options
+- `GET /api/activity` - Recent activity
+- `GET /api/download` - File download (stub)
+- `POST /api/ai/command` - AI command (stub)
+
+***
+
+## ❌ STILL MISSING ENDPOINTS (Frontend Expects)
+
+From frontend code analysis:
+
+```
+/api/contacts/<id>/activities
+/api/contacts/<id>/meeting-prep
+/api/contacts/<id>/icp-match
+/api/contacts/<id>/enrollments
+/api/contacts/<id>/enroll
+/api/enrollments/<id>/advance
+/api/enrollments/<id>/status
+/api/contacts/import
+/api/import/status
+/api/hubspot/import
+/api/user/proof-points
+/api/settings/playbook
+/api/cadence-queue
+/api/cadence-stats
+/api/analytics/dashboard
+```
+
+***
+
+## 🗃️ DATABASE SCHEMA
+
+### Main Table: `contacts`
+```sql
+id SERIAL PRIMARY KEY,
+name TEXT,
+email TEXT,
+company TEXT,
+title TEXT,
+phone TEXT,
+phone_mobile TEXT,
+-- Enrichment
+enrichment_status TEXT,
+enrichment_data TEXT,
+enriched INTEGER,
+enriched_at TEXT,
+-- Scoring
+match_score REAL,
+match_tier TEXT,  -- HIGH, MEDIUM, LOW
+fit_score REAL,
+relevance_score REAL,
+timing_score REAL,
+last_scored TEXT,
+-- MDCP Scoring
+mdcp_score REAL,
+mdcp_tier TEXT,
+-- Persona
+persona TEXT,
+persona_confidence INTEGER,
+-- Cadence
+cadence_id INTEGER,
+cadence_status TEXT,
+cadence_started_at TEXT,
+-- Activity
+times_contacted INTEGER DEFAULT 0,
+last_contacted TEXT,
+-- Why Me
+why_me_data TEXT,
+why_me_generated_at TEXT,
+-- Scripts
+call_script_1 TEXT,
+call_script_2 TEXT,
+call_script_3 TEXT,
+email_1_body TEXT,
+email_2_body TEXT,
+email_3_body TEXT,
+-- Metadata
+created_at TIMESTAMP DEFAULT NOW(),
+updated_at TIMESTAMP,
+notes TEXT,
+-- Many more columns...
+```
+
+### Stats
+- **Total Contacts:** 1,338
+- **Enriched:** 23
+- **High Tier:** 1
+- **New This Week:** 586
+
+***
+
+## 🚀 DEPLOYMENT PROCESS
+
+### Backend (Railway)
+```bash
+cd ~/projects/apex/apex-sales-intelligence
+git add api.py
+git commit -m "your message"
+git push origin main
+# Railway auto-deploys on push (60-90 seconds)
+```
+
+### Frontend (Vercel)
+```bash
+cd ~/projects/apex/apex-sales-intelligence/dashboard_v1
+git add .
+git commit -m "your message"
+git push origin main
+# Vercel auto-deploys on push
+```
+
+### Test Deployment
+```bash
+BASE="https://apex-backend-production-production.up.railway.app"
+curl -s $BASE/api/debug/routes | python3 -c "import sys,json; print(f'{json.load(sys.stdin)[\"total\"]} routes')"
+```
+
+***
+
+## 🔴 KEY LESSONS FROM TONIGHT
+
+### 1. Main Block Must Be LAST
+Routes defined AFTER `if __name__ == '__main__':` are NEVER registered.
+
+### 2. PostgreSQL ≠ SQLite
+- Use `%s` not `?` for placeholders
+- Use `SERIAL` not `INTEGER PRIMARY KEY AUTOINCREMENT`
+- `NULLS LAST` works in PostgreSQL
+
+### 3. Railway Caching
+Sometimes Railway caches Docker layers. Force rebuild with:
+```bash
+echo "TRIGGER=$(date +%s)" >> .deploy-trigger
+git add .deploy-trigger && git commit -m "force rebuild" && git push
+```
+
+### 4. Transaction Failures
+PostgreSQL aborts entire transaction if one statement fails. Use:
+```python
+conn.autocommit = True  # For migrations/schema changes
+```
+
+### 5. Never Paste Shell Into Python
+Be careful with `cat >> api.py` - ensure proper escaping.
+
+***
+
+## 🎯 NEXT STEPS FOR NEW THREAD
+
+1. **Add Missing Endpoints** - The 15+ endpoints listed above
+2. **Test Frontend Thoroughly** - Click through all pages
+3. **Implement Real Enrichment** - Currently stubs, need Perplexity/OpenAI integration
+4. **Implement Real Scoring** - ApexScoringEngine exists in backup files
+5. **Add Why Me Engine** - WhyMeEngine exists in backup files
+6. **HubSpot Integration** - hubspot_sync.py exists
+7. **Email/LinkedIn Generation** - Use OpenAI for real content
+
+***
+
+## 📁 BACKUP FILES (Reference)
+
+These contain original implementations:
+```
+api.py.corrupted-1765089475     # Has full 2500+ line original
+api.py.before-autoincrement-fix # Pre-PostgreSQL migration
+api.py.manual-backup-*          # Various states
+apex_master_integration.py      # Scoring engine code
+better_enrichment.py            # Enrichment implementation
+perplexity_enrichment.py        # Perplexity API integration
+```
+
+***
+
+## 🔑 ENVIRONMENT VARIABLES
+
+### Railway Backend
+```
+DATABASE_URL=postgresql://...
+PORT=8000
+OPENAI_API_KEY=sk-...      # Not set currently
+PERPLEXITY_API_KEY=pplx-... # Not set currently
+```
+
+### Vercel Frontend
+```
+VITE_API_URL=https://apex-backend-production-production.up.railway.app
+```
+
+***
+
+## ✅ CURRENT STATUS
+
+| Component | Status |
+|-----------|--------|
+| Backend API | ✅ Running (48 routes) |
+| Frontend | ✅ Running (some pages broken due to missing endpoints) |
+| Database | ✅ Connected (1,338 contacts) |
+| Core CRUD | ✅ Working |
+| Smart Lists | ✅ Working |
+| Cold Call Queue | ✅ Working |
+| Contact Detail | ⚠️ Partial (missing some endpoints) |
+| Enrichment | ⚠️ Stub only |
+| AI Generation | ⚠️ Stub only |
+
+***
+
+**END OF TRANSFER DOCUMENT**
+
+Copy this entire document to start the new thread! 🚀

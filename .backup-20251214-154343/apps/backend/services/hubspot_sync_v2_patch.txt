@@ -1,0 +1,36 @@
+                        # Apply filters if enabled
+                        if apply_filters:
+                            # Must have email
+                            email = props.get("email") or ""
+                            email = email.strip() if email else ""
+                            if not email:
+                                stats["skipped"] += 1
+                                continue
+                            
+                            # Must have company
+                            company = props.get("company") or ""
+                            company = company.strip() if company else ""
+                            if not company:
+                                stats["skipped"] += 1
+                                continue
+                            
+                            # Must have name
+                            first_name = props.get("firstname") or ""
+                            last_name = props.get("lastname") or ""
+                            first_name = first_name.strip() if first_name else ""
+                            last_name = last_name.strip() if last_name else ""
+                            if not first_name and not last_name:
+                                stats["skipped"] += 1
+                                continue
+                            
+                            # Filter by lead_status: exclude "unqualified"
+                            lead_status = (props.get("hs_lead_status") or "").lower()
+                            if lead_status == "unqualified":
+                                stats["skipped"] += 1
+                                continue
+                            
+                            # Filter by lifecycle_stage: exclude unsubscribe, customer, evangelist
+                            lifecycle = (props.get("lifecyclestage") or "").lower()
+                            if lifecycle in ["unsubscribe", "customer", "evangelist"]:
+                                stats["skipped"] += 1
+                                continue

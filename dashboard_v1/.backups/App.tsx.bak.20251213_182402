@@ -1,0 +1,29 @@
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+
+import TodaysBoard from './components/TodaysBoard';
+import ContactsView from './components/ContactsView';
+import Settings from './components/Settings';
+
+export default function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* Home should NOT be TodaysBoard */}
+        <Route path="/" element={<Navigate to="/contacts" replace />} />
+
+        {/* Primary screens */}
+        <Route path="/contacts" element={<ContactsView />} />
+      <Route path="/contacts/:id" element={<ContactDetailPage />} />
+
+        {/* Dashboard_v1 */}
+        <Route path="/dashboard" element={<TodaysBoard />} />
+        <Route path="/board" element={<Navigate to="/dashboard" replace />} />
+
+      <Route path="/settings" element={<Settings />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/contacts" replace />} />
+      </Routes>
+    </Router>
+  );
+}

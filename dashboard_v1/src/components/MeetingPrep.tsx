@@ -28,7 +28,7 @@ export default function MeetingPrep({ contactId, contactName }: { contactId: num
     const generatePrep = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_URL}/api/v2/contacts/${contactId}/meeting-prep`, {
+            const res = await fetch(`${API_URL}/api/contacts/${contactId}/meeting-prep`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ meeting_type: meetingType })

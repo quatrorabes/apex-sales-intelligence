@@ -31,7 +31,7 @@ export function EnrollCadenceModal({ isOpen, onClose, contactId, contactName }: 
     if (!selectedId) return;
     setEnrolling(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v2/contacts/${contactId}/enroll-cadence`, {
+      const res = await fetch(`${API_BASE}/api/contacts/${contactId}/enroll-cadence`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cadence_id: selectedId })

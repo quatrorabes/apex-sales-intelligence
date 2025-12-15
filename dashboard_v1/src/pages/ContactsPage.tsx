@@ -29,7 +29,7 @@ export default function ContactsPage() {
 
     const fetchContacts = async () => {
         try {
-            const response = await fetch('https://apex-backend-i7b0.onrender.com/api/v2/contacts');
+            const response = await fetch('https://apex-backend-i7b0.onrender.com/api/contacts');
             const data = await response.json();
             setContacts(data.contacts || data);
         } catch (error) {
@@ -44,7 +44,7 @@ export default function ContactsPage() {
         setGeneratingId(contactId);
         
         try {
-            const response = await fetch(`https://apex-backend-i7b0.onrender.com/api/v2/contacts/${contactId}/generate-persona`, {
+            const response = await fetch(`https://apex-backend-i7b0.onrender.com/api/contacts/${contactId}/generate-persona`, {
                 method: 'POST'
             });
             

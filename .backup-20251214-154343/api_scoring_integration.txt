@@ -1,0 +1,158 @@
+
+# ============================================================================
+# APEX UNIFIED SCORING INTEGRATION
+# Add this to api.py after imports and before Flask app routes
+# ============================================================================
+
+import sys
+import os
+
+# Import unified scorer
+scoring_path = os.path.join(os.path.dirname(__file__), 'apps', 'backend', 'intelligence', 'engines', 'scoring')
+sys.path.insert(0, scoring_path)
+
+try:
+    from unified_apex_scorer import UnifiedApexScorer
+    SCORING_AVAILABLE = True
+    unified_scorer = UnifiedApexScorer()
+    print("✅ Unified Apex Scoring Engine loaded")
+except ImportError as e:
+    print(f"⚠️  Scoring engine not available: {e}")
+    SCORING_AVAILABLE = False
+    unified_scorer = None
+
+
+# ============================================================================
+# NEW ENDPOINT: Score Contact
+# ============================================================================
+
+@app.route('/api/contacts/<int:contact_id>/score', methods=['POST'])
+def score_contact_endpoint(contact_id):
+    """Score a contact with unified MDCP + CRE intelligence"""
+    
+    if not SCORING_AVAILABLE:
+        return jsonify({'error': 'Scoring engine not available'}), 503
+    
+    try:
+        result = unified_scorer.score_contact_unified(contact_id, save_to_db=True)
+        
+        return jsonify({
+            'success': True,
+            'contact_id': contact_id,
+            'contact_name': result['contact_name'],
+            'company': result['company'],
+            'scores': {
+                'mdcp': result['mdcp_score'],
+                'mdcp_tier': result['mdcp_tier'],
+                'rss': result['rss_score'],
+                'rss_tier': result['rss_tier'],
+                'priority': result['priority_score'],
+                'urgency': result['urgency_level']
+            },
+            'action': result['recommended_action'],
+            'cre_applied': result.get('cre_vertical_applied', False),
+            'lifecycle_stage': result['lifecycle_stage'],
+            'timestamp': result['calculated_at']
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+# ============================================================================
+# NEW ENDPOINT: Bulk Score
+# ============================================================================
+
+@app.route('/api/contacts/score/bulk', methods=['POST'])
+def bulk_score_endpoint():
+    """Score multiple contacts"""
+    
+    if not SCORING_AVAILABLE:
+        return jsonify({'error': 'Scoring engine not available'}), 503
+    
+    data = request.json
+    contact_ids = data.get('contact_ids', [])
+    
+    if not contact_ids:
+        return jsonify({'error': 'No contact_ids provided'}), 400
+    
+    try:
+        results = unified_scorer.bulk_score_unified(contact_ids)
+        
+        return jsonify({
+            'success': True,
+            'count': len(results),
+            'results': results
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# MODIFY: Auto-score after enrichment
+# Find your /api/contacts/<int:contact_id>/enrich endpoint and add this
+# at the end, before returning success response:
+# ============================================================================
+
+# AUTO-SCORE after enrichment completes
+if SCORING_AVAILABLE:
+    try:
+        print(f"🎯 Auto-scoring contact {contact_id} after enrichment...")
+        score_result = unified_scorer.score_contact_unified(contact_id, save_to_db=True)
+        print(f"✅ Scored: Priority {score_result['priority_score']:.2f} ({score_result['urgency_level']})")
+    except Exception as e:
+        print(f"⚠️  Scoring failed (non-fatal): {e}")
+        # Don't fail enrichment if scoring fails
+
+
+# ============================================================================
+# MODIFY: Today's Board endpoint to use scored priorities
+# Replace your existing /api/todays-board query with:
+# ============================================================================
+
+@app.route('/api/todays-board', methods=['GET'])
+def todays_board():
+    """Get today's prioritized contacts based on unified scoring"""
+    
+    cursor = get_db_cursor()
+    
+    # Get top-priority scored contacts
+    cursor.execute("""
+        SELECT 
+            id, name, email, company, title,
+            mdcp_score, mdcp_tier,
+            rss_score, rss_tier,
+            priority_score, urgency_level,
+            recommended_action, last_scored,
+            last_contact_date
+        FROM contacts 
+        WHERE priority_score IS NOT NULL 
+        ORDER BY priority_score DESC, last_scored DESC
+        LIMIT 50
+    """)
+    
+    contacts = [dict(row) for row in cursor.fetchall()]
+    
+    # Group by urgency
+    board = {
+        'IMMEDIATE': [],
+        'HIGH': [],
+        'MEDIUM': [],
+        'LOW': []
+    }
+    
+    for contact in contacts:
+        urgency = contact.get('urgency_level', 'LOW')
+        board.get(urgency, board['LOW']).append(contact)
+    
+    return jsonify({
+        'success': True,
+        'timestamp': datetime.now().isoformat(),
+        'board': board,
+        'total_contacts': len(contacts)
+    })

@@ -81,7 +81,7 @@ export default function ContactsView() {
         try {
             setLoading(true);
             const offset = (page - 1) * pageSize;
-            const res = await fetch(`${API_URL}/api/v2/contacts?limit=${pageSize}&offset=${offset}`);
+            const res = await fetch(`${API_URL}/api/contacts?limit=${pageSize}&offset=${offset}`);
             const data = await res.json();
             setContacts(data.contacts || data || []);
             setTotalContacts(data.total || data.contacts?.length || 0);
@@ -191,7 +191,7 @@ export default function ContactsView() {
         
         // Update on server
         try {
-            await fetch(`${API_URL}/api/v2/contacts/${draggedContact.id}/tier`, {
+            await fetch(`${API_URL}/api/contacts/${draggedContact.id}/tier`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tier: newTier })

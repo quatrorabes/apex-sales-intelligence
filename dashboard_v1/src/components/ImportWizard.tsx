@@ -126,7 +126,7 @@ export default function ImportWizard({ isOpen, onClose, onComplete }: {
                 return mapped;
             });
             
-            const res = await fetch(`${API_URL}/api/v2/contacts/import`, {
+            const res = await fetch(`${API_URL}/api/contacts/import`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contacts: mappedContacts })

@@ -1,0 +1,36 @@
+
+
+Given the input fields:
+• Name: [Insert Name]
+• Company: [Insert Company]
+• Email: [Insert Email]
+• LinkedIn URL: [Insert LinkedIn URL]
+Using LinkedIn and all relevant online sources, improvise and collect as much detailed, current information as possible. Return the responses as raw, narrative data under ONLY the section headings listed below. Do not perform any additional parsing; return detailed, interpretive findings for each heading.
+If Company, use these headings:
+• Overview
+• Products & Services
+• Leadership
+• Market & Competitors
+• Recent News
+• Top Skills
+If Person, use these headings:
+• Overview
+• Background
+• Education
+• Recent Mentions
+• Social Profiles
+• Personality Assessment
+• Assessment Summary
+• Sales Talking Points
+• Deal History
+• Profile Updates
+• Fun Facts & News
+Misc. Notes
+Summarize any further information, caveats, or supplemental details uncovered during research.
+Instructions:
+• Provide interpretive, highly descriptive, and improvisational raw information under each heading.
+• Use all available sources as required.
+• No parsing, formatting, or bullet lists—only structure the answer via the specified headings.
+• If a section cannot be completed due to lack of information, note this directly beneath the heading.
+• All responses are to remain in freeform prose, to be parsed downstream as needed.
+

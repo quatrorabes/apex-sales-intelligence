@@ -19,7 +19,7 @@ export function OutreachGenerator({ contactId }: OutreachGeneratorProps): JSX.El
     
     try {
       const endpoint = selectedType === 'email' ? 'generate-email' : selectedType === 'linkedin' ? 'generate-linkedin' : 'generate-coldcall';
-      const url = `${API_BASE}/api/v2/contacts/${contactId}/${endpoint}`;
+      const url = `${API_BASE}/api/contacts/${contactId}/${endpoint}`;
       
       console.log('[APEX] Generating outreach:', url);
       const res = await fetch(url, { method: 'POST' });

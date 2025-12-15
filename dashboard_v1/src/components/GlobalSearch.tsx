@@ -51,7 +51,7 @@ export default function GlobalSearch({ isOpen, onClose }: { isOpen: boolean; onC
         const searchContacts = async () => {
             setLoading(true);
             try {
-                const res = await fetch(`${API_URL}/api/v2/contacts`);
+                const res = await fetch(`${API_URL}/api/contacts`);
                 const data = await res.json();
                 const contacts = (data.contacts || data || [])
                     .filter((c: any) => {
