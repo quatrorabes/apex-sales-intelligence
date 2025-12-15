@@ -406,6 +406,11 @@ export default function ContactDetailPage() {
   const salesSection = contact.enrichment?.sections?.strategic_context || '';
   const personalitySection = contact.enrichment?.sections?.['6._strategic_context'] || '';
   const funFacts = contact.enrichment?.sections?.fun_facts || '';
+
+  // Raw enrichment for "Raw Profile" tab
+  const raw = contact?.enrichment?.sections 
+    ? Object.values(contact.enrichment.sections).join("\n\n---\n\n")
+    : "";
   
   const isEnriched = contact.enrichment_status === 'enriched' && 
                      (personSection.length > 50 || companySection.length > 50);
