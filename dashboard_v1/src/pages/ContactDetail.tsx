@@ -9,7 +9,7 @@ import {
 import { QualificationTab } from '../components/QualificationTab';
 
 // Apex API base URL (prefer env; fallback for safety)
-const API_BASE = import.meta.env.VITE_API_URL || '${API_BASE}';
+const API_BASE = import.meta.env.VITE_API_URL || "https://apex-backend-i7b0.onrender.com";
 
 
 // =============================================================================
