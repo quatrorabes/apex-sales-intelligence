@@ -1,6 +1,6 @@
 // dashboard_v1/src/pages/ContactDetail.tsx
-// PRODUCTION - Apex Dashboard_v1 Color Scheme Applied
-// Last Updated: Dec 15, 2025 3:20 PM PST
+// PRODUCTION - Dashboard_v1 Color Scheme with Gradient Background
+// Last Updated: Dec 15, 2025 3:30 PM PST
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -61,24 +61,24 @@ export default function ContactDetail() {
   // Fetch contact data
   async function fetchContact() {
     if (!id) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}`);
-      
+
       if (!res.ok) {
         throw new Error(`Failed to fetch contact: ${res.status}`);
       }
-      
+
       const json = await res.json();
-      
+
       // Unwrap {success: true, contact: {...}} wrapper
       const apiContact = (json && typeof json === 'object' && 'contact' in json) 
         ? (json as any).contact 
         : json;
-      
+
       setContact(normalizeContact(apiContact));
     } catch (err: any) {
       console.error('Fetch contact error:', err);
@@ -91,18 +91,18 @@ export default function ContactDetail() {
   // Re-enrich contact
   async function handleReEnrich() {
     if (!id || enriching) return;
-    
+
     setEnriching(true);
-    
+
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}/enrich`, {
         method: 'POST',
       });
-      
+
       if (!res.ok) {
         throw new Error('Enrichment failed');
       }
-      
+
       // Poll for completion (3 seconds)
       setTimeout(() => {
         fetchContact();
@@ -121,7 +121,7 @@ export default function ContactDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading contact...</p>
@@ -132,8 +132,8 @@ export default function ContactDetail() {
 
   if (error || !contact) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="text-center bg-white rounded-lg shadow-lg p-8">
           <p className="text-red-600 mb-4">{error || 'Contact not found'}</p>
           <button
             onClick={() => navigate('/contacts')}
@@ -149,130 +149,132 @@ export default function ContactDetail() {
   // ==========================================
   // ENRICHMENT SECTION MAPPING (FIXED)
   // ==========================================
-  
+
   const sections = contact.enrichment?.sections || {};
-  
+
   // Professional: person_profile + background
   const personSection = sections.person_profile || 
                        sections['1._overview'] || 
                        sections['2._about_dale_holzer__background_and_icebreaker_angles'] || '';
-  
+
   // Company: company_intelligence + market data
   const companySection = sections.company_intelligence || 
                         sections['4._market_position'] || '';
-  
+
   // Personality: icebreaker topics, education, soft skills
   const personalitySection = sections['3._icebreaker_topics_and_shared_interests'] || 
                             sections['3._education'] || 
                             sections['3._leadership'] || 
                             sections['6._strategic_context'] || '';
-  
+
   // Fun Facts: fun_facts section
   const funFactsSection = sections.fun_facts || '';
-  
+
   // Raw profile: all sections joined
   const raw = Object.keys(sections).length > 0
     ? Object.entries(sections)
-        .map(([key, value]) => `## ${key.replace(/_/g, ' ').toUpperCase()}\\n\\n${value}`)
-        .join('\\n\\n---\\n\\n')
+        .map(([key, value]) => `## ${key.replace(/_/g, ' ').toUpperCase()}\n\n${value}`)
+        .join('\n\n---\n\n')
     : '';
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-8">
       <div className="max-w-6xl mx-auto px-4">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+        {/* Header Card */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 border border-gray-100">
           <div className="flex items-start justify-between">
-            <div>
+            <div className="flex-1">
               <h1 className="text-3xl font-bold text-gray-900">
                 {contact.firstname} {contact.lastname}
               </h1>
               <p className="text-lg text-gray-600 mt-1">{contact.title}</p>
               <p className="text-md text-gray-500">{contact.company}</p>
-              
+
               <div className="flex gap-4 mt-4">
                 {contact.email && (
-                  <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline">
+                  <a href={`mailto:${contact.email}`} className="text-blue-600 hover:text-blue-700 hover:underline font-medium">
                     {contact.email}
                   </a>
                 )}
                 {contact.phone && (
-                  <span className="text-gray-600">{contact.phone}</span>
+                  <span className="text-gray-600 font-medium">{contact.phone}</span>
                 )}
                 {contact.linkedin_url && (
                   <a 
                     href={contact.linkedin_url} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
+                    className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
                   >
-                    LinkedIn
+                    🔗 LinkedIn
                   </a>
                 )}
               </div>
             </div>
-            
+
             <div className="flex gap-3">
               <button
                 onClick={handleReEnrich}
                 disabled={enriching}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 shadow-sm font-medium transition-colors"
               >
-                {enriching ? 'Enriching...' : 'Re-Enrich'}
+                {enriching ? '⏳ Enriching...' : '🔄 Re-Enrich'}
               </button>
               <button
                 onClick={() => navigate('/contacts')}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
               >
-                Back
+                ← Back
               </button>
             </div>
           </div>
-          
-          {/* Status Badges - Dashboard_v1 Colors */}
-          <div className="mt-4 flex gap-2">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+
+          {/* Status Badges */}
+          <div className="mt-4 flex gap-2 flex-wrap">
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold shadow-sm ${
               contact.enrichment_status === 'enriched' 
-                ? 'bg-green-100 text-green-800'
+                ? 'bg-green-100 text-green-800 border border-green-200'
                 : contact.enrichment_status === 'enriching'
-                ? 'bg-yellow-100 text-yellow-800'
-                : 'bg-gray-100 text-gray-800'
+                ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                : 'bg-gray-100 text-gray-700 border border-gray-200'
             }`}>
+              {contact.enrichment_status === 'enriched' ? '✓ ' : ''}
               {contact.enrichment_status || 'pending'}
             </span>
             {contact.apex_score && contact.apex_score > 0 && (
-              <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
-                APEX: {contact.apex_score}
+              <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-200 rounded-full text-sm font-semibold shadow-sm">
+                ⚡ APEX: {contact.apex_score}
               </span>
             )}
             {Object.keys(sections).length > 0 && (
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                {Object.keys(sections).length} sections
+              <span className="px-3 py-1 bg-blue-100 text-blue-800 border border-blue-200 rounded-full text-sm font-semibold shadow-sm">
+                📊 {Object.keys(sections).length} sections
               </span>
             )}
           </div>
         </div>
 
-        {/* Tabs - Dashboard_v1 Colors */}
-        <div className="bg-white rounded-lg shadow-sm">
-          <div className="border-b border-gray-200">
+        {/* Tabs Card */}
+        <div className="bg-white rounded-lg shadow-lg border border-gray-100 overflow-hidden">
+          <div className="border-b border-gray-200 bg-gray-50">
             <nav className="flex space-x-8 px-6" aria-label="Tabs">
               {[
-                { key: 'professional', label: 'Professional' },
-                { key: 'company', label: 'Company' },
-                { key: 'personality', label: 'Personality' },
-                { key: 'funfacts', label: 'Fun Facts' },
-                { key: 'raw', label: 'Raw Profile' },
+                { key: 'professional', label: 'Professional', icon: '👔' },
+                { key: 'company', label: 'Company', icon: '🏢' },
+                { key: 'personality', label: 'Personality', icon: '🧠' },
+                { key: 'funfacts', label: 'Fun Facts', icon: '✨' },
+                { key: 'raw', label: 'Raw Profile', icon: '📄' },
               ].map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key as any)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                     activeTab === tab.key
                       ? 'border-blue-600 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
+                  <span className="mr-1">{tab.icon}</span>
                   {tab.label}
                 </button>
               ))}
@@ -280,65 +282,80 @@ export default function ContactDetail() {
           </div>
 
           {/* Tab Content */}
-          <div className="p-6">
+          <div className="p-8 bg-white min-h-[500px]">
             {activeTab === 'professional' && (
-              <div className="prose max-w-none">
+              <div className="prose prose-blue max-w-none">
                 {personSection ? (
                   <ReactMarkdown>{personSection}</ReactMarkdown>
                 ) : (
-                  <p className="text-gray-500">No professional data available. Click "Re-Enrich" to generate.</p>
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No professional data available.</p>
+                    <p className="text-gray-400 text-sm mt-2">Click "Re-Enrich" to generate intelligence.</p>
+                  </div>
                 )}
               </div>
             )}
-            
+
             {activeTab === 'company' && (
-              <div className="prose max-w-none">
+              <div className="prose prose-blue max-w-none">
                 {companySection ? (
                   <ReactMarkdown>{companySection}</ReactMarkdown>
                 ) : (
-                  <p className="text-gray-500">No company data available.</p>
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No company data available.</p>
+                    <p className="text-gray-400 text-sm mt-2">Click "Re-Enrich" to generate intelligence.</p>
+                  </div>
                 )}
               </div>
             )}
-            
+
             {activeTab === 'personality' && (
-              <div className="prose max-w-none">
+              <div className="prose prose-blue max-w-none">
                 {personalitySection ? (
                   <ReactMarkdown>{personalitySection}</ReactMarkdown>
                 ) : (
-                  <p className="text-gray-500">No personality/icebreaker data available.</p>
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No personality/icebreaker data available.</p>
+                    <p className="text-gray-400 text-sm mt-2">Click "Re-Enrich" to generate intelligence.</p>
+                  </div>
                 )}
               </div>
             )}
-            
+
             {activeTab === 'funfacts' && (
-              <div className="prose max-w-none">
+              <div className="prose prose-blue max-w-none">
                 {funFactsSection ? (
                   <ReactMarkdown>{funFactsSection}</ReactMarkdown>
                 ) : (
-                  <p className="text-gray-500">No fun facts available.</p>
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No fun facts available.</p>
+                    <p className="text-gray-400 text-sm mt-2">Click "Re-Enrich" to discover interesting details.</p>
+                  </div>
                 )}
               </div>
             )}
-            
+
             {activeTab === 'raw' && (
-              <div className="bg-gray-50 p-4 rounded border border-gray-200">
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-lg border border-gray-200">
                 {raw ? (
-                  <div className="prose max-w-none">
+                  <div className="prose prose-sm max-w-none">
                     <ReactMarkdown>{raw}</ReactMarkdown>
                   </div>
                 ) : (
-                  <p className="text-gray-500">No enrichment data available.</p>
+                  <div className="text-center py-12">
+                    <p className="text-gray-500 text-lg">No enrichment data available.</p>
+                    <p className="text-gray-400 text-sm mt-2">Click "Re-Enrich" to generate full profile.</p>
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
 
-        {/* Download PDF - Dashboard_v1 Colors */}
+        {/* Download PDF Action */}
         {contact.enrichment && Object.keys(sections).length > 0 && (
           <div className="mt-6 text-center">
-            <button className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm">
+            <button className="px-8 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 shadow-lg font-semibold transition-all transform hover:scale-105">
               📄 Download PDF Dossier
             </button>
           </div>
@@ -347,3 +364,4 @@ export default function ContactDetail() {
     </div>
   );
 }
+
