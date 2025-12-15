@@ -20,7 +20,7 @@ interface Contact {
   company: string;
   title: string;
   enrichment_status: string;
-  enrichment_data: string | null;
+  enrichment: { sections?: { person_profile?: string; company_intelligence?: string; strategic_context?: string; fun_facts?: string; [key: string]: string | undefined } } | null;
   linkedin_url: string | null;
   last_enriched: string | null;
 }
@@ -358,13 +358,15 @@ export default function ContactDetailPage() {
 
   // PARSE ENRICHMENT DATA
   // =============================================================================
-  const raw = contact.enrichment?.raw_profile || contact.profile_content || "";
-  const isEnriched = contact.enrichment_status === 'enriched' && raw.length > 100;
-
-  const personSection = extractSection(raw, 'person');
-  const companySection = extractSection(raw, 'company');
-  const salesSection = extractSection(raw, 'sales');
-  const personalitySection = extractSection(raw, 'personality');
+  // Read structured sections directly from API v2.0
+  const personSection = contact.enrichment?.sections?.person_profile || '';
+  const companySection = contact.enrichment?.sections?.company_intelligence || '';
+  const salesSection = contact.enrichment?.sections?.strategic_context || '';
+  const personalitySection = contact.enrichment?.sections?.['6._strategic_context'] || '';
+  const funFacts = contact.enrichment?.sections?.fun_facts || '';
+  
+  const isEnriched = contact.enrichment_status === 'enriched' && 
+                     (personSection.length > 50 || companySection.length > 50);
 
   // DEBUG - Remove after confirming it works
   console.log('=== APEX PARSER DEBUG ===');
