@@ -1,6 +1,6 @@
 // dashboard_v1/src/pages/ContactDetail.tsx
-// PRODUCTION VERSION - All Enrichment Data Mapping Fixed
-// Last Updated: Dec 15, 2025 3:11 PM PST
+// PRODUCTION - Apex Dashboard_v1 Color Scheme Applied
+// Last Updated: Dec 15, 2025 3:20 PM PST
 
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -61,24 +61,24 @@ export default function ContactDetail() {
   // Fetch contact data
   async function fetchContact() {
     if (!id) return;
-
+    
     setLoading(true);
     setError(null);
-
+    
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}`);
-
+      
       if (!res.ok) {
         throw new Error(`Failed to fetch contact: ${res.status}`);
       }
-
+      
       const json = await res.json();
-
+      
       // Unwrap {success: true, contact: {...}} wrapper
       const apiContact = (json && typeof json === 'object' && 'contact' in json) 
         ? (json as any).contact 
         : json;
-
+      
       setContact(normalizeContact(apiContact));
     } catch (err: any) {
       console.error('Fetch contact error:', err);
@@ -91,18 +91,18 @@ export default function ContactDetail() {
   // Re-enrich contact
   async function handleReEnrich() {
     if (!id || enriching) return;
-
+    
     setEnriching(true);
-
+    
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}/enrich`, {
         method: 'POST',
       });
-
+      
       if (!res.ok) {
         throw new Error('Enrichment failed');
       }
-
+      
       // Poll for completion (3 seconds)
       setTimeout(() => {
         fetchContact();
@@ -149,32 +149,32 @@ export default function ContactDetail() {
   // ==========================================
   // ENRICHMENT SECTION MAPPING (FIXED)
   // ==========================================
-
+  
   const sections = contact.enrichment?.sections || {};
-
+  
   // Professional: person_profile + background
   const personSection = sections.person_profile || 
                        sections['1._overview'] || 
                        sections['2._about_dale_holzer__background_and_icebreaker_angles'] || '';
-
+  
   // Company: company_intelligence + market data
   const companySection = sections.company_intelligence || 
                         sections['4._market_position'] || '';
-
+  
   // Personality: icebreaker topics, education, soft skills
   const personalitySection = sections['3._icebreaker_topics_and_shared_interests'] || 
                             sections['3._education'] || 
                             sections['3._leadership'] || 
                             sections['6._strategic_context'] || '';
-
+  
   // Fun Facts: fun_facts section
   const funFactsSection = sections.fun_facts || '';
-
+  
   // Raw profile: all sections joined
   const raw = Object.keys(sections).length > 0
     ? Object.entries(sections)
-        .map(([key, value]) => `## ${key.replace(/_/g, ' ').toUpperCase()}\n\n${value}`)
-        .join('\n\n---\n\n')
+        .map(([key, value]) => `## ${key.replace(/_/g, ' ').toUpperCase()}\\n\\n${value}`)
+        .join('\\n\\n---\\n\\n')
     : '';
 
   return (
@@ -189,7 +189,7 @@ export default function ContactDetail() {
               </h1>
               <p className="text-lg text-gray-600 mt-1">{contact.title}</p>
               <p className="text-md text-gray-500">{contact.company}</p>
-
+              
               <div className="flex gap-4 mt-4">
                 {contact.email && (
                   <a href={`mailto:${contact.email}`} className="text-blue-600 hover:underline">
@@ -211,7 +211,7 @@ export default function ContactDetail() {
                 )}
               </div>
             </div>
-
+            
             <div className="flex gap-3">
               <button
                 onClick={handleReEnrich}
@@ -228,8 +228,8 @@ export default function ContactDetail() {
               </button>
             </div>
           </div>
-
-          {/* Status Badges */}
+          
+          {/* Status Badges - Dashboard_v1 Colors */}
           <div className="mt-4 flex gap-2">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               contact.enrichment_status === 'enriched' 
@@ -241,34 +241,28 @@ export default function ContactDetail() {
               {contact.enrichment_status || 'pending'}
             </span>
             {contact.apex_score && contact.apex_score > 0 && (
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                contact.apex_score >= 75 
-                  ? 'bg-purple-100 text-purple-800'
-                  : contact.apex_score >= 50
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-800'
-              }`}>
+              <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
                 APEX: {contact.apex_score}
               </span>
             )}
             {Object.keys(sections).length > 0 && (
-              <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
-                {Object.keys(sections).length} sections available
+              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                {Object.keys(sections).length} sections
               </span>
             )}
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs - Dashboard_v1 Colors */}
         <div className="bg-white rounded-lg shadow-sm">
           <div className="border-b border-gray-200">
             <nav className="flex space-x-8 px-6" aria-label="Tabs">
               {[
-                { key: 'professional', label: 'Professional', count: personSection.length },
-                { key: 'company', label: 'Company', count: companySection.length },
-                { key: 'personality', label: 'Personality', count: personalitySection.length },
-                { key: 'funfacts', label: 'Fun Facts', count: funFactsSection.length },
-                { key: 'raw', label: 'Raw Profile', count: raw.length },
+                { key: 'professional', label: 'Professional' },
+                { key: 'company', label: 'Company' },
+                { key: 'personality', label: 'Personality' },
+                { key: 'funfacts', label: 'Fun Facts' },
+                { key: 'raw', label: 'Raw Profile' },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -280,11 +274,6 @@ export default function ContactDetail() {
                   }`}
                 >
                   {tab.label}
-                  {tab.count > 0 && (
-                    <span className="ml-2 text-xs text-gray-400">
-                      ({Math.round(tab.count / 1000)}k)
-                    </span>
-                  )}
                 </button>
               ))}
             </nav>
@@ -301,7 +290,7 @@ export default function ContactDetail() {
                 )}
               </div>
             )}
-
+            
             {activeTab === 'company' && (
               <div className="prose max-w-none">
                 {companySection ? (
@@ -311,7 +300,7 @@ export default function ContactDetail() {
                 )}
               </div>
             )}
-
+            
             {activeTab === 'personality' && (
               <div className="prose max-w-none">
                 {personalitySection ? (
@@ -321,7 +310,7 @@ export default function ContactDetail() {
                 )}
               </div>
             )}
-
+            
             {activeTab === 'funfacts' && (
               <div className="prose max-w-none">
                 {funFactsSection ? (
@@ -331,7 +320,7 @@ export default function ContactDetail() {
                 )}
               </div>
             )}
-
+            
             {activeTab === 'raw' && (
               <div className="bg-gray-50 p-4 rounded border border-gray-200">
                 {raw ? (
@@ -346,7 +335,7 @@ export default function ContactDetail() {
           </div>
         </div>
 
-        {/* Download PDF */}
+        {/* Download PDF - Dashboard_v1 Colors */}
         {contact.enrichment && Object.keys(sections).length > 0 && (
           <div className="mt-6 text-center">
             <button className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-sm">
@@ -358,4 +347,3 @@ export default function ContactDetail() {
     </div>
   );
 }
-
