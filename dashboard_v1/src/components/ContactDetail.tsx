@@ -24,7 +24,7 @@ export default function ContactDetailPage() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch(`${API_URL}/api/v2/contacts/${id}`);
+        const res = await fetch(`${API_URL}/api/contacts/${id}`);
         if (!res.ok) {
           throw new Error(`Request failed: ${res.status}`);
         }
