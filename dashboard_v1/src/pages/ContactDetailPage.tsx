@@ -212,15 +212,15 @@ export function ContactDetailPage(): JSX.Element {
   }
 
   const fullName = `${contact.first_name || ''} ${contact.last_name || contact.lastname || ''}`.trim() || 'Unnamed contact';
-  const overviewText = sections.overview || sections.person_research || '';
-  const backgroundText = sections.background_and_experience || '';
-  const companyOverviewText = sections.company_overview || '';
-  const marketPositionText = sections.market_position || '';
-  const leadershipText = sections.leadership_and_culture || '';
-  const recentNewsText = sections.recent_activity_and_news || '';
+  const overviewText = sections['1._overview'] || sections.person_profile || sections.overview || sections.person_research || '';
+  const backgroundText = sections['2._background_(work_history_and_achievements)'] || sections.skills_expertise || sections.background_and_experience || '';
+  const companyOverviewText = sections.company_intelligence || sections['1._overview'] || sections.company_overview || '';
+  const marketPositionText = sections['4._market_position'] || sections.market_position || '';
+  const leadershipText = sections['3._leadership'] || sections.leadership_and_culture || '';
+  const recentNewsText = sections.recent_activity || sections.recent_activity_and_news || '';
   const painPointsText = sections.pain_points_and_challenges || '';
   const budgetAuthorityText = sections.budget_and_authority || '';
-  const personalityText = sections.personality_and_communication || sections.personality_analysis || '';
+  const personalityText = sections.social_profiles || sections['2._icebreaker_topics'] || sections.personality_and_communication || sections.personality_analysis || '';
   const rawText = sections.raw_profile || contact.profile_content || '';
 
   return (
