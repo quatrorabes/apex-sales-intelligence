@@ -376,10 +376,9 @@ async def apex_enrich_contact(contact_id: UUID):
             UPDATE contacts SET
                 enrichment_status = 'completed',
                 enriched_at = NOW(),
-                enrichment_data = %s,
-                profile_context = %s
+                enrichment_data = %s
             WHERE id = %s
-        """, (enrichment_json, result["profile_text"], str(contact_id)))
+        """, (enrichment_json, str(contact_id)))
         conn.commit()
         cursor.close()
         conn.close()
