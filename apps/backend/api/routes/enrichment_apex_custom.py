@@ -14,12 +14,12 @@ import re
 import time
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from uuid import UUID
 
 import requests
 from openai import OpenAI
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -30,31 +30,13 @@ router = APIRouter(prefix="/api/contacts", tags=["Enrichment"])
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-    try:
-        yield conn
-    finally:
-        conn.close()
+def get_db_connection():
+    """Get a fresh database connection."""
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 
 class ApexEnrichmentEngine:
-    """
-    4-Stage Enrichment: Perplexity research → GPT-4 parsing.
-    Returns structured markdown with ## headers and - bullets.
-    """
-
-    SECTION_HEADERS = [
-        "overview",
-        "background_and_experience",
-        "company_overview",
-        "market_position",
-        "leadership_and_culture",
-        "recent_activity_and_news",
-        "pain_points_and_challenges",
-        "budget_and_authority",
-        "personality_and_communication",
-    ]
+    """4-Stage Enrichment: Perplexity research → GPT-4 parsing."""
 
     def __init__(self) -> None:
         self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
@@ -357,49 +339,74 @@ async def apex_enrich_contact(contact_id: UUID):
         logger.error("Failed to init engine: %s", e)
         raise HTTPException(status_code=503, detail="Enrichment engine unavailable")
 
+    conn = None
     try:
-        with next(get_db()) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM contacts WHERE id = %s", (str(contact_id),))
-            contact = cursor.fetchone()
-            if not contact:
-                raise HTTPException(status_code=404, detail="Contact not found")
-
-            cursor.execute("UPDATE contacts SET enrichment_status = 'enriching' WHERE id = %s", (str(contact_id),))
-            conn.commit()
-
-            contact_dict = dict(contact)
-            result = engine.enrich_contact(contact_dict)
-
-            # Save to DB
-            enrichment_json = json.dumps({
-                "profile_text": result["profile_text"],
-                "sections": result["sections"],
-                "profile_format": result["profile_format"],
-            })
-
-            cursor.execute("""
-                UPDATE contacts SET
-                    enrichment_status = 'completed',
-                    enriched_at = NOW(),
-                    enrichment_data = %s,
-                    profile_context = %s
-                WHERE id = %s
-            """, (enrichment_json, result["profile_text"], str(contact_id)))
-            conn.commit()
+        # Get contact
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE id = %s", (str(contact_id),))
+        contact = cursor.fetchone()
+        
+        if not contact:
             cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Contact not found")
 
-            return {
-                "success": True,
-                "contact_id": str(contact_id),
-                "status": "completed",
-                "sections_count": len(result["sections"]),
-                "character_count": result["character_count"],
-                "format": "v1",
-            }
+        # Mark as enriching
+        cursor.execute("UPDATE contacts SET enrichment_status = 'enriching' WHERE id = %s", (str(contact_id),))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Run enrichment (this takes time, so connection is closed)
+        contact_dict = dict(contact)
+        result = engine.enrich_contact(contact_dict)
+
+        # Save results with fresh connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        enrichment_json = json.dumps({
+            "profile_text": result["profile_text"],
+            "sections": result["sections"],
+            "profile_format": result["profile_format"],
+        })
+
+        cursor.execute("""
+            UPDATE contacts SET
+                enrichment_status = 'completed',
+                enriched_at = NOW(),
+                enrichment_data = %s,
+                profile_context = %s
+            WHERE id = %s
+        """, (enrichment_json, result["profile_text"], str(contact_id)))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "contact_id": str(contact_id),
+            "status": "completed",
+            "sections_count": len(result["sections"]),
+            "character_count": result["character_count"],
+            "format": "v1",
+        }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Enrichment failed: %s", e, exc_info=True)
+        # Try to mark as failed
+        try:
+            if conn:
+                conn.close()
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s", (str(contact_id),))
+            conn.commit()
+            cursor.close()
+            conn.close()
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
