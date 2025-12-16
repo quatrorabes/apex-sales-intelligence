@@ -55,7 +55,7 @@ content_generator = None
 linkedin_engine = None
 
 try:
-    from intelligence.engines.outreach.generators import ContentGenerator, LinkedInEngine
+    from apps.backend.intelligence.engines.outreach.generators import ContentGenerator, LinkedInEngine
     content_generator = ContentGenerator()
     linkedin_engine = LinkedInEngine()
     logger.info("✅ Outreach generators initialized successfully")
