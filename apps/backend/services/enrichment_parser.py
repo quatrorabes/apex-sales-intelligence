@@ -1,50 +1,59 @@
 #!/usr/bin/env python3
 """
-APEX Enrichment Parser v2.1 - Production
+APEX Enrichment Parser v3.0 - Production
 Parses raw enrichment profiles into structured sections
-Handles BOTH old and NEW formats from apex_custom_enrichment.py
+Handles ALL formats from enrichment engines
 """
 
 import re
-from typing import Dict, Optional, Any
+from typing import Dict, Any
+
 
 class EnrichmentParser:
     """Parse raw enrichment profiles into structured sections"""
-    
+
     def parse(self, raw_profile: str) -> Dict[str, Any]:
         """
         Main parsing function - auto-detects format
-        
+
         Returns:
         {
             "sections": {
                 "overview": "text...",
                 "company_overview": "text...",
                 "pain_points_and_challenges": "text...",
-                "budget_and_authority": "text...",
                 ...
             },
             "metadata": {
                 "total_sections": 12,
                 "character_count": 8500,
-                "format_detected": "markdown_structured"
+                "format_detected": "markdown_v3"
             }
         }
         """
         if not raw_profile or not isinstance(raw_profile, str):
             return self._empty_result()
-        
-        # Detect format
-        if ("---" in raw_profile and "Professional Profile" in raw_profile):
+
+        # Detect format and parse
+        if self._is_double_hash_format(raw_profile):
+            # NEW FORMAT: ## section_name (from enrichment_engine.py)
+            format_type = "markdown_v3"
+            sections = self._parse_double_hash(raw_profile)
+        elif "---" in raw_profile and "###" in raw_profile:
+            # OLD FORMAT: ### SECTION NAME with ---
             format_type = "markdown_structured"
             sections = self._parse_markdown_structured(raw_profile)
-        elif "===" in raw_profile and "PERSON RESEARCH" in raw_profile:
+        elif "===" in raw_profile:
+            # LEGACY FORMAT: === SECTION ===
             format_type = "triple_equals"
             sections = self._parse_triple_equals(raw_profile)
         else:
-            format_type = "unknown"
-            sections = {"raw_text": raw_profile}
-        
+            # FALLBACK: Try double hash, else raw
+            sections = self._parse_double_hash(raw_profile)
+            format_type = "markdown_v3" if len(sections) > 1 else "unknown"
+            if format_type == "unknown":
+                sections = {"raw_text": raw_profile}
+
         return {
             "sections": sections,
             "metadata": {
@@ -53,159 +62,163 @@ class EnrichmentParser:
                 "format_detected": format_type
             }
         }
-    
-    def _parse_markdown_structured(self, text: str) -> Dict[str, str]:
-        """Parse NEW format from apex_custom_enrichment.py Stage 2"""
+
+    def _is_double_hash_format(self, text: str) -> bool:
+        """Check if text uses ## section format"""
+        # Look for ## followed by lowercase words (new format)
+        pattern = r'^## [a-z_]+\s*$'
+        return bool(re.search(pattern, text, re.MULTILINE))
+
+    def _parse_double_hash(self, text: str) -> Dict[str, str]:
+        """
+        Parse NEW format from enrichment_engine.py
+        
+        Input: "## overview\nContent...\n\n## company_overview\nMore..."
+        Output: {"overview": "Content...", "company_overview": "More..."}
+        """
         sections = {}
         
+        # Pattern matches ## section_name (lowercase, may have spaces or underscores)
+        lines = text.split('\n')
+        current_section = None
+        current_content = []
+
+        for line in lines:
+            # Match ## header (case insensitive, various formats)
+            match = re.match(r'^## ([A-Za-z][A-Za-z0-9_ &-]+)\s*$', line.strip())
+            if match:
+                # Save previous section
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                
+                # Start new section (normalize key)
+                header = match.group(1)
+                current_section = self._normalize_key(header)
+                current_content = []
+            else:
+                if current_section:
+                    current_content.append(line)
+
+        # Save last section
+        if current_section:
+            sections[current_section] = '\n'.join(current_content).strip()
+
+        # Also extract structured fields from content
+        sections = self._extract_fields_from_sections(sections, text)
+
+        return sections
+
+    def _normalize_key(self, header: str) -> str:
+        """Normalize header to snake_case key"""
+        key = header.lower()
+        key = key.replace(' ', '_')
+        key = key.replace('&', 'and')
+        key = key.replace('-', '_')
+        key = re.sub(r'_+', '_', key)  # Remove double underscores
+        key = key.strip('_')
+        return key
+
+    def _extract_fields_from_sections(self, sections: Dict[str, str], full_text: str) -> Dict[str, str]:
+        """Extract additional structured fields from parsed sections"""
+        
+        # Extract pain points if in a section
+        for key in ['pain_points_and_challenges', 'sales_intelligence', 'pain_points']:
+            if key in sections:
+                pain_bullets = re.findall(r'^[-•]\s*(.+)$', sections[key], re.MULTILINE)
+                if pain_bullets:
+                    sections['pain_points_list'] = pain_bullets
+
+        # Extract talking points
+        for key in ['sales_intelligence', 'talking_points']:
+            if key in sections:
+                talking_match = re.findall(r'^\d+\.\s*(.+)$', sections[key], re.MULTILINE)
+                if talking_match:
+                    sections['talking_points_list'] = talking_match[:5]
+
+        # Extract MBTI if present
+        mbti_match = re.search(r'Myers-Briggs.*?:\s*\**([EISNTFJP]{4})\**', full_text, re.IGNORECASE)
+        if mbti_match:
+            sections['mbti'] = mbti_match.group(1)
+
+        # Extract DISC if present
+        disc_match = re.search(r'DISC.*?:\s*\**([DISC][a-z]*)\**', full_text, re.IGNORECASE)
+        if disc_match:
+            sections['disc'] = disc_match.group(1)
+
+        # Extract confidence score
+        conf_match = re.search(r'Confidence.*?:\s*(\d+)%?', full_text, re.IGNORECASE)
+        if conf_match:
+            sections['confidence_score'] = conf_match.group(1)
+
+        # Extract best channel
+        channel_match = re.search(r'Best Channel:\s*([^\n]+)', full_text, re.IGNORECASE)
+        if channel_match:
+            sections['best_channel'] = channel_match.group(1).strip()
+
+        return sections
+
+    def _parse_markdown_structured(self, text: str) -> Dict[str, str]:
+        """Parse OLD format with ### headers and ---"""
+        sections = {}
+
         # Split by main section headers (###)
         main_pattern = r'###\s+(.+?)\n(.*?)(?=###|$)'
         main_matches = re.findall(main_pattern, text, re.DOTALL)
-        
+
         for header, content in main_matches:
             header_clean = header.strip()
+            key = self._normalize_key(header_clean)
             
-            # Map sections to frontend keys
-            if "PERSON PROFILE" in header_clean or "Professional Profile" in header_clean:
-                # Parse person subsections
-                subsections = self._parse_subsections(content)
-                
-                # Map to frontend keys
-                if "Overview" in subsections:
-                    sections["overview"] = subsections["Overview"]
-                if "Background" in subsections:
-                    sections["person_background"] = subsections["Background"]
-                if "Education" in subsections:
-                    sections["person_education"] = subsections["Education"]
-                if "Recent Activity" in subsections or "Recent Activity Mentions" in subsections:
-                    sections["recent_activity"] = subsections.get("Recent Activity", subsections.get("Recent Activity Mentions", ""))
-                if "LinkedIn Activity" in subsections:
-                    sections["linkedin_activity"] = subsections["LinkedIn Activity"]
-                if "Top Skills" in subsections:
-                    sections["skills_expertise"] = subsections["Top Skills"]
-                    
-            elif "COMPANY PROFILE" in header_clean or "Company Intelligence" in header_clean:
-                # Parse company subsections
-                subsections = self._parse_subsections(content)
-                
-                if "Overview" in subsections:
-                    sections["company_overview"] = subsections["Overview"]
-                if "Products" in subsections or "Products Services" in subsections:
-                    sections["company_products"] = subsections.get("Products", subsections.get("Products Services", ""))
-                if "Leadership" in subsections:
-                    sections["company_leadership"] = subsections["Leadership"]
-                if "Market" in subsections or "Market Competitors" in subsections:
-                    sections["company_market"] = subsections.get("Market", subsections.get("Market Competitors", ""))
-                if "Recent News" in subsections:
-                    sections["company_news"] = subsections["Recent News"]
-                if "Strategic Context" in subsections:
-                    sections["company_strategy"] = subsections["Strategic Context"]
-                    
-            elif "PERSONALITY ASSESSMENT" in header_clean:
-                subsections = self._parse_subsections(content)
-                
-                # Store full personality section
-                sections["personality_analysis"] = content.strip()
-                
-                # Extract specific personality fields
-                if "Myers-Briggs" in subsections or "MBTI" in subsections:
-                    sections["personality_mbti"] = subsections.get("Myers-Briggs", subsections.get("MBTI", ""))
-                if "DISC" in subsections:
-                    sections["personality_disc"] = subsections["DISC"]
-                if "StrengthsFinder" in subsections:
-                    sections["personality_strengths"] = subsections["StrengthsFinder"]
-                if "Communication Style" in subsections or "Professional Communication Style" in subsections:
-                    sections["communication_style"] = subsections.get("Communication Style", subsections.get("Professional Communication Style", ""))
-                    
-            elif "SALES INTELLIGENCE" in header_clean or "SALES OPPORTUNITIES" in header_clean:
-                subsections = self._parse_subsections(content)
-                
-                # Store full sales intelligence
-                sections["sales_intelligence"] = content.strip()
-                
-                # Extract specific sales fields
-                if "Top" in subsections and "Talking Points" in subsections:
-                    sections["talking_points"] = subsections.get("Top 5 Talking Points", "")
-                if "Sales Opportunities" in subsections:
-                    sections["sales_opportunities"] = subsections["Sales Opportunities"]
-                    
-                    # Parse pain points from sales opportunities
-                    if "Pain Points" in subsections["Sales Opportunities"]:
-                        pain_match = re.search(r'Pain Points?:(.+?)(?=\n\w+:|$)', subsections["Sales Opportunities"], re.DOTALL)
-                        if pain_match:
-                            sections["pain_points_and_challenges"] = pain_match.group(1).strip()
-                    
-                    # Parse budget/authority
-                    if "Budget" in subsections["Sales Opportunities"] or "Authority" in subsections["Sales Opportunities"]:
-                        budget_match = re.search(r'(Budget|Authority).+', subsections["Sales Opportunities"], re.DOTALL)
-                        if budget_match:
-                            sections["budget_and_authority"] = budget_match.group(0).strip()
-                
-                if "Value Proposition" in subsections:
-                    sections["value_propositions"] = subsections.get("Value Proposition Angles", "")
-                if "Objection" in subsections:
-                    sections["objection_handling"] = subsections.get("Objection Handling", "")
-                if "Relationship Building" in subsections:
-                    sections["relationship_building"] = subsections["Relationship Building"]
-                if "Outreach Strategy" in subsections:
-                    sections["outreach_strategy"] = subsections["Outreach Strategy"]
-                    
-            elif "SOCIAL MEDIA PROFILES" in header_clean:
-                sections["social_profiles"] = content.strip()
-                
-            elif "NEWS" in header_clean or "FUN FACTS" in header_clean:
-                subsections = self._parse_subsections(content)
-                
-                if "Fun Facts" in subsections:
-                    sections["fun_facts"] = subsections["Fun Facts"]
-                if "Icebreaker" in subsections:
-                    sections["icebreaker"] = subsections["Icebreaker"]
-                if "Recent Company News" in subsections or "Company News" in subsections:
-                    sections["company_news"] = subsections.get("Recent Company News", subsections.get("Company News", ""))
-                    
-            elif "ENRICHMENT NOTES" in header_clean:
-                sections["enrichment_notes"] = content.strip()
-            else:
-                # Generic catch-all
-                key = header_clean.lower().replace(" ", "_").replace(",", "").replace("-", "_")
-                sections[key] = content.strip()
-        
+            # Map old keys to new standardized keys
+            key_mapping = {
+                'person_profile': 'person_profile',
+                'professional_profile': 'person_profile',
+                'company_profile': 'company_overview',
+                'company_intelligence': 'company_overview',
+                'personality_assessment': 'personality_and_communication',
+                'sales_intelligence': 'sales_intelligence',
+                'sales_opportunities': 'sales_intelligence',
+                'social_media_profiles': 'social_profiles',
+                'news_and_fun_facts': 'fun_facts',
+                'enrichment_notes': 'enrichment_notes',
+            }
+            
+            mapped_key = key_mapping.get(key, key)
+            sections[mapped_key] = content.strip()
+
+            # Parse subsections (####)
+            subsections = self._parse_subsections(content)
+            for sub_key, sub_content in subsections.items():
+                sections[f"{mapped_key}_{self._normalize_key(sub_key)}"] = sub_content
+
         return sections
-    
+
     def _parse_subsections(self, content: str) -> Dict[str, str]:
         """Parse subsections within a section (#### headers)"""
         subsections = {}
-        
+
         pattern = r'####\s+(.+?)\n(.*?)(?=####|$)'
         matches = re.findall(pattern, content, re.DOTALL)
-        
+
         for header, text in matches:
             key = header.strip()
             subsections[key] = text.strip()
-        
+
         return subsections
-    
+
     def _parse_triple_equals(self, text: str) -> Dict[str, str]:
-        """Parse OLD format (===SECTION===)"""
+        """Parse LEGACY format (===SECTION===)"""
         sections = {}
-        
+
         pattern = r'={3,}\s*([A-Z\s]+)\s*={3,}(.*?)(?===|$)'
         matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
-        
+
         for header, content in matches:
-            header_clean = header.strip().upper()
-            
-            if "PERSON RESEARCH" in header_clean:
-                sections["person_research"] = content.strip()
-            elif "COMPANY RESEARCH" in header_clean:
-                sections["company_research"] = content.strip()
-            elif "SALES INTELLIGENCE" in header_clean:
-                sections["sales_intelligence"] = content.strip()
-            elif "PERSONALITY" in header_clean:
-                sections["personality_analysis"] = content.strip()
-        
+            key = self._normalize_key(header.strip())
+            sections[key] = content.strip()
+
         return sections
-    
+
     def _empty_result(self) -> Dict:
         """Return empty result structure"""
         return {
