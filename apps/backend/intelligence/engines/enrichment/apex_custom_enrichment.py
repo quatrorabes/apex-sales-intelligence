@@ -563,7 +563,7 @@ If you cannot find a LinkedIn profile, return: NOT_FOUND"""
             client = OpenAI(api_key=self.openai_key)
 
             response = client.chat.completions.create(
-                model='gpt-4',
+                model='gpt-4o',
                 messages=[
                     {'role': 'system', 'content': 'You are a professional profile analyst and sales intelligence expert.'},
                     {'role': 'user', 'content': prompt}
