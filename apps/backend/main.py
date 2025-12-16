@@ -2558,3 +2558,221 @@ async def generate_all_outreach_content(contact_id: str):
     except Exception as e:
         logger.error(f"Error generating all content: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==============================================================================
+# STAGE GATE SYSTEM - SPICE + BANT READINESS
+# ==============================================================================
+
+@app.get("/api/contacts/{contact_id}/stage-gate-status")
+def get_stage_gate_status(contact_id: str):
+    """
+    Calculate sales stage readiness based on SPICE + BANT completion
+    Returns current stage, next action, and gate blockers
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                id, name, company, title,
+                apex_score, mdcp_score, rss_score,
+                spice_total_score,
+                spice_situation_score, spice_problem_score, 
+                spice_implication_score, spice_critical_event_score, 
+                spice_decision_score,
+                bant_total_score,
+                bant_budget_score, bant_authority_score,
+                bant_need_score, bant_timeline_score,
+                bant_budget_confirmed, bant_authority_level,
+                bant_timeline_identified,
+                spice_cost_of_inaction, spice_revenue_opportunity,
+                spice_critical_event_date, spice_critical_event_description
+            FROM contacts 
+            WHERE id = %s
+        """, (contact_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        contact = dict(row)
+        
+        # Calculate completion percentages
+        spice_score = contact.get('spice_total_score') or 0
+        bant_score = contact.get('bant_total_score') or 0
+        apex_score = contact.get('apex_score') or 0
+        
+        # Determine stage and next actions
+        spice_complete = spice_score >= 60
+        bant_complete = bant_score >= 60
+        apex_fit = apex_score >= 60
+        
+        # Stage gate logic
+        if spice_score < 40 and bant_score < 40:
+            stage = "new_lead"
+            next_action = "Run initial discovery call - capture SPICE or BANT data"
+            blocked = True
+            can_propose = False
+            priority = "low"
+            
+        elif spice_complete and not bant_complete:
+            stage = "qualification_needed"
+            next_action = "Validate BANT - confirm budget, authority, and timeline"
+            blocked = True
+            can_propose = False
+            priority = "medium"
+            
+        elif bant_complete and not spice_complete:
+            stage = "discovery_needed"
+            next_action = "Deepen SPICE discovery - quantify business impact and urgency"
+            blocked = True
+            can_propose = False
+            priority = "medium"
+            
+        elif spice_complete and bant_complete and not apex_fit:
+            stage = "poor_fit"
+            next_action = "ICP fit too low - consider nurture track or disqualify"
+            blocked = True
+            can_propose = False
+            priority = "low"
+            
+        elif spice_complete and bant_complete and apex_fit:
+            stage = "proposal_ready"
+            next_action = "Generate proposal + schedule executive review"
+            blocked = False
+            can_propose = True
+            priority = "high"
+            
+        else:
+            stage = "in_discovery"
+            next_action = "Continue discovery - capture more SPICE and BANT data"
+            blocked = True
+            can_propose = False
+            priority = "medium"
+        
+        # Calculate readiness breakdown
+        spice_gaps = []
+        if (contact.get('spice_situation_score') or 0) < 15:
+            spice_gaps.append("Situation unclear")
+        if (contact.get('spice_problem_score') or 0) < 15:
+            spice_gaps.append("Problem not identified")
+        if (contact.get('spice_implication_score') or 0) < 15:
+            spice_gaps.append("Business impact not quantified")
+        if (contact.get('spice_critical_event_score') or 0) < 15:
+            spice_gaps.append("No critical event")
+        if (contact.get('spice_decision_score') or 0) < 15:
+            spice_gaps.append("Decision process unknown")
+        
+        bant_gaps = []
+        if (contact.get('bant_budget_score') or 0) < 15:
+            bant_gaps.append("Budget not confirmed")
+        if (contact.get('bant_authority_score') or 0) < 15:
+            bant_gaps.append("Authority not mapped")
+        if (contact.get('bant_need_score') or 0) < 15:
+            bant_gaps.append("Need not validated")
+        if (contact.get('bant_timeline_score') or 0) < 15:
+            bant_gaps.append("Timeline not established")
+        
+        # ROI signals
+        roi_quantified = bool(
+            contact.get('spice_cost_of_inaction') or 
+            contact.get('spice_revenue_opportunity')
+        )
+        
+        urgency_signal = bool(contact.get('spice_critical_event_date'))
+        
+        return {
+            "contact_id": contact_id,
+            "contact_name": contact.get('name'),
+            "company": contact.get('company'),
+            
+            "current_stage": stage,
+            "next_action": next_action,
+            "blocked": blocked,
+            "can_propose": can_propose,
+            "priority": priority,
+            
+            "scores": {
+                "spice": spice_score,
+                "bant": bant_score,
+                "apex": apex_score,
+                "hybrid": int((apex_score * 0.4) + (bant_score * 0.3) + (spice_score * 0.3))
+            },
+            
+            "completion": {
+                "spice_complete": spice_complete,
+                "bant_complete": bant_complete,
+                "apex_fit": apex_fit,
+                "spice_percentage": spice_score,
+                "bant_percentage": bant_score
+            },
+            
+            "gaps": {
+                "spice": spice_gaps,
+                "bant": bant_gaps
+            },
+            
+            "signals": {
+                "roi_quantified": roi_quantified,
+                "cost_of_inaction": contact.get('spice_cost_of_inaction'),
+                "revenue_opportunity": contact.get('spice_revenue_opportunity'),
+                "urgency_signal": urgency_signal,
+                "critical_event_date": contact.get('spice_critical_event_date'),
+                "critical_event": contact.get('spice_critical_event_description')
+            },
+            
+            "bant_details": {
+                "budget_confirmed": contact.get('bant_budget_confirmed'),
+                "authority_level": contact.get('bant_authority_level'),
+                "timeline_identified": contact.get('bant_timeline_identified')
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating stage gate: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@app.get("/api/pipeline/stage-distribution")
+def get_pipeline_stage_distribution():
+    """
+    Get distribution of contacts across stage gates
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN spice_total_score >= 60 AND bant_total_score >= 60 AND apex_score >= 60 THEN 1 ELSE 0 END) as proposal_ready,
+                SUM(CASE WHEN spice_total_score >= 60 AND bant_total_score < 60 THEN 1 ELSE 0 END) as needs_bant,
+                SUM(CASE WHEN bant_total_score >= 60 AND spice_total_score < 60 THEN 1 ELSE 0 END) as needs_spice,
+                SUM(CASE WHEN spice_total_score < 40 AND bant_total_score < 40 THEN 1 ELSE 0 END) as new_leads,
+                SUM(CASE WHEN spice_total_score >= 40 AND spice_total_score < 60 AND bant_total_score >= 40 AND bant_total_score < 60 THEN 1 ELSE 0 END) as in_discovery
+            FROM contacts
+        """)
+        
+        row = cursor.fetchone()
+        
+        return {
+            "total_contacts": row[0],
+            "stages": {
+                "proposal_ready": row[1],
+                "needs_bant_qualification": row[2],
+                "needs_spice_discovery": row[3],
+                "new_leads": row[4],
+                "in_discovery": row[5]
+            },
+            "conversion_funnel": {
+                "discovery_to_qualified": f"{(row[1] / row[0] * 100):.1f}%" if row[0] > 0 else "0%",
+                "qualified_rate": f"{((row[1] / row[0]) * 100):.1f}%" if row[0] > 0 else "0%"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting stage distribution: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
