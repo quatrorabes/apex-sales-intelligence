@@ -2546,3 +2546,15 @@ async def get_linkedin_pending():
         logger.error(f"Error getting pending actions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
         
+@app.post("/api/contacts/{contact_id}/generate-all-content")
+async def generate_all_outreach_content(contact_id: str):
+    """Generate complete outreach package (emails + calls + LinkedIn)"""
+    if not content_generator:
+        raise HTTPException(status_code=503, detail="Content generator not available")
+    
+    try:
+        result = await content_generator.generate_all_content(contact_id)
+        return result
+    except Exception as e:
+        logger.error(f"Error generating all content: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
