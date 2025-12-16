@@ -1,6 +1,3 @@
-// dashboard_v1/src/pages/ContactDetail.tsx
-// PRODUCTION - Dashboard_v1 styling: gradient background + glass cards (fixes "still white" perception)
-
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
@@ -58,7 +55,6 @@ export default function ContactDetail() {
     if (!id) return;
     setLoading(true);
     setError(null);
-
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}`);
       if (!res.ok) throw new Error(`Failed to fetch contact: ${res.status}`);
@@ -76,15 +72,10 @@ export default function ContactDetail() {
   async function handleReEnrich() {
     if (!id || enriching) return;
     setEnriching(true);
-
     try {
       const res = await fetch(`${API_BASE}/api/contacts/${id}/enrich`, { method: 'POST' });
       if (!res.ok) throw new Error('Enrichment failed');
-
-      setTimeout(() => {
-        fetchContact();
-        setEnriching(false);
-      }, 3000);
+      setTimeout(() => { fetchContact(); setEnriching(false); }, 3000);
     } catch (err: any) {
       console.error('Enrich error:', err);
       alert('Enrichment failed. Check console.');
@@ -94,14 +85,11 @@ export default function ContactDetail() {
 
   useEffect(() => { fetchContact(); }, [id]);
 
-  // Shared gradient background (Dashboard_v1)
-  const pageBg = "min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50";
-
   if (loading) {
     return (
-      <div className={`flex items-center justify-center ${pageBg}`}>
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading contact...</p>
         </div>
       </div>
@@ -110,14 +98,11 @@ export default function ContactDetail() {
 
   if (error || !contact) {
     return (
-      <div className={`flex items-center justify-center ${pageBg}`}>
-        <div className="text-center bg-white/85 backdrop-blur-sm rounded-lg shadow-lg p-8 border border-gray-100">
-          <p className="text-red-600 mb-4">{error || 'Contact not found'}</p>
-          <button
-            onClick={() => navigate('/contacts')}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Back to Contacts
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+        <div className="bg-white rounded-xl shadow-xl p-8 max-w-md mx-4">
+          <p className="text-red-600 mb-4 font-medium">{error || 'Contact not found'}</p>
+          <button onClick={() => navigate('/contacts')} className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition font-medium">
+            ← Back to Contacts
           </button>
         </div>
       </div>
@@ -125,209 +110,133 @@ export default function ContactDetail() {
   }
 
   const sections = contact.enrichment?.sections || {};
-  const personSection =
-    sections.person_profile ||
-    sections['1._overview'] ||
-    sections['2._about_dale_holzer__background_and_icebreaker_angles'] ||
-    '';
-
-  const companySection =
-    sections.company_intelligence ||
-    sections['4._market_position'] ||
-    '';
-
-  const personalitySection =
-    sections['3._icebreaker_topics_and_shared_interests'] ||
-    sections['3._education'] ||
-    sections['3._leadership'] ||
-    sections['6._strategic_context'] ||
-    '';
-
+  const personSection = sections.person_profile || sections['1._overview'] || sections['2._about_dale_holzer__background_and_icebreaker_angles'] || '';
+  const companySection = sections.company_intelligence || sections['4._market_position'] || '';
+  const personalitySection = sections['3._icebreaker_topics_and_shared_interests'] || sections['3._education'] || sections['3._leadership'] || sections['6._strategic_context'] || '';
   const funFactsSection = sections.fun_facts || '';
-
-  const raw = Object.keys(sections).length > 0
-    ? Object.entries(sections)
-        .map(([key, value]) => `## ${key.replace(/_/g, ' ').toUpperCase()}\n\n${value}`)
-        .join('\n\n---\n\n')
-    : '';
-
-  // Glass card styling (keeps white scheme, but stops “everything looks white”)
-  const card = "bg-white/85 backdrop-blur-sm rounded-lg shadow-lg border border-gray-100";
-  const tabBar = "border-b border-gray-200 bg-white/70 backdrop-blur-sm";
+  const raw = Object.keys(sections).length > 0 ? Object.entries(sections).map(([key, value]) => `## ${key.replace(/_/g, ' ').toUpperCase()}\n\n${value}`).join('\n\n---\n\n') : '';
 
   return (
-    <div className={`${pageBg} py-8`}>
-      <div className="max-w-6xl mx-auto px-4">
-        {/* Header */}
-        <div className={`${card} p-6 mb-6`}>
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900">
-                {contact.firstname} {contact.lastname}
-              </h1>
-              <p className="text-lg text-gray-600 mt-1">{contact.title}</p>
-              <p className="text-md text-gray-500">{contact.company}</p>
-
-              <div className="flex gap-4 mt-4">
-                {contact.email && (
-                  <a href={`mailto:${contact.email}`} className="text-blue-600 hover:text-blue-700 hover:underline font-medium">
-                    {contact.email}
-                  </a>
-                )}
-                {contact.phone && <span className="text-gray-600 font-medium">{contact.phone}</span>}
-                {contact.linkedin_url && (
-                  <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 hover:underline font-medium">
-                    LinkedIn
-                  </a>
-                )}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 py-8 px-4">
+      <div className="max-w-4xl mx-auto">
+        {/* Header - Navy like ContactsView */}
+        <div className="bg-white rounded-xl shadow-xl p-8 mb-8 border border-slate-200">
+          <div className="flex items-start justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{contact.firstname} {contact.lastname}</h1>
+              <p className="text-xl text-slate-700 font-semibold mb-1">{contact.title}</p>
+              <p className="text-lg text-slate-600 mb-4">{contact.company}</p>
+              <div className="flex flex-wrap gap-4 text-sm">
+                {contact.email && <a href={`mailto:${contact.email}`} className="text-indigo-600 hover:text-indigo-700 font-medium">📧 {contact.email}</a>}
+                {contact.phone && <span className="text-slate-700 font-medium">📞 {contact.phone}</span>}
+                {contact.linkedin_url && <a href={contact.linkedin_url} target="_blank" className="text-indigo-600 hover:text-indigo-700 font-medium">🔗 LinkedIn</a>}
               </div>
             </div>
-
             <div className="flex gap-3">
-              <button
-                onClick={handleReEnrich}
+              <button 
+                onClick={handleReEnrich} 
                 disabled={enriching}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 shadow-sm font-medium transition-colors"
+                className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 shadow-md font-semibold transition-all"
               >
-                {enriching ? 'Enriching...' : 'Re-Enrich'}
+                {enriching ? '⏳ Enriching...' : '🔄 Re-Enrich'}
               </button>
-              <button
-                onClick={() => navigate('/contacts')}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium transition-colors"
+              <button 
+                onClick={() => navigate('/contacts')} 
+                className="px-6 py-3 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 font-medium transition"
               >
-                Back
+                ← Back
               </button>
             </div>
           </div>
-
-          <div className="mt-4 flex gap-2 flex-wrap">
-            <span
-              className={`px-3 py-1 rounded-full text-sm font-semibold shadow-sm ${
-                contact.enrichment_status === 'enriched'
-                  ? 'bg-green-100 text-green-800 border border-green-200'
-                  : contact.enrichment_status === 'enriching'
-                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                  : 'bg-gray-100 text-gray-700 border border-gray-200'
-              }`}
-            >
-              {contact.enrichment_status || 'pending'}
+          <div className="flex flex-wrap gap-3">
+            <span className={`px-4 py-2 rounded-full text-sm font-bold shadow-sm ${
+              contact.enrichment_status === 'enriched' 
+                ? 'bg-emerald-100 text-emerald-800 border-2 border-emerald-200' 
+                : contact.enrichment_status === 'enriching' 
+                ? 'bg-amber-100 text-amber-800 border-2 border-amber-200' 
+                : 'bg-slate-100 text-slate-700 border-2 border-slate-200'
+            }`}>
+              {contact.enrichment_status === 'enriched' ? '✅ ' : ''}{contact.enrichment_status || 'Pending'}
             </span>
-
             {contact.apex_score && contact.apex_score > 0 && (
-              <span className="px-3 py-1 bg-purple-100 text-purple-800 border border-purple-200 rounded-full text-sm font-semibold shadow-sm">
-                APEX: {contact.apex_score}
+              <span className="px-4 py-2 bg-purple-100 text-purple-800 border-2 border-purple-200 rounded-full text-sm font-bold shadow-sm">
+                ⚡ APEX {contact.apex_score}
               </span>
             )}
-
             {Object.keys(sections).length > 0 && (
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 border border-blue-200 rounded-full text-sm font-semibold shadow-sm">
-                {Object.keys(sections).length} sections
+              <span className="px-4 py-2 bg-blue-100 text-blue-800 border-2 border-blue-200 rounded-full text-sm font-bold shadow-sm">
+                📊 {Object.keys(sections).length} Sections
               </span>
             )}
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className={`${card} overflow-hidden`}>
-          <div className={tabBar}>
-            <nav className="flex space-x-8 px-6" aria-label="Tabs">
+        {/* Tabs - Navy active like ContactsView */}
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden mb-8">
+          <div className="bg-gradient-to-r from-slate-100 to-indigo-100 border-b border-slate-200 p-1">
+            <nav className="flex -mb-px space-x-8">
               {[
-                { key: 'professional', label: 'Professional' },
-                { key: 'company', label: 'Company' },
-                { key: 'personality', label: 'Personality' },
-                { key: 'funfacts', label: 'Fun Facts' },
-                { key: 'raw', label: 'Raw Profile' },
+                { key: 'professional', label: '👔 Professional', icon: '👔' },
+                { key: 'company', label: '🏢 Company', icon: '🏢' },
+                { key: 'personality', label: '🧠 Personality', icon: '🧠' },
+                { key: 'funfacts', label: '✨ Fun Facts', icon: '✨' },
+                { key: 'raw', label: '📄 Raw Profile', icon: '📄' },
               ].map((tab) => (
                 <button
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key as any)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  className={`py-3 px-4 border-b-2 font-semibold text-sm flex items-center gap-2 transition-all rounded-t-lg group ${
                     activeTab === tab.key
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-indigo-600 bg-white text-indigo-900 shadow-sm'
+                      : 'border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300'
                   }`}
                 >
-                  {tab.label}
+                  <span>{tab.icon}</span>{tab.label}
                 </button>
               ))}
             </nav>
           </div>
 
-          {/* IMPORTANT: this is what was making the whole page “look white” */}
-          <div className="p-8 bg-white/70 backdrop-blur-sm min-h-[320px]">
-            {activeTab === 'professional' && (
-              <div className="prose prose-blue max-w-none">
-                {personSection ? (
-                  <ReactMarkdown>{personSection}</ReactMarkdown>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 text-lg">No professional data available.</p>
-                    <p className="text-gray-400 text-sm mt-2">Click “Re-Enrich” to generate intelligence.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'company' && (
-              <div className="prose prose-blue max-w-none">
-                {companySection ? (
-                  <ReactMarkdown>{companySection}</ReactMarkdown>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 text-lg">No company data available.</p>
-                    <p className="text-gray-400 text-sm mt-2">Click “Re-Enrich” to generate intelligence.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'personality' && (
-              <div className="prose prose-blue max-w-none">
-                {personalitySection ? (
-                  <ReactMarkdown>{personalitySection}</ReactMarkdown>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 text-lg">No personality/icebreaker data available.</p>
-                    <p className="text-gray-400 text-sm mt-2">Click “Re-Enrich” to generate intelligence.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'funfacts' && (
-              <div className="prose prose-blue max-w-none">
-                {funFactsSection ? (
-                  <ReactMarkdown>{funFactsSection}</ReactMarkdown>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 text-lg">No fun facts available.</p>
-                    <p className="text-gray-400 text-sm mt-2">Click “Re-Enrich” to discover interesting details.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {activeTab === 'raw' && (
-              <div className="bg-white/60 backdrop-blur-sm p-6 rounded-lg border border-gray-200">
-                {raw ? (
-                  <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown>{raw}</ReactMarkdown>
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-gray-500 text-lg">No enrichment data available.</p>
-                    <p className="text-gray-400 text-sm mt-2">Click “Re-Enrich” to generate full profile.</p>
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="p-8 min-h-[400px]">
+            <div className="prose prose-slate max-w-none prose-headings:text-gray-900 prose-a:text-indigo-600">
+              {activeTab === 'professional' && (personSection ? <ReactMarkdown>{personSection}</ReactMarkdown> : (
+                <div className="text-center py-20">
+                  <p className="text-slate-500 text-xl mb-2">No professional intel yet.</p>
+                  <p className="text-slate-400">Hit Re-Enrich for APEX insights.</p>
+                </div>
+              ))}
+              {activeTab === 'company' && (companySection ? <ReactMarkdown>{companySection}</ReactMarkdown> : (
+                <div className="text-center py-20">
+                  <p className="text-slate-500 text-xl mb-2">No company data.</p>
+                  <p className="text-slate-400">Re-Enrich to populate.</p>
+                </div>
+              ))}
+              {activeTab === 'personality' && (personalitySection ? <ReactMarkdown>{personalitySection}</ReactMarkdown> : (
+                <div className="text-center py-20">
+                  <p className="text-slate-500 text-xl mb-2">No personality insights.</p>
+                  <p className="text-slate-400">Re-Enrich for icebreakers + education.</p>
+                </div>
+              ))}
+              {activeTab === 'funfacts' && (funFactsSection ? <ReactMarkdown>{funFactsSection}</ReactMarkdown> : (
+                <div className="text-center py-20">
+                  <p className="text-slate-500 text-xl mb-2">No fun facts.</p>
+                  <p className="text-slate-400">Re-Enrich to uncover.</p>
+                </div>
+              ))}
+              {activeTab === 'raw' && (raw ? <ReactMarkdown components={{ h2: ({ children }) => <h2 className="text-slate-900 font-bold mt-8 mb-4 border-b border-slate-200 pb-2">{children}</h2> }}>{raw}</ReactMarkdown> : (
+                <div className="text-center py-20">
+                  <p className="text-slate-500 text-xl mb-2">No raw data.</p>
+                  <p className="text-slate-400">Re-Enrich full profile.</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
         {contact.enrichment && Object.keys(sections).length > 0 && (
-          <div className="mt-6 text-center">
-            <button className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg font-semibold transition-colors">
-              Download PDF Dossier
+          <div className="text-center">
+            <button className="px-12 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl shadow-xl hover:from-emerald-600 hover:to-emerald-700 font-bold text-lg transition-all transform hover:-translate-y-1">
+              📥 Download PDF Dossier
             </button>
           </div>
         )}
