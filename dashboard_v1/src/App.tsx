@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LandingPage from './components/LandingPage';
 import TodaysBoard from './components/TodaysBoard';
 import ContactsView from './components/ContactsView';
-import ContactDetail from './pages/ContactDetailPage_v2';
+import ContactDetail from './pages/ContactDetailPage';
 import CallAssistantPage from './pages/CallAssistantPage';
 import Analytics from './components/Analytics';
 import ColdCallQueue from './components/ColdCallQueue';
