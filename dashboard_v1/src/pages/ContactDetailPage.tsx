@@ -218,10 +218,10 @@ export function ContactDetailPage(): JSX.Element {
   const marketPositionText = sections['4._market_position'] || sections.market_position || '';
   const leadershipText = sections['3._leadership'] || sections.leadership_and_culture || '';
   const recentNewsText = sections.recent_activity || sections.recent_activity_and_news || '';
-  const painPointsText = sections.pain_points_and_challenges || '';
-  const budgetAuthorityText = sections.budget_and_authority || '';
+  const painPointsText = sections['6._strategic_context'] || sections.pain_points_and_challenges || '';
+  const budgetAuthorityText = sections.skills_expertise || sections['2._professional_skills__leadership,_industry_expertise'] || sections.budget_and_authority || '';
   const personalityText = sections.social_profiles || sections['2._icebreaker_topics'] || sections.personality_and_communication || sections.personality_analysis || '';
-  const rawText = sections.raw_profile || contact.profile_content || '';
+  const rawText = contact.enrichment ? JSON.stringify(contact.enrichment, null, 2) : (sections.raw_profile || contact.profile_content || '');
 
   return (
     <div className="flex flex-col h-full text-slate-50 bg-slate-900">
