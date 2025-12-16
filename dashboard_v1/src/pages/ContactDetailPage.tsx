@@ -373,7 +373,7 @@ export function ContactDetailPage(): JSX.Element {
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-sky-400" />
               </div>
-            ) : icpMatch ? (
+            ) : icpMatch && icpMatch.score > 0 ? (
               <>
                 <ICPScoreBadge score={icpMatch.score} matchLevel={icpMatch.match_level} />
                 <SectionCard
@@ -394,10 +394,32 @@ export function ContactDetailPage(): JSX.Element {
                 </SectionCard>
               </>
             ) : (
-              <div className="text-center py-12 text-slate-400">
-                <Lightbulb className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No ICP match data available.</p>
-                <p className="text-xs mt-1">Enrich this contact first, then score against your ICP.</p>
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                    <p className="text-3xl font-bold text-purple-400">{(contact as any).apex_score || 0}</p>
+                    <p className="text-slate-400 text-sm mt-1">APEX Score</p>
+                  </div>
+                  <div className="text-center p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                    <p className="text-3xl font-bold text-blue-400">{(contact as any).unified_qualification_score || 0}</p>
+                    <p className="text-slate-400 text-sm mt-1">Unified</p>
+                  </div>
+                  <div className="text-center p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                    <p className="text-3xl font-bold text-green-400">{(contact as any).rss_score || 0}</p>
+                    <p className="text-slate-400 text-sm mt-1">RSS Score</p>
+                  </div>
+                  <div className="text-center p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+                    <p className="text-3xl font-bold text-orange-400">{(contact as any).mdcp_score || 0}</p>
+                    <p className="text-slate-400 text-sm mt-1">MDCP Score</p>
+                  </div>
+                </div>
+                <SectionCard
+                  title="Why We're a Perfect Fit"
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  emptyText="No match reasons available."
+                >
+                  <p className="text-slate-400 text-sm">ICP matching not yet configured. Configure your Ideal Customer Profile to see detailed match reasons.</p>
+                </SectionCard>
               </div>
             )}
           </div>
