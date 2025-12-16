@@ -47,7 +47,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============================================================================
+# OUTREACH CONTENT GENERATORS - INITIALIZATION
+# ============================================================================
 
+content_generator = None
+linkedin_engine = None
+
+try:
+    from intelligence.engines.outreach.generators import ContentGenerator, LinkedInEngine
+    content_generator = ContentGenerator()
+    linkedin_engine = LinkedInEngine()
+    logger.info("✅ Outreach generators initialized successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Outreach generators not found: {str(e)}")
+    logger.warning("Run: mkdir -p apps/backend/intelligence/engines/outreach/generators")
+except Exception as e:
+    logger.error(f"❌ Error initializing outreach generators: {str(e)}")
+    
 # =============================================================================
 # V2 API ROUTES (Clean Schema)
 # =============================================================================
@@ -65,7 +82,7 @@ app.include_router(playbook_router)
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set")
-
+    
 @contextmanager
 def get_db():
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
@@ -73,7 +90,7 @@ def get_db():
         yield conn
     finally:
         conn.close()
-
+        
 try:
     from enrichment_engine import EnhancedEnrichment
     enrichment_engine = EnhancedEnrichment()
@@ -81,11 +98,11 @@ try:
 except ImportError:
     enrichment_engine = None
     logger.warning("⚠️ Enrichment engine not available")
-
+    
 # ============================================================================
 # PYDANTIC MODELS
 # ============================================================================
-
+    
 class ContactCreate(BaseModel):
     name: str
     email: Optional[str] = None
@@ -94,7 +111,7 @@ class ContactCreate(BaseModel):
     phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     vertical: Optional[str] = Field(default="SaaS")
-
+    
 class ContactUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
@@ -103,7 +120,7 @@ class ContactUpdate(BaseModel):
     phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     vertical: Optional[str] = None
-
+    
 class BANTQualification(BaseModel):
     bant_budget_confirmed: Optional[bool] = None
     bant_budget_range: Optional[str] = None
@@ -115,7 +132,7 @@ class BANTQualification(BaseModel):
     bant_timeline_identified: Optional[bool] = None
     bant_target_close_date: Optional[str] = None
     bant_urgency: Optional[str] = None
-
+    
 class SPICEQualification(BaseModel):
     spice_situation_documented: Optional[bool] = None
     spice_situation_summary: Optional[str] = None
@@ -135,19 +152,19 @@ class SPICEQualification(BaseModel):
     spice_decision_criteria: Optional[Dict[str, Any]] = None
     spice_stakeholders_mapped: Optional[bool] = None
     spice_decision_timeline_confirmed: Optional[bool] = None
-
+    
 class ScoreRequest(BaseModel):
     contact_ids: List[int]
-
+    
 class EnrollmentRequest(BaseModel):
     contact_id: str
     cadence_name: str
     sequence_days: int = 14
-
+    
 # ============================================================================
 # SCORING FUNCTIONS
 # ============================================================================
-
+    
 def calculate_mdcp_score(contact: dict) -> int:
     """Calculate MDCP Score (Match, Data, Contact, Profile)"""
     score = 0
@@ -157,13 +174,13 @@ def calculate_mdcp_score(contact: dict) -> int:
         score += min(int(contact['match_score'] * 0.25), 25)
     elif contact.get('icp_match_percentage'):
         score += min(int(contact['icp_match_percentage'] * 0.25), 25)
-    
+        
     # Data (25 points)
     if contact.get('enrichment_status') == 'completed':
         score += 20
     if contact.get('enrichment_data'):
         score += 5
-    
+        
     # Contact (25 points)
     persona = contact.get('persona_type', '')
     if persona in ['DECISION_MAKER', 'CFO', 'CEO']:
@@ -174,7 +191,7 @@ def calculate_mdcp_score(contact: dict) -> int:
         score += 15
     elif persona in ['INITIATOR']:
         score += 10
-    
+        
     # Profile (25 points)
     profile_fields = ['email', 'phone', 'linkedin_url', 'title', 'company']
     filled_fields = sum(1 for field in profile_fields if contact.get(field))
@@ -194,6 +211,30 @@ def calculate_rss_score(contact: dict) -> int:
         score += 25
     elif urgency == 'LOW':
         score += 10
+        
+    # Suitability (30 points)
+    vertical_fit = contact.get('vertical_fit_score', 0)
+    if vertical_fit:
+        score += int(vertical_fit * 0.3)
+    else:
+        if contact.get('company') and contact.get('title'):
+            score += 20
+        elif contact.get('company') or contact.get('title'):
+            score += 10
+            
+    # Seniority (30 points)
+    title = (contact.get('title') or '').lower()
+    if any(word in title for word in ['ceo', 'cto', 'cfo', 'president', 'founder', 'owner']):
+        score += 30
+    elif any(word in title for word in ['vp', 'vice president', 'director', 'head']):
+        score += 25
+    elif any(word in title for word in ['manager', 'lead', 'senior']):
+        score += 15
+    elif any(word in title for word in ['coordinator', 'specialist', 'analyst']):
+        score += 5
+        
+    return min(score, 100)
+
     
     # Suitability (30 points)
     vertical_fit = contact.get('vertical_fit_score', 0)
@@ -2275,3 +2316,233 @@ async def get_user_profile(user_id: str = "default"):
         }
     }
     
+# ============================================================================
+# OUTREACH CONTENT GENERATION ENDPOINTS
+# December 15, 2025 - 11:17 PM PST
+# ============================================================================
+
+@app.post("/api/contacts/{contact_id}/generate-email", tags=["Content"])
+async def generate_email(contact_id: str):
+    """Generate 3-email outreach sequence"""
+    if not content_generator:
+        raise HTTPException(status_code=503, detail="Content generator not available")
+        
+    try:
+        result = await content_generator.generate_all_content(contact_id)
+        
+        if result.get('error'):
+            raise HTTPException(status_code=400, detail=result['error'])
+            
+        return {
+            'contact_id': contact_id,
+            'emails': result['emails'],
+            'generated_at': result['generated_at']
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating email: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+@app.post("/api/contacts/{contact_id}/generate-coldcall", tags=["Content"])
+@app.post("/api/contacts/{contact_id}/generate-call-script", tags=["Content"])
+async def generate_call_script(contact_id: str):
+    """Generate 3 call script variants (fixes 404 issue)"""
+    if not content_generator:
+        raise HTTPException(status_code=503, detail="Content generator not available")
+        
+    try:
+        result = await content_generator.generate_all_content(contact_id)
+        
+        if result.get('error'):
+            raise HTTPException(status_code=400, detail=result['error'])
+            
+        return {
+            'contact_id': contact_id,
+            'scripts': result['scripts'],
+            'generated_at': result['generated_at']
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating call scripts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+@app.post("/api/contacts/{contact_id}/generate-linkedin", tags=["Content"])
+async def generate_linkedin_message(contact_id: str):
+    """Generate LinkedIn connection request + follow-up"""
+    if not content_generator or not linkedin_engine:
+        raise HTTPException(status_code=503, detail="LinkedIn generator not available")
+        
+    try:
+        result = await content_generator.generate_all_content(contact_id)
+        
+        if result.get('error'):
+            raise HTTPException(status_code=400, detail=result['error'])
+            
+        # Also create LinkedIn prospect record if URL exists
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT linkedin_url FROM contacts WHERE id = %s
+            """, (contact_id,))
+            row = cursor.fetchone()
+            
+            if row and row.get('linkedin_url'):
+                linkedin_engine.add_prospect(
+                    linkedin_url=row['linkedin_url'],
+                    contact_id=contact_id
+                )
+                
+        return {
+            'contact_id': contact_id,
+            'linkedin': result['linkedin'],
+            'generated_at': result['generated_at']
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating LinkedIn message: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+@app.get("/api/contacts/{contact_id}/outreach-content", tags=["Content"])
+async def get_outreach_content(contact_id: str):
+    """Get all generated outreach content for a contact"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM outreach_content
+                WHERE contact_id = %s
+            """, (contact_id,))
+            
+            content = cursor.fetchone()
+            
+            if not content:
+                raise HTTPException(status_code=404, detail="No content generated yet")
+                
+            return dict(content)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching content: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+@app.get("/api/contacts/{contact_id}/call-assistant-data", tags=["Content"])
+async def get_call_assistant_data(contact_id: str):
+    """Get data needed for call assistant UI"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    c.id, c.name, c.email, c.company, c.title, c.phone,
+                    c.apex_score, c.enrichment,
+                    o.call_script_1, o.call_script_2, o.call_script_3
+                FROM contacts c
+                LEFT JOIN outreach_content o ON c.id = o.contact_id
+                WHERE c.id = %s
+            """, (contact_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Contact not found")
+                
+            contact = dict(row)
+            
+            # Parse name
+            name_parts = contact.get('name', '').split(maxsplit=1)
+            firstname = name_parts[0] if name_parts else ''
+            lastname = name_parts[1] if len(name_parts) > 1 else ''
+            
+            # Determine tier from score
+            score = contact.get('apex_score', 0) or 0
+            if score >= 75:
+                tier = 'HIGH'
+            elif score >= 50:
+                tier = 'MEDIUM'
+            elif score >= 20:
+                tier = 'LOW'
+            else:
+                tier = 'UNQUALIFIED'
+                
+            # Get profile context
+            enrichment = contact.get('enrichment', {}) or {}
+            sections = enrichment.get('sections', {}) or {}
+            profile_context = sections.get('1._overview', '')[:200] if sections else ''
+            
+            return {
+                'contact_id': contact_id,
+                'name': contact.get('name'),
+                'firstname': firstname,
+                'lastname': lastname,
+                'company': contact.get('company'),
+                'title': contact.get('title'),
+                'phone': contact.get('phone'),
+                'score': score,
+                'tier': tier,
+                'profile_context': profile_context,
+                'call_script_1': contact.get('call_script_1'),
+                'call_script_2': contact.get('call_script_2'),
+                'call_script_3': contact.get('call_script_3'),
+                'has_scripts': bool(contact.get('call_script_1'))
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting call assistant data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+# ============================================================================
+# LINKEDIN AUTOMATION ENDPOINTS
+# ============================================================================
+        
+@app.get("/api/linkedin/quota", tags=["LinkedIn"])
+async def get_linkedin_quota():
+    """Get today's LinkedIn quota status"""
+    if not linkedin_engine:
+        raise HTTPException(status_code=503, detail="LinkedIn engine not available")
+        
+    try:
+        quota = linkedin_engine.get_daily_quota_status()
+        return quota
+    except Exception as e:
+        logger.error(f"Error getting LinkedIn quota: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+@app.get("/api/linkedin/analytics", tags=["LinkedIn"])
+async def get_linkedin_analytics():
+    """Get LinkedIn outreach analytics"""
+    if not linkedin_engine:
+        raise HTTPException(status_code=503, detail="LinkedIn engine not available")
+        
+    try:
+        analytics = linkedin_engine.get_analytics()
+        return analytics
+    except Exception as e:
+        logger.error(f"Error getting LinkedIn analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
+        
+@app.get("/api/linkedin/pending", tags=["LinkedIn"])
+async def get_linkedin_pending():
+    """Get pending LinkedIn actions for today"""
+    if not linkedin_engine:
+        raise HTTPException(status_code=503, detail="LinkedIn engine not available")
+        
+    try:
+        pending = linkedin_engine.get_pending_actions()
+        return pending
+    except Exception as e:
+        logger.error(f"Error getting pending actions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+        
