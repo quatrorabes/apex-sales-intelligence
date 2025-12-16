@@ -51,7 +51,19 @@ export default function Analytics() {
             setLoading(true);
             const res = await fetch(`${API_URL}/api/analytics?range=${timeRange}`);
             const json = await res.json();
-            setData(json);
+            // Normalize API response to expected format
+            const normalized = {
+                total_contacts: json.total_contacts || json.contacts?.total || 0,
+                enriched_contacts: json.enriched_contacts || json.contacts?.enriched || 0,
+                scored_contacts: json.scored_contacts || json.contacts?.scored || 0,
+                enrichment_rate: json.enrichment_rate || json.contacts?.enrichment_rate || 0,
+                tier_distribution: json.tier_distribution || json.match_tiers || { HIGH: 0, MEDIUM: 0, LOW: 0, MINIMAL: 0 },
+                avg_scores: json.avg_scores || { match: 0, fit: 0, relevance: 0, timing: 0 },
+                top_companies: json.top_companies || [],
+                recent_activity: json.recent_activity || [],
+                cold_call_stats: json.cold_call_stats || { total: 0, new: 0, attempted: 0, connected: 0, meeting_set: 0, conversion_rate: 0 }
+            };
+            setData(normalized);
         } catch (e) {
             console.error('Analytics fetch error:', e);
         } finally {
@@ -119,9 +131,9 @@ export default function Analytics() {
         );
     }
 
-    const tierTotal = data ? 
-        (data.tier_distribution.HIGH + data.tier_distribution.MEDIUM + 
-         data.tier_distribution.LOW + data.tier_distribution.MINIMAL) : 0;
+    const tierTotal = data?.tier_distribution ? 
+        ((data.tier_distribution.HIGH || 0) + (data.tier_distribution.MEDIUM || 0) + 
+         (data.tier_distribution.LOW || 0) + (data.tier_distribution.MINIMAL || 0)) : 0;
 
     return (
         <div className="min-h-screen bg-[#0f1114] text-white">
