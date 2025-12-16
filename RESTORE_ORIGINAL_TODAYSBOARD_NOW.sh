@@ -1,0 +1,262 @@
+#!/bin/bash
+# 🔄 RESTORE ORIGINAL TodaysBoard.tsx (PRE-CHANGES)
+# From backup: TodaysBoard.tsx.backup-20251215_161810
+# Dec 15, 2025 4:38 PM PST
+
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+TS=$(date +%Y%m%d_%H%M%S)
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🔄 RESTORING ORIGINAL TodaysBoard.tsx"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Backup bad version
+cp dashboard_v1/src/components/TodaysBoard.tsx dashboard_v1/src/components/TodaysBoard.tsx.bad-visualization-${TS}
+
+# Deploy ORIGINAL version
+cat > dashboard_v1/src/components/TodaysBoard.tsx << 'TSX_EOF'
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Users, TrendingUp, Target, Zap, Calendar, ArrowRight, Loader2 } from 'lucide-react';
+
+interface Contact {
+  id: string;
+  first_name: string;
+  last_name?: string | null;
+  company: string | null;
+  title: string | null;
+  enrichment_status: string | null;
+  last_enriched?: string | null;
+}
+
+interface KPIData {
+  total_contacts: number;
+  enriched_count: number;
+  enriched_percentage: number;
+  high_icp_matches: number;
+  recent_enrichments: number;
+}
+
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://apex-backend-i7b0.onrender.com';
+
+export function TodaysBoard(): JSX.Element {
+  const navigate = useNavigate();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [kpis, setKpis] = useState<KPIData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/contacts?limit=100`);
+        if (!res.ok) throw new Error('Failed to fetch contacts');
+        const data = await res.json();
+        const contactsList = data.contacts || data || [];
+        setContacts(contactsList);
+
+        // Calculate KPIs
+        const total = contactsList.length;
+        const enriched = contactsList.filter((c: Contact) => c.enrichment_status === 'enriched').length;
+        const recent = contactsList.filter((c: Contact) => {
+          if (!c.last_enriched) return false;
+          const enrichedDate = new Date(c.last_enriched);
+          const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          return enrichedDate > dayAgo;
+        }).length;
+
+        setKpis({
+          total_contacts: total,
+          enriched_count: enriched,
+          enriched_percentage: total > 0 ? Math.round((enriched / total) * 100) : 0,
+          high_icp_matches: 0, // TODO: Add ICP score filtering
+          recent_enrichments: recent
+        });
+      } catch (err) {
+        console.error('[APEX] Dashboard fetch failed', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-900">
+        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+      </div>
+    );
+  }
+
+  const recentContacts = contacts
+    .filter(c => c.enrichment_status === 'enriched')
+    .slice(0, 5);
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <h1 className="text-3xl font-bold text-white">Today's Board</h1>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPICard
+            icon={<Users className="w-5 h-5" />}
+            title="Total Contacts"
+            value={kpis?.total_contacts || 0}
+            color="sky"
+          />
+          <KPICard
+            icon={<TrendingUp className="w-5 h-5" />}
+            title="Enriched"
+            value={`${kpis?.enriched_percentage || 0}%`}
+            subtitle={`${kpis?.enriched_count || 0} contacts`}
+            color="emerald"
+          />
+          <KPICard
+            icon={<Target className="w-5 h-5" />}
+            title="High ICP Matches"
+            value={kpis?.high_icp_matches || 0}
+            color="purple"
+          />
+          <KPICard
+            icon={<Zap className="w-5 h-5" />}
+            title="Enriched Today"
+            value={kpis?.recent_enrichments || 0}
+            color="amber"
+          />
+        </div>
+
+        {/* Recent Enrichments */}
+        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50">
+          <div className="px-6 py-4 border-b border-slate-700/50 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-white">Recently Enriched Contacts</h2>
+            <button
+              onClick={() => navigate('/contacts')}
+              className="text-sm text-sky-400 hover:text-sky-300 flex items-center gap-1"
+            >
+              View All
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+          <div>
+            {recentContacts.length > 0 ? (
+              recentContacts.map((contact) => (
+                <ContactRow key={contact.id} contact={contact} />
+              ))
+            ) : (
+              <div className="px-6 py-12 text-center text-slate-400">
+                <p className="text-lg mb-2">No recently enriched contacts</p>
+                <p className="text-sm">Enrich contacts to see them appear here</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface KPICardProps {
+  icon: React.ReactNode;
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  color: 'sky' | 'emerald' | 'purple' | 'amber';
+}
+
+function KPICard({ icon, title, value, subtitle, color }: KPICardProps) {
+  const colorClasses = {
+    sky: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+    purple: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+  };
+
+  return (
+    <div className={`rounded-lg border p-6 ${colorClasses[color]}`}>
+      <div className="flex items-center gap-3 mb-3">
+        {icon}
+        <span className="text-sm font-medium text-slate-300">{title}</span>
+      </div>
+      <div className="text-3xl font-bold mb-1">{value}</div>
+      {subtitle && <div className="text-sm text-slate-400">{subtitle}</div>}
+    </div>
+  );
+}
+
+interface ContactRowProps {
+  contact: Contact;
+}
+
+function ContactRow({ contact }: ContactRowProps) {
+  const navigate = useNavigate();
+  const fullName = `${contact.first_name} ${contact.last_name || ''}`.trim();
+
+  return (
+    <div
+      onClick={() => navigate(`/contacts/${contact.id}`)}
+      className="px-6 py-4 hover:bg-slate-800/50 cursor-pointer transition-colors"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-medium text-white">{fullName}</h3>
+          <p className="text-sm text-slate-400">
+            {contact.title || 'No title'} • {contact.company || 'No company'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {contact.last_enriched && (
+            <span className="text-xs text-slate-500 flex items-center gap-1">
+              <Calendar className="w-3 h-3" />
+              {new Date(contact.last_enriched).toLocaleDateString()}
+            </span>
+          )}
+          <span className="px-2 py-1 text-xs rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            Enriched
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default TodaysBoard;
+TSX_EOF
+
+echo "✅ Original TodaysBoard.tsx restored"
+
+# Commit and push
+git add dashboard_v1/src/components/TodaysBoard.tsx
+git commit -m "restore(TodaysBoard): revert to original pre-visualization version
+
+RESTORED FROM: TodaysBoard.tsx.backup-20251215_161810
+FEATURES:
+- Clean KPI cards (Total, Enriched %, High ICP, Enriched Today)
+- Recently Enriched Contacts list
+- Dark theme with lucide-react icons
+- Fetches from /api/contacts endpoint
+- Original working layout user preferred
+
+REMOVED: Unauthorized visualization suite changes"
+
+git push origin main
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ ORIGINAL TODAYSBOARD RESTORED"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "📍 Restored from: TodaysBoard.tsx.backup-20251215_161810"
+echo "🚀 Vercel deploying original layout (~2 min)"
+echo ""
+echo "🔗 https://apex-sales-intelligence.vercel.app/todays-board"
+echo ""
+echo "ORIGINAL FEATURES:"
+echo "  ✅ KPI Cards: Total Contacts, Enriched %, High ICP, Enriched Today"
+echo "  ✅ Recently Enriched Contacts list"
+echo "  ✅ Dark theme with lucide-react icons"
+echo "  ✅ Click-through to contact details"
+echo ""
