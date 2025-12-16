@@ -1,12 +1,15 @@
-# APEX CUSTOM ENRICHMENT ENGINE - Two-Stage Processing with Post-GPT Parsing
-# Version: 2.1 | December 2, 2025
-
+#!/usr/bin/env python3
 """
-🎯 APEX CUSTOM ENRICHMENT - TWO-STAGE ARCHITECTURE
-====================================================
-Stage 1: Raw Data Gathering (Perplexity)
-Stage 2: Intelligence Synthesis (GPT-4)
-Stage 3: Structured Parsing & Field Extraction
+APEX CUSTOM ENRICHMENT ENGINE - Three-Stage Processing with Section Parsing
+
+Version: 3.0 | December 16, 2025
+
+Architecture:
+  Stage 1: Raw Data Gathering (Perplexity) - 6 searches
+  Stage 2: Intelligence Synthesis (GPT-4) - Structured markdown
+  Stage 3: Parsing & Field Extraction - Split into sections dict + extract fields
+
+Flow: PERPLEXITY (raw) → OPENAI (markdown) → PARSER (JSON sections) → SCORING/ICP → DASHBOARD
 """
 
 import os
@@ -15,31 +18,56 @@ import json
 import re
 import time
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
+
 import requests
 
 logger = logging.getLogger("APEX_CUSTOM_ENRICHMENT")
 
 
 class ApexCustomEnrichment:
-    """Two-stage enrichment with post-GPT parsing"""
+    """Three-stage enrichment with post-GPT parsing into structured sections"""
 
-    def __init__(self, config):
-        self.config = config
-        self.perplexity_key = config.perplexity_api_key
-        self.openai_key = config.openai_api_key
-        logger.info("🎯 Apex Custom Enrichment Engine initialized (Two-Stage)")
+    def __init__(self, config=None):
+        """Initialize with optional config object or environment variables."""
+        if config:
+            self.perplexity_key = getattr(config, 'perplexity_api_key', None) or os.getenv("PERPLEXITY_API_KEY")
+            self.openai_key = getattr(config, 'openai_api_key', None) or os.getenv("OPENAI_API_KEY")
+        else:
+            self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
+            self.openai_key = os.getenv("OPENAI_API_KEY")
 
+        if not self.perplexity_key:
+            logger.warning("⚠️ PERPLEXITY_API_KEY not set")
+        if not self.openai_key:
+            logger.warning("⚠️ OPENAI_API_KEY not set")
+
+        logger.info("🎯 Apex Custom Enrichment Engine initialized (Three-Stage)")
+
+    # =========================================================================
+    # PUBLIC API
+    # =========================================================================
     def enrich_contact_full(self, contact: Dict) -> Dict:
         """
-        Execute two-stage enrichment with post-processing
+        Execute three-stage enrichment pipeline.
+        
+        Returns:
+            {
+                'status': 'success' | 'error',
+                'profile_data': {
+                    'sections': { 'person_profile': '...', 'company_profile': '...', ... },
+                    'raw_text': '<full markdown>',
+                    'parsed_fields': { 'disc_profile': '...', 'pain_points': [...], ... }
+                },
+                'enrichment_notes': '<processing notes>'
+            }
         """
         name = contact.get('name', '')
         company = contact.get('company', '')
-        linkedin_url = contact.get('linkedin_url', '')
+        linkedin_url = contact.get('linkedin_url', '') or contact.get('linkedinurl', '')
 
         logger.info(f"\n{'='*90}")
-        logger.info(f"🎯 TWO-STAGE ENRICHMENT: {name} at {company}")
+        logger.info(f"🎯 THREE-STAGE ENRICHMENT: {name} at {company}")
         logger.info(f"{'='*90}")
 
         # Validate required fields
@@ -81,7 +109,7 @@ class ApexCustomEnrichment:
         synthesized_intelligence = self._stage2_synthesize_intelligence(contact, raw_data)
 
         if not synthesized_intelligence:
-            logger.warning("⚠️ Stage 2 failed - using raw data only")
+            logger.warning("⚠️ Stage 2 failed - using raw data fallback")
             synthesized_intelligence = self._format_raw_data_fallback(raw_data)
 
         # ===================================================================
@@ -91,54 +119,71 @@ class ApexCustomEnrichment:
         logger.info("🔍 STAGE 3: PARSING & FIELD EXTRACTION")
         logger.info("="*90)
 
-        parsed_fields = self._stage3_parse_and_extract(synthesized_intelligence)
+        # Parse markdown into sections dict
+        logger.info("  📑 Parsing markdown into sections...")
+        parsed_sections = self._parse_sections_from_markdown(synthesized_intelligence)
+        logger.info(f"  ✅ Parsed {len(parsed_sections)} sections: {list(parsed_sections.keys())}")
 
+        # Extract structured fields (DISC, pain points, talking points, etc.)
+        logger.info("  🔍 Extracting structured fields...")
+        parsed_fields = self._stage3_parse_and_extract(synthesized_intelligence)
+        logger.info(f"  ✅ Extracted {len(parsed_fields)} fields")
+
+        # Build complete profile
         complete_profile = {
-            'raw_data': raw_data,
-            'synthesized_intelligence': synthesized_intelligence,
-            'parsed_fields': parsed_fields
+            'sections': parsed_sections,
+            'raw_text': synthesized_intelligence,
+            'parsed_fields': parsed_fields,
+            'raw_data': raw_data
         }
 
         logger.info(f"\n{'='*90}")
-        logger.info("🎉 TWO-STAGE ENRICHMENT COMPLETE!")
+        logger.info("🎉 THREE-STAGE ENRICHMENT COMPLETE!")
         logger.info(f"✅ Raw data gathered: {len(raw_data)} sections")
         logger.info(f"✅ Intelligence synthesized: {len(synthesized_intelligence)} chars")
+        logger.info(f"✅ Sections parsed: {len(parsed_sections)} sections")
         logger.info(f"✅ Fields extracted: {len(parsed_fields)} fields")
         logger.info(f"{'='*90}\n")
 
         return {
             'status': 'success',
             'profile_data': complete_profile,
-            'enrichment_notes': self._generate_processing_notes(raw_data, parsed_fields)
+            'enrichment_notes': self._generate_processing_notes(raw_data, parsed_sections, parsed_fields)
         }
 
-    # ========================================================================
+    # =========================================================================
     # STAGE 1: RAW DATA GATHERING (Perplexity)
-    # ========================================================================
-
+    # =========================================================================
     def _stage1_gather_raw_data(self, contact: Dict) -> Dict:
         """Gather raw data from all sources using Perplexity"""
         raw_data = {}
 
         logger.info("  🔍 1/6: Person Profile Research...")
         raw_data['person_profile'] = self._gather_person_profile(contact)
+        time.sleep(0.5)
 
         logger.info("  🔍 2/6: Company Intelligence...")
         raw_data['company_intelligence'] = self._gather_company_intelligence(contact)
+        time.sleep(0.5)
 
         logger.info("  🔍 3/6: Social Media Profiles...")
         raw_data['social_profiles'] = self._gather_social_profiles(contact)
+        time.sleep(0.5)
 
         logger.info("  🔍 4/6: Recent Activity & News...")
         raw_data['recent_activity'] = self._gather_recent_activity(contact)
+        time.sleep(0.5)
 
         logger.info("  🔍 5/6: Skills & Expertise...")
         raw_data['skills_expertise'] = self._gather_skills_expertise(contact)
+        time.sleep(0.5)
 
         logger.info("  🔍 6/6: Fun Facts & Icebreakers...")
         raw_data['fun_facts'] = self._gather_fun_facts(contact)
 
-        logger.info(f"  ✅ Raw data gathering complete: {sum(1 for v in raw_data.values() if v)} sections collected")
+        collected = sum(1 for v in raw_data.values() if v)
+        logger.info(f"  ✅ Raw data gathering complete: {collected}/6 sections collected")
+
         return raw_data
 
     def _gather_person_profile(self, contact: Dict) -> Optional[str]:
@@ -153,9 +198,10 @@ class ApexCustomEnrichment:
 4. **Recent Mentions** (Last 90 days) - LinkedIn posts, news articles, public appearances
 5. **LinkedIn Activity** - Post frequency, topics, engagement patterns, skills endorsed
 
-LinkedIn URL: {contact.get('linkedin_url')}
+LinkedIn URL: {contact.get('linkedin_url', 'Not provided')}
 
 Provide factual, recent data. Be comprehensive."""
+
         return self._call_perplexity(prompt, max_tokens=4000)
 
     def _gather_company_intelligence(self, contact: Dict) -> Optional[str]:
@@ -172,6 +218,7 @@ Provide factual, recent data. Be comprehensive."""
 6. **Strategic Context** - Growth trajectory, industry trends, expansion plans
 
 Provide comprehensive, factual data."""
+
         return self._call_perplexity(prompt, max_tokens=4000)
 
     def _gather_social_profiles(self, contact: Dict) -> Optional[str]:
@@ -183,10 +230,11 @@ Provide comprehensive, factual data."""
 1. **Instagram**: Username, URL, activity level, bio
 2. **Facebook**: Profile/page URL, public info
 3. **Twitter/X**: Handle, URL, bio, followers, activity
-4. **LinkedIn**: Already known: {contact.get('linkedin_url')}
+4. **LinkedIn**: Already known: {contact.get('linkedin_url', 'Not provided')}
 5. **Other**: YouTube, TikTok, Medium, GitHub, blog
 
 For each: exact URL, activity level, content themes. State "Not found" if unavailable."""
+
         return self._call_perplexity(prompt, max_tokens=2000)
 
     def _gather_recent_activity(self, contact: Dict) -> Optional[str]:
@@ -201,6 +249,7 @@ For each: exact URL, activity level, content themes. State "Not found" if unavai
 2. **Company News** - Press releases, media mentions, events, awards
 
 For each: Date, source, summary, relevance."""
+
         return self._call_perplexity(prompt, max_tokens=2500)
 
     def _gather_skills_expertise(self, contact: Dict) -> Optional[str]:
@@ -214,7 +263,8 @@ For each: Date, source, summary, relevance."""
 3. **LinkedIn Profile Skills** - Top endorsed skills
 4. **Demonstrated Expertise** - Projects, published work, thought leadership
 
-LinkedIn: {contact.get('linkedin_url')}"""
+LinkedIn: {contact.get('linkedin_url', 'Not provided')}"""
+
         return self._call_perplexity(prompt, max_tokens=1500)
 
     def _gather_fun_facts(self, contact: Dict) -> Optional[str]:
@@ -228,12 +278,12 @@ LinkedIn: {contact.get('linkedin_url')}"""
 3. **Industry Humor** - A relevant, professional joke about their industry
 
 Keep professional and appropriate."""
+
         return self._call_perplexity(prompt, max_tokens=1500)
 
-    # ========================================================================
+    # =========================================================================
     # STAGE 2: INTELLIGENCE SYNTHESIS (GPT-4)
-    # ========================================================================
-
+    # =========================================================================
     def _stage2_synthesize_intelligence(self, contact: Dict, raw_data: Dict) -> Optional[str]:
         """Synthesize raw data into structured intelligence using GPT-4"""
         compiled_raw = self._compile_raw_data(contact, raw_data)
@@ -241,6 +291,7 @@ Keep professional and appropriate."""
         synthesis_prompt = f"""You are a professional profile analyst and sales intelligence expert. Synthesize the raw research below into a comprehensive, structured profile.
 
 **RAW RESEARCH DATA:**
+
 {compiled_raw}
 
 **REQUIRED OUTPUT STRUCTURE:**
@@ -251,13 +302,14 @@ Keep professional and appropriate."""
 - **Name**: {contact.get('name')}
 - **Title**: {contact.get('title', 'TBD')}
 - **Company**: {contact.get('company')}
-- **Email**: {contact.get('email')}
+- **Email**: {contact.get('email', 'N/A')}
 - **Phone**: {contact.get('phone', 'N/A')}
-- **LinkedIn**: {contact.get('linkedin_url')}
+- **LinkedIn**: {contact.get('linkedin_url', 'Not found')}
 
 ---
 
 ## PERSON PROFILE
+
 ### Overview
 [Synthesize current role, scope, tenure from raw data]
 
@@ -276,6 +328,7 @@ Keep professional and appropriate."""
 ---
 
 ## COMPANY PROFILE
+
 ### Overview
 [Company description, mission, founding, HQ, size]
 
@@ -295,10 +348,10 @@ Keep professional and appropriate."""
 
 ## PERSONALITY ASSESSMENT
 
-### Myers-Briggs (MBTI) Type: [4-letter type]
+### Myers-Briggs (MBTI) Type: [4-letter type or "Not available"]
 **Confidence Level**: [High/Medium/Low]
 
-### DISC Profile: [Primary Style]
+### DISC Profile: [Primary Style or "Not available"]
 **Secondary**: [If applicable]
 
 ### StrengthsFinder (Top 5 Themes)
@@ -311,11 +364,15 @@ Keep professional and appropriate."""
 ---
 
 ## SOCIAL MEDIA PROFILES
+
 ### Instagram
 [URL, activity level, content themes - or "Not found"]
 
 ### Twitter/X
 [Handle, URL, activity, topics - or "Not found"]
+
+### Other Platforms
+[Any other discovered profiles]
 
 ---
 
@@ -339,6 +396,7 @@ Keep professional and appropriate."""
 ---
 
 ## NEWS & FUN FACTS
+
 ### Fun Facts
 - [Interesting fact 1]
 - [Interesting fact 2]
@@ -362,14 +420,19 @@ Keep professional and appropriate."""
 
         if raw_data.get('person_profile'):
             sections.append(f"=== PERSON PROFILE ===\n{raw_data['person_profile']}")
+
         if raw_data.get('company_intelligence'):
             sections.append(f"\n=== COMPANY INTELLIGENCE ===\n{raw_data['company_intelligence']}")
+
         if raw_data.get('social_profiles'):
             sections.append(f"\n=== SOCIAL PROFILES ===\n{raw_data['social_profiles']}")
+
         if raw_data.get('recent_activity'):
             sections.append(f"\n=== RECENT ACTIVITY ===\n{raw_data['recent_activity']}")
+
         if raw_data.get('skills_expertise'):
             sections.append(f"\n=== SKILLS & EXPERTISE ===\n{raw_data['skills_expertise']}")
+
         if raw_data.get('fun_facts'):
             sections.append(f"\n=== FUN FACTS ===\n{raw_data['fun_facts']}")
 
@@ -383,30 +446,72 @@ Keep professional and appropriate."""
 
         for key, value in raw_data.items():
             if value:
-                sections.append(f"## {key.replace('_', ' ').title()}")
+                sections.append(f"## {key.replace('_', ' ').upper()}")
                 sections.append(value)
                 sections.append("")
 
         return '\n'.join(sections)
 
-    # ========================================================================
+    # =========================================================================
     # STAGE 3: PARSING & FIELD EXTRACTION
-    # ========================================================================
+    # =========================================================================
+    def _parse_sections_from_markdown(self, markdown: str) -> Dict[str, str]:
+        """
+        Parse GPT-4 markdown output into structured sections dict.
+        
+        Input: "## PERSON PROFILE\nContent...\n\n## COMPANY PROFILE\nMore..."
+        Output: {"person_profile": "Content...", "company_profile": "More..."}
+        """
+        sections = {}
+
+        if not markdown:
+            return sections
+
+        # Pattern matches "## SECTION NAME" (with various formats)
+        # Handles: ## PERSON PROFILE, ## CONTACT INFORMATION, ## SALES INTELLIGENCE, etc.
+        pattern = r'^## ([A-Z][A-Z0-9 &_-]+)\s*$'
+
+        lines = markdown.split('\n')
+        current_section = None
+        current_content = []
+
+        for line in lines:
+            match = re.match(pattern, line.strip())
+            if match:
+                # Save previous section
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+
+                # Start new section (normalize key)
+                header = match.group(1)
+                current_section = header.lower().replace(' ', '_').replace('&', 'and').replace('-', '_')
+                current_content = []
+            else:
+                if current_section:
+                    current_content.append(line)
+
+        # Save last section
+        if current_section:
+            sections[current_section] = '\n'.join(current_content).strip()
+
+        return sections
 
     def _stage3_parse_and_extract(self, synthesized_intelligence: str) -> Dict:
         """Parse synthesized intelligence and extract structured fields"""
-        logger.info("  🔍 Extracting structured fields...")
         fields = {}
 
+        if not synthesized_intelligence:
+            return fields
+
         # Extract Myers-Briggs Type
-        mbti_pattern = r'Myers-Briggs \(MBTI\) Type:\s*\**([EI][SN][TF][JP])\**'
-        mbti_match = re.search(mbti_pattern, synthesized_intelligence)
+        mbti_pattern = r'Myers-Briggs \(MBTI\) Type:\s*\**([EISNTFJP]{4}|Not available)\**'
+        mbti_match = re.search(mbti_pattern, synthesized_intelligence, re.IGNORECASE)
         if mbti_match:
             fields['myers_briggs'] = mbti_match.group(1)
             logger.info(f"    ✓ Myers-Briggs: {fields['myers_briggs']}")
 
         # Extract DISC Profile
-        disc_pattern = r'DISC Profile:\s*\**([A-Z][a-z]+)\**'
+        disc_pattern = r'DISC Profile:\s*\**([A-Za-z]+)\**'
         disc_match = re.search(disc_pattern, synthesized_intelligence)
         if disc_match:
             fields['disc_profile'] = disc_match.group(1)
@@ -439,7 +544,7 @@ Keep professional and appropriate."""
             logger.info(f"    ✓ Extracted {len(fields['talking_points'])} talking points")
 
         # Extract pain points
-        pain_section = re.search(r'\*\*Pain Points\*\*:\s+((?:-\s*.+\n?)+)', synthesized_intelligence)
+        pain_section = re.search(r'\*\*Pain Points\*\*:\s*((?:-\s*.+\n?)+)', synthesized_intelligence)
         if pain_section:
             points = re.findall(r'-\s*(.+)', pain_section.group(1))
             fields['pain_points'] = points
@@ -467,59 +572,12 @@ Keep professional and appropriate."""
             logger.info(f"    ✓ Confidence: {fields['enrichment_confidence']}%")
 
         logger.info(f"  ✅ Extracted {len(fields)} structured fields")
+
         return fields
 
-    # ========================================================================
-    # UTILITY FUNCTIONS
-    # ========================================================================
-
-    def _generate_processing_notes(self, raw_data: Dict, parsed_fields: Dict) -> str:
-        """Generate processing notes"""
-        notes = []
-        notes.append(f"# TWO-STAGE ENRICHMENT NOTES")
-        notes.append(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-
-        notes.append("## Stage 1: Raw Data Gathering")
-        for key, value in raw_data.items():
-            status = "✅ Complete" if value else "❌ Failed"
-            notes.append(f"  {status}: {key.replace('_', ' ').title()}")
-
-        notes.append("\n## Stage 2: Intelligence Synthesis")
-        notes.append("  ✅ GPT-4 synthesis completed")
-
-        notes.append("\n## Stage 3: Field Extraction")
-        notes.append(f"  ✅ Extracted {len(parsed_fields)} structured fields:")
-        for field_name in parsed_fields.keys():
-            notes.append(f"    - {field_name}")
-
-        notes.append(f"\n## Data Quality")
-        notes.append(f"  Confidence: HIGH")
-        notes.append(f"  Next Re-enrichment: {datetime.now().strftime('%Y-%m-%d')} (+90 days)")
-
-        return '\n'.join(notes)
-
-    def _discover_linkedin_url(self, name: str, company: str) -> Optional[str]:
-        """Discover LinkedIn URL using Perplexity search"""
-        prompt = f"""Find the exact LinkedIn profile URL for:
-Name: {name}
-Company: {company}
-
-Return ONLY the LinkedIn URL in this exact format:
-https://www.linkedin.com/in/username
-
-If you cannot find a LinkedIn profile, return: NOT_FOUND"""
-
-        try:
-            result = self._call_perplexity(prompt, max_tokens=200)
-            if result and 'linkedin.com/in/' in result and 'NOT_FOUND' not in result:
-                match = re.search(r'https?://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+', result)
-                if match:
-                    return match.group(0)
-            return None
-        except Exception as e:
-            logger.error(f"LinkedIn discovery error: {e}")
-            return None
-
+    # =========================================================================
+    # API CALLS
+    # =========================================================================
     def _call_perplexity(self, prompt: str, max_tokens: int = 4000) -> Optional[str]:
         """Call Perplexity API"""
         if not self.perplexity_key:
@@ -577,3 +635,58 @@ If you cannot find a LinkedIn profile, return: NOT_FOUND"""
         except Exception as e:
             logger.error(f"GPT-4 API error: {e}")
             return None
+
+    # =========================================================================
+    # UTILITIES
+    # =========================================================================
+    def _discover_linkedin_url(self, name: str, company: str) -> Optional[str]:
+        """Discover LinkedIn URL using Perplexity search"""
+        prompt = f"""Find the exact LinkedIn profile URL for:
+Name: {name}
+Company: {company}
+
+Return ONLY the LinkedIn URL in this exact format:
+https://www.linkedin.com/in/username
+
+If you cannot find a LinkedIn profile, return: NOT_FOUND"""
+
+        try:
+            result = self._call_perplexity(prompt, max_tokens=200)
+            if result and 'linkedin.com/in/' in result and 'NOT_FOUND' not in result:
+                match = re.search(r'https?://(?:www\.)?linkedin\.com/in/[A-Za-z0-9_-]+', result)
+                if match:
+                    return match.group(0)
+            return None
+
+        except Exception as e:
+            logger.error(f"LinkedIn discovery error: {e}")
+            return None
+
+    def _generate_processing_notes(self, raw_data: Dict, parsed_sections: Dict, parsed_fields: Dict) -> str:
+        """Generate processing notes"""
+        notes = []
+        notes.append(f"# THREE-STAGE ENRICHMENT NOTES")
+        notes.append(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+        notes.append("## Stage 1: Raw Data Gathering")
+        for key, value in raw_data.items():
+            status = "✅ Complete" if value else "❌ Failed"
+            notes.append(f"  {status}: {key.replace('_', ' ').title()}")
+
+        notes.append("\n## Stage 2: Intelligence Synthesis")
+        notes.append("  ✅ GPT-4 synthesis completed")
+
+        notes.append("\n## Stage 3: Parsing & Extraction")
+        notes.append(f"  ✅ Parsed {len(parsed_sections)} sections:")
+        for section_name in parsed_sections.keys():
+            notes.append(f"    - {section_name}")
+
+        notes.append(f"\n  ✅ Extracted {len(parsed_fields)} structured fields:")
+        for field_name in parsed_fields.keys():
+            notes.append(f"    - {field_name}")
+
+        notes.append(f"\n## Data Quality")
+        notes.append(f"  Confidence: HIGH")
+        notes.append(f"  Next Re-enrichment: {datetime.now().strftime('%Y-%m-%d')} (+90 days)")
+
+        return '\n'.join(notes)
