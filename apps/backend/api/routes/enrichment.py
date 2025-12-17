@@ -4,6 +4,8 @@ APEX v3.0 Enrichment Routes
 Handles contact enrichment with 10-stage pipeline
 """
 
+import sys
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
@@ -11,16 +13,29 @@ import logging
 import json
 from datetime import datetime
 
+# ============================================================================
+# FIX IMPORTS - RELATIVE PATH
+# ============================================================================
+BACKEND_DIR = Path(__file__).parent.parent.parent  # Go to apps/backend
+sys.path.insert(0, str(BACKEND_DIR))
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["enrichment"])
 
 # Import v3.0 engine
+enrichment_engine = None
 try:
     from engines.intelligence.enrichment import ApexEnrichmentEngineV3, EnrichmentRequest
     enrichment_engine = ApexEnrichmentEngineV3()
 except ImportError as e:
     logger.warning(f"⚠️ v3.0 engine not available: {e}")
-    enrichment_engine = None
+
+# Import database - FROM MAIN
+try:
+    from main import get_db
+except ImportError as e:
+    logger.error(f"❌ Cannot import get_db from main: {e}")
+    get_db = None
 
 # ============================================================================
 # PYDANTIC MODELS
@@ -51,10 +66,10 @@ async def enrich_contact_v2(contact_id: str, background_tasks: BackgroundTasks):
     if not enrichment_engine:
         raise HTTPException(status_code=503, detail="Enrichment engine not available")
     
+    if not get_db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
     try:
-        # Import database function
-        from tabase import get_db
-        
         # Fetch contact from DB (UUID as string)
         with get_db() as conn:
             cursor = conn.cursor()
@@ -98,9 +113,10 @@ async def batch_enrich(
     if not enrichment_engine:
         raise HTTPException(status_code=503, detail="Enrichment engine not available")
     
+    if not get_db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
     try:
-        from tabase import get_db
-        
         contact_ids = []
         
         # If specific IDs provided, use those
@@ -145,9 +161,11 @@ def enrich_contact_internal(contact_id: str, contact_data: Optional[dict] = None
     - Saves to DB
     - Preserves all fields
     """
+    if not get_db:
+        logger.error("❌ Database not available")
+        return {"success": False, "error": "Database not available"}
+    
     try:
-        from tabase import get_db
-        
         logger.info(f"⏳ Starting enrichment: {contact_id}")
         
         # 1. Fetch contact (UUID preserved as string)
@@ -230,7 +248,6 @@ def enrich_contact_internal(contact_id: str, contact_data: Optional[dict] = None
         
         # Save error
         try:
-            from tabase import get_db
             with get_db() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
@@ -251,9 +268,10 @@ def enrich_contact_internal(contact_id: str, contact_data: Optional[dict] = None
 @router.get("/api/v2/contacts/{contact_id}/enrichment-status")
 async def get_enrichment_status(contact_id: str):
     """Get enrichment status for a contact"""
+    if not get_db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
     try:
-        from tabase import get_db
-        
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -285,9 +303,10 @@ async def get_enrichment_status(contact_id: str):
 @router.get("/api/contacts/{contact_id}/enrichment")
 async def get_enrichment_data(contact_id: str):
     """Get enrichment_data for a contact"""
+    if not get_db:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
     try:
-        from tabase import get_db
-        
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -315,5 +334,6 @@ async def enrichment_health():
     return {
         "status": "ok",
         "enrichment_engine_v3": enrichment_engine is not None,
+        "database": get_db is not None,
         "timestamp": datetime.now().isoformat()
     }
