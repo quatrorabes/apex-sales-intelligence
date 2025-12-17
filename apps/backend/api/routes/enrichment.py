@@ -234,21 +234,31 @@ async def status_legacy(contact_id: str):
 
 # Batch enrich
 @router.post("/api/batch/enrich")
-async def batch_enrich(limit: int = Query(1, ge=1, le=1)):
-    """Batch enrichment (limit 1 for testing)"""
+async def batch_enrich(
+    request: BatchEnrichRequest = None,
+    limit: int = Query(1, ge=1, le=1)
+):
+    """Batch enrichment - accepts contact_ids from Dashboard"""
     if not ENGINE_AVAILABLE:
         raise HTTPException(status_code=503, detail="Engine unavailable")
-
+        
     try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id FROM contacts WHERE enrichment_status IS NULL OR enrichment_status != 'completed' ORDER BY created_at DESC LIMIT %s",
-                (limit,)
-            )
-            targets = [row["id"] for row in cursor.fetchall()]
-            cursor.close()
-
+        # NEW: If Dashboard sends specific contact_ids, use those
+        if request and request.contact_ids:
+            targets = request.contact_ids[:5]  # Max 5 at once
+            logger.info(f"🔄 Enriching {len(targets)} specific contacts from Dashboard")
+        else:
+            # Original: Get next unenriched contact
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id FROM contacts WHERE enrichment_status IS NULL OR enrichment_status != 'completed' ORDER BY created_at DESC LIMIT %s",
+                    (limit,)
+                )
+                targets = [row["id"] for row in cursor.fetchall()]
+                cursor.close()
+            logger.info(f"🔄 Auto-selecting {len(targets)} unenriched contacts")
+            
         if not targets:
             return {"status": "complete", "message": "No contacts to enrich", "processed": 0}
 
@@ -268,3 +278,4 @@ async def batch_enrich(limit: int = Query(1, ge=1, le=1)):
     except Exception as e:
         logger.error(f"❌ Batch failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+        
