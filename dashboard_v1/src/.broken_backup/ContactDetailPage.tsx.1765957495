@@ -1,3 +1,6 @@
+// APEX Dashboard_v1 - Contact Detail Page
+// Handles both integer IDs and UUIDs for maximum compatibility
+
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -52,6 +55,7 @@ interface Contact {
   unified_qualification_score?: number;
   enrichment_status?: string;
   enriched_at?: string;
+  enrichment_data?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -165,11 +169,9 @@ export default function ContactDetailPage() {
           <Title order={2}>{contact.name}</Title>
           {contact.match_tier && <Badge color={getTierColor(contact.match_tier)} size="lg">{contact.match_tier} Priority</Badge>}
         </Group>
-        {contact.enrichment_status && (
-          <Badge color={contact.enrichment_status === 'completed' ? 'green' : 'yellow'} variant="light">
-            {contact.enrichment_status}
-          </Badge>
-        )}
+        <Group>
+          {contact.enrichment_status && <Badge color={contact.enrichment_status === 'completed' ? 'green' : 'yellow'} variant="light">{contact.enrichment_status}</Badge>}
+        </Group>
       </Group>
 
       <Grid gutter="md">
@@ -192,11 +194,11 @@ export default function ContactDetailPage() {
             <Stack gap="sm">
               <Group justify="space-between"><Text fw={500}>Unified Score</Text><Badge color={getScoreColor(contact.unified_qualification_score)} size="lg">{contact.unified_qualification_score || 0}</Badge></Group>
               <Divider />
-              <Group justify="space-between"><Text size="sm">APEX</Text><Badge color={getScoreColor(contact.apex_score)} variant="light">{contact.apex_score || 0}</Badge></Group>
-              <Group justify="space-between"><Text size="sm">MDCP</Text><Badge color={getScoreColor(contact.mdcp_score)} variant="light">{contact.mdcp_score || 0}</Badge></Group>
-              <Group justify="space-between"><Text size="sm">RSS</Text><Badge color={getScoreColor(contact.rss_score)} variant="light">{contact.rss_score || 0}</Badge></Group>
-              <Group justify="space-between"><Text size="sm">BANT</Text><Badge color={getScoreColor(contact.bant_total_score)} variant="light">{contact.bant_total_score || 0}</Badge></Group>
-              <Group justify="space-between"><Text size="sm">SPICE</Text><Badge color={getScoreColor(contact.spice_total_score)} variant="light">{contact.spice_total_score || 0}</Badge></Group>
+              <Group justify="space-between"><Text size="sm">APEX Score</Text><Badge color={getScoreColor(contact.apex_score)} variant="light">{contact.apex_score || 0}</Badge></Group>
+              <Group justify="space-between"><Text size="sm">MDCP Score</Text><Badge color={getScoreColor(contact.mdcp_score)} variant="light">{contact.mdcp_score || 0}</Badge></Group>
+              <Group justify="space-between"><Text size="sm">RSS Score</Text><Badge color={getScoreColor(contact.rss_score)} variant="light">{contact.rss_score || 0}</Badge></Group>
+              <Group justify="space-between"><Text size="sm">BANT Score</Text><Badge color={getScoreColor(contact.bant_total_score)} variant="light">{contact.bant_total_score || 0}</Badge></Group>
+              <Group justify="space-between"><Text size="sm">SPICE Score</Text><Badge color={getScoreColor(contact.spice_total_score)} variant="light">{contact.spice_total_score || 0}</Badge></Group>
             </Stack>
           </Card>
         </Grid.Col>
@@ -218,7 +220,7 @@ export default function ContactDetailPage() {
             <Title order={4} mb="md">Metadata</Title>
             <Stack gap="sm">
               <Group justify="space-between"><Text size="sm" c="dimmed">ID</Text><Text size="sm">{contact.id}</Text></Group>
-              {contact.uuid && <Group justify="space-between"><Text size="sm" c="dimmed">UUID</Text><Text size="sm" ff="monospace" fz="xs">{contact.uuid}</Text></Group>}
+              {contact.uuid && <Group justify="space-between"><Text size="sm" c="dimmed">UUID</Text><Text size="sm" style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{contact.uuid}</Text></Group>}
               {contact.created_at && <Group justify="space-between"><Text size="sm" c="dimmed">Created</Text><Text size="sm">{new Date(contact.created_at).toLocaleDateString()}</Text></Group>}
               {contact.enriched_at && <Group justify="space-between"><Text size="sm" c="dimmed">Enriched</Text><Text size="sm">{new Date(contact.enriched_at).toLocaleDateString()}</Text></Group>}
             </Stack>
