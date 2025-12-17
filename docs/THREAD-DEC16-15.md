@@ -1,3 +1,4 @@
+cat > docs/THREAD-DEC16-ENRICHMENT-PARSING-WIRING.md << 'EOF'
 # THREAD TRANSFER — Apex Enrichment Parsing + Wiring (DEC 16, 2025)
 
 Owner: Apex Sales Intelligence (Apex backend + Dashboard_v1)  
@@ -10,7 +11,7 @@ Scope: Keep endpoints/calls stable; fix parsing so downstream steps (persona, ic
 
 Maintain the working pipeline:
 
-**Perplexity** (open-ended, lots of data) → **OpenAI** (structured output) → **Parse** (normalize into JSON sections) → **Persona/ICP/Score/Why-fit/Rescore** → **Dashboard_v1**.
+Perplexity (open-ended, lots of data) → OpenAI (structured output) → Parse (normalize into JSON sections) → Persona/ICP/Score/Why-fit/Rescore → Dashboard_v1.
 
 Do **not** change endpoint names or move calls; only fix post-OpenAI parsing + persistence so Dashboard_v1 and downstream logic receive structured sections.
 
@@ -19,8 +20,8 @@ Do **not** change endpoint names or move calls; only fix post-OpenAI parsing + p
 ## What is live / what is called
 
 ### Backend entrypoint + enrichment engine wiring (current)
-- The backend has multiple entrypoints/structures in repo (e.g., top-level `api.py` and `apps/backend/main.py` are both present).
-- The enrichment endpoints in the v2 route set include `/api/contacts/{contact_id}/enrich` and `/api/contacts/{contact_id}/enrichment-status` under `/api/contacts`.
+- The backend has multiple entrypoints/structures in repo (e.g., top-level `api.py` and `apps/backend/main.py` are both present). [file:1]
+- The enrichment endpoints in the v2 route set include `/api/contacts/{contact_id}/enrich` and `/api/contacts/{contact_id}/enrichment-status` under `/api/contacts`. [file:1]
 
 ### What actually runs for `/api/contacts/{id}/enrich` and `/api/batch/enrich`
 - `apps/backend/main.py` imports and instantiates `EnhancedEnrichment` from `apps/backend/enrichment_engine.py` (confirmed by grep output during session).
@@ -38,7 +39,7 @@ Do **not** change endpoint names or move calls; only fix post-OpenAI parsing + p
 ## Current failure mode (the real blocker)
 
 ### Symptom
-- "Only raw data populated" in `enrichment_data`:
+- “Only raw data populated” in `enrichment_data`:
   - `sections` contains only `raw_text` (or content lands under `raw_profile` but not split into multiple section keys)
   - `metadata.format_detected` shows `"unknown"`
   - `metadata.total_sections` shows `1`
@@ -52,13 +53,13 @@ Do **not** change endpoint names or move calls; only fix post-OpenAI parsing + p
   - etc.
 - The current parser in `apps/backend/services/enrichment_parser.py` primarily looks for a different format:
   - `### PERSON PROFILE`, `### COMPANY PROFILE`, etc.
-- As a result, parse auto-detection falls to `"unknown"` and returns `{"raw_text": raw_profile}` which makes the UI feel like "raw only".
+- As a result, parse auto-detection falls to `"unknown"` and returns `{"raw_text": raw_profile}` which makes the UI feel like “raw only”.
 
-### Important: why engine-side parsing didn't help
+### Important: why engine-side parsing didn’t help
 - Even though `EnhancedEnrichment.enrich_contact()` already calls `_extract_sections()` and returns `sections`,
   main.py **does not persist that dict**.
 - main.py persists the output of `integrate_enrichment_result(raw_profile)`, which re-parses the markdown output via `services/enrichment_parser.py`.
-- Therefore: the parser must support the engine's `## section_key` format OR main.py must store the engine's `sections` directly (we are choosing parser upgrade to avoid structural changes).
+- Therefore: the parser must support the engine’s `## section_key` format OR main.py must store the engine’s `sections` directly (we are choosing parser upgrade to avoid structural changes).
 
 ---
 
@@ -69,9 +70,9 @@ Keep everything structurally the same:
 - Keep Perplexity → OpenAI inside the active engine (`EnhancedEnrichment`).
 - Keep main.py endpoints and call sites unchanged.
 - Keep `integrate_enrichment_result(raw_profile)` unchanged as the orchestration step.
-- **Fix parsing** in `apps/backend/services/enrichment_parser.py` so it understands the engine's `##` headers.
+- **Fix parsing** in `apps/backend/services/enrichment_parser.py` so it understands the engine’s `##` headers.
 
-This aligns with the "after OpenAI returns, then parse" requirement.
+This aligns with the “after OpenAI returns, then parse” requirement.
 
 ---
 

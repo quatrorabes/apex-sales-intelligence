@@ -1,189 +1,284 @@
-"""
-Apex Enrichment Routes - FIXED with BatchEnrichRequest
-"""
+# DEPLOYMENT INSTRUCTIONS - Copy these exact commands to ship v3.0
 
-from fastapi import APIRouter, HTTPException, Query
+# ============================================================================
+# STEP 1: CREATE FOLDER STRUCTURE
+# ============================================================================
+mkdir -p apps/backend/engines/intelligence/enrichment
+
+# ============================================================================
+# STEP 2: COPY ALL 7 PYTHON FILES INTO ENRICHMENT FOLDER
+# ============================================================================
+# Copy the files created above into:
+# apps/backend/engines/intelligence/enrichment/
+# ├── __init__.py (enrichment_init.py)
+# ├── engine_v3.py
+# ├── models.py
+# ├── research.py
+# ├── parser.py
+# └── prompts.py
+#
+# NOTE: personality.py and pain_points.py are optional (data reference files)
+
+# ============================================================================
+# STEP 3: UPDATE BACKEND ENRICHMENT ROUTES
+# ============================================================================
+# File: apps/backend/api/routes/enrichment.py
+# Replace imports at top with:
+
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import logging
 import json
-import os
-import sys
 from datetime import datetime
+
+# IMPORT v3.0 ENGINE
+from engines.intelligence.enrichment import ApexEnrichmentEngineV3, EnrichmentRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["enrichment"])
 
-# Pydantic model for batch enrich request - MUST BE BEFORE ROUTES
-class BatchEnrichRequest(BaseModel):
-    contact_ids: Optional[List[str]] = None
+# Initialize engine
+enrichment_engine = ApexEnrichmentEngineV3()
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
-
-try:
-    from enrichment_engine import EnhancedEnrichment
-    enrichment_engine = EnhancedEnrichment()
-    ENGINE_AVAILABLE = True
-    logger.info("✅ EnhancedEnrichment loaded")
-except ImportError as e:
-    logger.error(f"❌ Engine import failed: {e}")
-    enrichment_engine = None
-    ENGINE_AVAILABLE = False
-
-try:
-    from services.enrichment_integration import integrate_enrichment_result
-    PARSER_AVAILABLE = True
-except ImportError:
-    PARSER_AVAILABLE = False
-
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from contextlib import contextmanager
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-@contextmanager
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+# ============================================================================
+# ENDPOINT 1: Single Contact Enrich (v2 compatible)
+# ============================================================================
+@router.post("/api/v2/contacts/{contact_id}/enrich")
+async def enrich_v2(contact_id: str, background_tasks: BackgroundTasks):
+    """
+    Enrich a specific contact using v3.0 engine
+    UUID: contact_id is string, NEVER integer
+    """
     try:
-        yield conn
-    finally:
-        conn.close()
-
-def save_debug_file(filename: str, content: str, contact_id: str):
-    try:
-        debug_dir = "/tmp/apex_debug"
-        os.makedirs(debug_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filepath = f"{debug_dir}/contact_{contact_id}_{filename}_{timestamp}.txt"
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
-        logger.info(f"📝 Debug saved: {filepath}")
-        return filepath
-    except Exception as e:
-        logger.warning(f"Debug file error: {e}")
-        return None
-
-def enrich_contact_internal(contact_id: str) -> Dict[str, Any]:
-    if not ENGINE_AVAILABLE:
-        return {"success": False, "contactId": contact_id, "error": "Engine unavailable"}
-    try:
+        # Fetch contact from DB (UUID as string)
+        from services.database import get_db
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
-            contact = cursor.fetchone()
-            cursor.close()
-        if not contact:
-            return {"success": False, "contactId": contact_id, "error": "Contact not found"}
-        contact_dict = dict(contact)
-        logger.info(f"🚀 Enriching {contact_id}: {contact_dict.get('name')}")
-        enrichment_result = enrichment_engine.enrich_contact(contact_dict)
-        save_debug_file("01_raw_result", json.dumps(enrichment_result, indent=2, default=str), contact_id)
-        if not enrichment_result.get("success"):
-            error_msg = enrichment_result.get("error", "Enrichment failed")
-            logger.error(f"❌ Engine failure: {error_msg}")
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE contacts SET enrichment_status = %s WHERE id = %s", ('failed', contact_id))
-                conn.commit()
-                cursor.close()
-            return {"success": False, "contactId": contact_id, "error": error_msg}
-        raw_profile = enrichment_result.get("profile_text", "")
-        logger.info(f"📊 Got {len(raw_profile)} chars from engine")
-        save_debug_file("02_perplexity_openai", raw_profile, contact_id)
-        if PARSER_AVAILABLE and raw_profile:
-            try:
-                enrichment_object = integrate_enrichment_result(raw_profile)
-                logger.info(f"✅ Parsed {len(enrichment_object.get('sections', {}))} sections")
-                save_debug_file("03_parsed", json.dumps(enrichment_object, indent=2), contact_id)
-            except Exception as e:
-                logger.warning(f"Parser failed: {e}")
-                enrichment_object = {"sections": {"raw_text": raw_profile}, "metadata": {"format_detected": "raw", "character_count": len(raw_profile)}}
-        else:
-            enrichment_object = {"sections": {"raw_text": raw_profile}, "metadata": {"format_detected": "raw", "character_count": len(raw_profile)}}
-        enrichment_json = json.dumps(enrichment_object)
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE contacts SET enrichment_status = %s, enriched_at = NOW(), enrichment_data = %s WHERE id = %s", ('completed', enrichment_json, contact_id))
-            conn.commit()
-            cursor.close()
-        logger.info(f"✅ Complete: {contact_id}")
-        return {"success": True, "contactId": contact_id, "status": "completed", "sections": len(enrichment_object.get("sections", {})), "format": enrichment_object.get("metadata", {}).get("format_detected"), "characterCount": len(raw_profile)}
-    except Exception as e:
-        logger.error(f"❌ Exception: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        try:
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE contacts SET enrichment_status = %s WHERE id = %s", ('failed', contact_id))
-                conn.commit()
-                cursor.close()
-        except:
-            pass
-        return {"success": False, "contactId": contact_id, "error": str(e)}
-
-@router.post("/api/v2/contacts/{contact_id}/enrich")
-async def enrich_v2(contact_id: str):
-    result = enrich_contact_internal(contact_id)
-    if not result["success"]:
-        raise HTTPException(status_code=500, detail=result.get("error"))
-    return result
-
-@router.post("/api/contacts/{contact_id}/enrich")
-async def enrich_legacy(contact_id: str):
-    return await enrich_v2(contact_id)
-
-@router.get("/api/v2/contacts/{contact_id}/enrichment-status")
-async def status_v2(contact_id: str):
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT enrichment_status, enriched_at, enrichment_data FROM contacts WHERE id = %s", (contact_id,))
             row = cursor.fetchone()
-            cursor.close()
+        
         if not row:
             raise HTTPException(status_code=404, detail="Contact not found")
-        response = {"contactId": contact_id, "enrichmentStatus": row["enrichment_status"] or "pending", "enrichedAt": str(row["enriched_at"]) if row["enriched_at"] else None}
-        if row["enrichment_data"]:
-            try:
-                data = json.loads(row["enrichment_data"]) if isinstance(row["enrichment_data"], str) else row["enrichment_data"]
-                if isinstance(data, dict):
-                    response["sectionsCount"] = len(data.get("sections", {}))
-                    response["formatDetected"] = data.get("metadata", {}).get("format_detected")
-            except:
-                pass
-        return response
-    except HTTPException:
-        raise
+        
+        contact = dict(row)
+        
+        # Enrich in background (takes 60-90 seconds)
+        background_tasks.add_task(enrich_contact_internal, contact_id)
+        
+        return {
+            "success": True,
+            "message": f"Enrichment started for {contact['name']}",
+            "contact_id": contact_id,
+            "status": "pending"
+        }
+    
     except Exception as e:
-        logger.error(f"Status check failed: {str(e)}")
+        logger.error(f"❌ Enrich v2 failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/api/contacts/{contact_id}/enrichment-status")
-async def status_legacy(contact_id: str):
-    return await status_v2(contact_id)
-
+# ============================================================================
+# ENDPOINT 2: Batch Enrich (Dashboard compatible)
+# ============================================================================
 @router.post("/api/batch/enrich")
-async def batch_enrich(request: BatchEnrichRequest = None, limit: int = Query(1, ge=1, le=5)):
-    if not ENGINE_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Engine unavailable")
+async def batch_enrich(
+    request: Optional[EnrichmentRequest] = None,
+    background_tasks: BackgroundTasks = None
+):
+    """
+    Batch enrichment - accepts contact_ids from Dashboard
+    """
     try:
+        from services.database import get_db
+        
+        contact_ids = []
+        
+        # If Dashboard sends specific IDs, use those
         if request and request.contact_ids:
-            targets = request.contact_ids[:5]
-            logger.info(f"🔄 Enriching {len(targets)} specific contacts from Dashboard")
+            contact_ids = request.contact_ids[:5]  # Limit to 5 at a time
+            logger.info(f"🔄 Batch enriching {len(contact_ids)} specific contacts")
         else:
+            # Auto-select next unenriched contacts (fallback)
             with get_db() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM contacts WHERE enrichment_status IS NULL OR enrichment_status != 'completed' ORDER BY created_at DESC LIMIT %s", (limit,))
-                targets = [row["id"] for row in cursor.fetchall()]
-                cursor.close()
-            logger.info(f"🔄 Auto-selecting {len(targets)} unenriched contacts")
-        if not targets:
-            return {"status": "complete", "message": "No contacts to enrich", "processed": 0}
-        results = [enrich_contact_internal(cid) for cid in targets]
-        successful = sum(1 for r in results if r["success"])
-        return {"status": "complete", "processed": len(results), "successful": successful, "failed": len(results) - successful, "results": results}
+                cursor.execute(
+                    "SELECT id FROM contacts WHERE enrichment_status IS NULL "
+                    "OR enrichment_status = 'failed' LIMIT 5"
+                )
+                contact_ids = [row["id"] for row in cursor.fetchall()]
+        
+        # Queue each contact for enrichment
+        for cid in contact_ids:
+            background_tasks.add_task(enrich_contact_internal, cid)
+        
+        return {
+            "status": "complete",
+            "message": f"Queued {len(contact_ids)} contacts for enrichment",
+            "contact_ids": contact_ids
+        }
+    
     except Exception as e:
-        logger.error(f"❌ Batch failed: {str(e)}")
+        logger.error(f"❌ Batch enrich failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# CORE FUNCTION: enrich_contact_internal (Business Logic)
+# ============================================================================
+def enrich_contact_internal(contact_id: str) -> Dict[str, Any]:
+    """
+    Internal enrichment function (runs in background)
+    - Fetches contact
+    - Calls v3.0 engine
+    - Parses sections
+    - Saves to DB
+    - Preserves all fields
+    """
+    try:
+        from services.database import get_db
+        from services.enrichment_integration import integrate_enrichment_result
+        
+        logger.info(f"⏳ Starting enrichment: {contact_id}")
+        
+        # 1. Fetch contact (UUID preserved as string)
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+            row = cursor.fetchone()
+        
+        if not row:
+            logger.error(f"❌ Contact not found: {contact_id}")
+            return {"success": False, "error": "Contact not found"}
+        
+        contact = dict(row)
+        
+        # 2. Call enrichment engine v3.0
+        logger.info(f"🚀 Calling APEX v3.0 engine for {contact['name']}")
+        enrichment_result = enrichment_engine.enrich_contact(contact)
+        
+        if not enrichment_result.success:
+            logger.error(f"❌ Enrichment failed: {enrichment_result.error}")
+            
+            # Save error to DB
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """UPDATE contacts SET enrichment_status = %s, 
+                       enrichment_error = %s, updated_at = NOW() 
+                       WHERE id = %s""",
+                    ('failed', enrichment_result.error, contact_id)
+                )
+                conn.commit()
+            
+            return {"success": False, "error": enrichment_result.error}
+        
+        # 3. Build complete enrichment_data object
+        enrichment_data = {
+            "version": "3.0",
+            "contact_id": contact_id,
+            "contact_info": enrichment_result.contact_info.dict() if enrichment_result.contact_info else {},
+            "sections": enrichment_result.sections,
+            "raw_profile": enrichment_result.raw_profile,
+            "metadata": enrichment_result.metadata.dict() if enrichment_result.metadata else {},
+            "preserved_fields": enrichment_result.preserved_fields
+        }
+        
+        # 4. Save to database
+        enrichment_json = json.dumps(enrichment_data)
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE contacts SET 
+                   enrichment_data = %s,
+                   enrichment_status = %s,
+                   enrichment_version = %s,
+                   enriched_at = NOW(),
+                   enrichment_error = NULL,
+                   updated_at = NOW()
+                   WHERE id = %s""",
+                (enrichment_json, 'completed', 'v3.0', contact_id)
+            )
+            conn.commit()
+        
+        logger.info(f"✅ Enrichment complete: {contact_id} ({enrichment_result.metadata.character_count} chars)")
+        
+        return {
+            "success": True,
+            "contact_id": contact_id,
+            "character_count": enrichment_result.metadata.character_count,
+            "word_count": enrichment_result.metadata.word_count,
+            "sections_count": enrichment_result.metadata.total_sections
+        }
+    
+    except Exception as e:
+        logger.error(f"❌ enrichment_contact_internal failed: {str(e)}", exc_info=True)
+        
+        # Save error
+        try:
+            from services.database import get_db
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE contacts SET enrichment_status = %s, enrichment_error = %s WHERE id = %s",
+                    ('failed', str(e), contact_id)
+                )
+                conn.commit()
+        except:
+            pass
+        
+        return {"success": False, "error": str(e)}
+
+# ============================================================================
+# ENDPOINT 3: Check Enrichment Status
+# ============================================================================
+@router.get("/api/v2/contacts/{contact_id}/enrichment-status")
+async def get_enrichment_status(contact_id: str):
+    """Get enrichment status for a contact"""
+    try:
+        from services.database import get_db
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT enrichment_status, enriched_at, enrichment_version FROM contacts WHERE id = %s",
+                (contact_id,)
+            )
+            row = cursor.fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        return {
+            "contact_id": contact_id,
+            "enrichment_status": row["enrichment_status"],
+            "enriched_at": row["enriched_at"],
+            "enrichment_version": row["enrichment_version"]
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# ENDPOINT 4: Get Enrichment Data Only
+# ============================================================================
+@router.get("/api/contacts/{contact_id}/enrichment")
+async def get_enrichment_data(contact_id: str):
+    """Get enrichment_data for a contact"""
+    try:
+        from services.database import get_db
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT enrichment_data FROM contacts WHERE id = %s",
+                (contact_id,)
+            )
+            row = cursor.fetchone()
+        
+        if not row or not row["enrichment_data"]:
+            return {"enrichment_data": None, "message": "No enrichment data available"}
+        
+        return {"enrichment_data": row["enrichment_data"]}
+    
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

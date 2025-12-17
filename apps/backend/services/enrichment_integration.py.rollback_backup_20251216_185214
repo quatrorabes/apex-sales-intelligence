@@ -1,0 +1,34 @@
+"""
+apps/backend/services/enrichment_integration.py
+
+Enrichment Integration Service
+Orchestrates parsing and normalization of enrichment data.
+
+Backwards-compatible output shape:
+{
+  "version": "2.0",
+  "raw_profile": "<original markdown>",
+  "sections": {...},
+  "metadata": {...}
+}
+"""
+
+from typing import Dict, Any
+
+# Use absolute import to avoid package/relative import issues in various runtimes
+from services.enrichment_parser import parse_enrichment
+
+
+def integrate_enrichment_result(raw_enrichment_output: str) -> Dict[str, Any]:
+    """
+    Main orchestration point called by main.py after enrichment completes.
+    Keeps output schema stable for Dashboard_v1 and downstream logic.
+    """
+    parsed = parse_enrichment(raw_enrichment_output)
+
+    return {
+        "version": "2.0",
+        "raw_profile": raw_enrichment_output or "",
+        "sections": parsed.get("sections", {}) if isinstance(parsed, dict) else {},
+        "metadata": parsed.get("metadata", {}) if isinstance(parsed, dict) else {},
+    }

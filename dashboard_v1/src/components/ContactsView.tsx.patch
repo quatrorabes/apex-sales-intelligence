@@ -1,0 +1,56 @@
+// Add enrichment handlers and UI for individual contact enrichment
+
+// Add these imports at the top
+import { useState } from 'react';
+
+// Add this function inside the ContactsView component (after existing functions)
+const handleEnrichContact = async (contactId: number) => {
+  try {
+    setIsEnriching(true);
+    
+    const response = await fetch(`${API_URL}/api/contacts/${contactId}/enrich`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Enrichment failed');
+    }
+    
+    const result = await response.json();
+    console.log('✅ Enrichment result:', result);
+    
+    // Refresh contacts list
+    await fetchContacts();
+    
+    alert(`✅ Enriched contact ${contactId} successfully!\nSections: ${result.sections}\nFormat: ${result.format}`);
+  } catch (error) {
+    console.error('Enrichment error:', error);
+    alert(`❌ Enrichment failed: ${error.message}`);
+  } finally {
+    setIsEnriching(false);
+  }
+};
+
+// Add this button in the contact list table (in the Actions column)
+// Replace or add alongside existing action buttons:
+<button
+  onClick={(e) => {
+    e.stopPropagation();
+    handleEnrichContact(contact.id);
+  }}
+  disabled={isEnriching || contact.enrichment_status === 'completed'}
+  className={`px-3 py-1 text-sm rounded ${
+    contact.enrichment_status === 'completed'
+      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+      : 'bg-blue-600 text-white hover:bg-blue-700'
+  }`}
+  title={
+    contact.enrichment_status === 'completed'
+      ? 'Already enriched'
+      : 'Enrich this contact'
+  }
+>
+  {isEnriching ? '⏳' : contact.enrichment_status === 'completed' ? '✓ Enriched' : '🔍 Enrich'}
+</button>
