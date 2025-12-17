@@ -1803,976 +1803,976 @@ async def import_from_hubspot():
 # BATCH ENRICHMENT - DASHBOARD COMPATIBILITY
 # ============================================================================
 
-@app.post("/api/batch/enrich")
-async def batch_enrich_endpoint(request_body: dict = Body(...)):
-    """
-    POST /api/batch/enrich - Queue batch enrichment
-    Body: {"contact_ids": [1,2,3]} or {"limit": 10}
-    """
-    contact_ids = request_body.get("contact_ids", [])
-    limit = request_body.get("limit", 10)
-    
-    if not contact_ids:
-        try:
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id FROM contacts 
-                    WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
-                    LIMIT %s
-                """, (limit,))
-                contact_ids = [row[0] for row in cursor.fetchall()]
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-            
-    return {
-        "queued": contact_ids,
-        "status": "queued",
-        "count": len(contact_ids)
-    }
-    
-
-# ============================================================================
-# STARTUP
-# ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize"""
-    logger.info("=" * 70)
-    logger.info("🚀 APEX SALES INTELLIGENCE v2.0 - MULTI-FRAMEWORK PLATFORM")
-    logger.info("=" * 70)
-    logger.info("Frameworks: APEX (MDCP+RSS), BANT, SPICE")
-    logger.info("Verticals: SaaS, Insurance, Equipment Leasing, Custom")
-    
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) as count FROM contacts")
-            total = cursor.fetchone()["count"]
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
-            enriched = cursor.fetchone()["count"]
-            cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE unified_qualification_score > 0")
-            qualified = cursor.fetchone()["count"]
-            cursor.close()
-        
-        logger.info(f"✅ Database: {total} contacts ({enriched} enriched, {qualified} qualified)")
-    except Exception as e:
-        logger.error(f"❌ Database error: {e}")
-    
-    if enrichment_engine:
-        logger.info("✅ Enrichment engine loaded")
-    else:
-        logger.warning("⚠️ Enrichment engine not available")
-    
-    logger.info("=" * 70)
-    logger.info("🎯 APEX v2.0 OPERATIONAL")
-    logger.info("=" * 70)
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-
-# =============================================================================
-
-# ============================================================================
-# TODAYS BOARD ENDPOINT (for Dashboard v1 TodaysBoard component)
-# ============================================================================
-
-@app.get("/api/todays-board", tags=["Dashboard"])
-async def get_todays_board():
-    """Get aggregated dashboard data for TodaysBoard component"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Get all contacts with scores
-            cursor.execute("""
-                SELECT 
-                    id, first_name, last_name, email, phone, company, title,
-                    apex_score, unified_qualification_score, enrichment_status,
-                    enriched_at, match_tier
-                FROM contacts
-                ORDER BY COALESCE(apex_score, 0) DESC
-            """)
-            
-            contacts = [dict(row) for row in cursor.fetchall()]
-            
-            # Calculate stats
-            total = len(contacts)
-            enriched = sum(1 for c in contacts if c.get('enrichment_status') == 'completed')
-            
-            # Segment by apex_score (HIGH >= 75, MEDIUM 50-74, LOW < 50)
-            high_contacts = [c for c in contacts if c.get('apex_score', 0) >= 75]
-            medium_contacts = [c for c in contacts if 50 <= c.get('apex_score', 0) < 75]
-            low_contacts = [c for c in contacts if c.get('apex_score', 0) < 50]
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "date": datetime.now().strftime("%B %d, %Y"),
-                "time": datetime.now().strftime("%I:%M %p"),
-                "stats": {
-                    "total_contacts": total,
-                    "enriched": enriched,
-                    "high_match": len(high_contacts),
-                    "medium_match": len(medium_contacts),
-                    "low_match": len(low_contacts),
-                    "cold_call_queue": len(low_contacts)
-                },
-                "segments": {
-                    "high": [
-                        {
-                            "id": c['id'],
-                            "first_name": c.get('first_name'),
-                            "last_name": c.get('last_name'),
-                            "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
-                            "email": c.get('email'),
-                            "phone": c.get('phone'),
-                            "company": c.get('company'),
-                            "title": c.get('title'),
-                            "match_score": c.get('apex_score', 0),
-                            "match_tier": "HIGH",
-                            "enrichment_status": c.get('enrichment_status'),
-                            "enriched_at": c.get('enriched_at')
-                        }
-                        for c in high_contacts[:20]
-                    ],
-                    "medium": [
-                        {
-                            "id": c['id'],
-                            "first_name": c.get('first_name'),
-                            "last_name": c.get('last_name'),
-                            "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
-                            "email": c.get('email'),
-                            "phone": c.get('phone'),
-                            "company": c.get('company'),
-                            "title": c.get('title'),
-                            "match_score": c.get('apex_score', 0),
-                            "match_tier": "MEDIUM",
-                            "enrichment_status": c.get('enrichment_status'),
-                            "enriched_at": c.get('enriched_at')
-                        }
-                        for c in medium_contacts[:20]
-                    ],
-                    "low": [
-                        {
-                            "id": c['id'],
-                            "first_name": c.get('first_name'),
-                            "last_name": c.get('last_name'),
-                            "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
-                            "email": c.get('email'),
-                            "phone": c.get('phone'),
-                            "company": c.get('company'),
-                            "title": c.get('title'),
-                            "match_score": c.get('apex_score', 0),
-                            "match_tier": "LOW",
-                            "enrichment_status": c.get('enrichment_status'),
-                            "enriched_at": c.get('enriched_at')
-                        }
-                        for c in low_contacts[:20]
-                    ]
-                },
-                "top_priority": high_contacts[:5],
-                "cold_call_stats": {
-                    "total": total,
-                    "new": len([c for c in contacts if c.get('enrichment_status') != 'completed']),
-                    "meeting_set": 0
-                }
-            }
-    
-    except Exception as e:
-        logger.error(f"Todays board error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# COLD CALL QUEUE ENDPOINTS
-# ============================================================================
-
-@app.get("/api/cold-call/queue", tags=["Cold Call"])
-async def get_cold_call_queue(status: Optional[str] = None):
-    """Get cold call queue - contacts needing outreach"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Get contacts sorted by apex_score, prioritize unenriched
-            query = """
-                SELECT 
-                    id, name, first_name, last_name, email, phone, linkedin_url,
-                    company, title, apex_score, enrichment_status, created_at
-                FROM contacts
-                WHERE phone IS NOT NULL OR email IS NOT NULL
-                ORDER BY 
-                    CASE WHEN enrichment_status != 'completed' THEN 0 ELSE 1 END,
-                    COALESCE(apex_score, 0) DESC
-                LIMIT 100
-            """
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            
-            queue = []
-            for row in rows:
-                r = dict(row)
-                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
-                queue.append({
-                    "id": r['id'],
-                    "name": display_name,
-                    "phone": r.get('phone'),
-                    "mobile": r.get('phone'),
-                    "email": r.get('email'),
-                    "linkedin_url": r.get('linkedin_url'),
-                    "company": r.get('company'),
-                    "title": r.get('title'),
-                    "quick_fit_score": r.get('apex_score', 0),
-                    "priority": 1 if r.get('apex_score', 0) >= 75 else 2 if r.get('apex_score', 0) >= 50 else 3,
-                    "status": "new",
-                    "attempts": 0,
-                    "contact_id": r['id']
-                })
-            
-            # Calculate stats
-            total = len(queue)
-            high_priority = len([q for q in queue if q['priority'] == 1])
-            avg_score = sum(q['quick_fit_score'] or 0 for q in queue) / total if total > 0 else 0
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "queue": queue,
-                "stats": {
-                    "total": total,
-                    "new": total,
-                    "attempted": 0,
-                    "connected": 0,
-                    "meeting_set": 0,
-                    "high_priority": high_priority,
-                    "avg_score": round(avg_score, 1)
-                }
-            }
-    
-    except Exception as e:
-        logger.error(f"Cold call queue error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/cold-call/queue/{item_id}/outcome", tags=["Cold Call"])
-async def log_call_outcome(item_id: int, outcome: str = Body(..., embed=True)):
-    """Log outcome of a cold call"""
-    try:
-        # For now, just acknowledge - can add call_logs table later
-        return {
-            "success": True,
-            "item_id": item_id,
-            "outcome": outcome,
-            "message": "Outcome logged"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# SMART LISTS ENDPOINTS
-# ============================================================================
-
-@app.get("/api/smart-lists", tags=["Smart Lists"])
-async def get_smart_lists():
-    """Get predefined smart lists with counts"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Count contacts for each smart list criteria
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 75")
-            hot_leads = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE phone IS NOT NULL")
-            ready_to_call = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
-            enriched = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
-            needs_enrichment = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 50 AND apex_score < 75")
-            medium_priority = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
-            recent = cursor.fetchone()['count']
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "lists": [
-                    {"id": "hot-leads", "name": "Hot Leads", "description": "APEX Score 75+", "icon": "flame", "color": "red", "count": hot_leads},
-                    {"id": "ready-to-call", "name": "Ready to Call", "description": "Has phone number", "icon": "phone", "color": "green", "count": ready_to_call},
-                    {"id": "enriched", "name": "Fully Enriched", "description": "Enrichment complete", "icon": "zap", "color": "yellow", "count": enriched},
-                    {"id": "needs-enrichment", "name": "Needs Enrichment", "description": "Not yet enriched", "icon": "clock", "color": "blue", "count": needs_enrichment},
-                    {"id": "medium-priority", "name": "Medium Priority", "description": "APEX Score 50-74", "icon": "crown", "color": "purple", "count": medium_priority},
-                    {"id": "recent", "name": "Added This Week", "description": "Last 7 days", "icon": "sparkles", "color": "cyan", "count": recent}
-                ]
-            }
-    
-    except Exception as e:
-        logger.error(f"Smart lists error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/smart-lists/{list_id}/contacts", tags=["Smart Lists"])
-async def get_smart_list_contacts(list_id: str, limit: int = 50):
-    """Get contacts for a specific smart list"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Map list_id to SQL filter
-            filters = {
-                "hot-leads": "apex_score >= 75",
-                "ready-to-call": "phone IS NOT NULL",
-                "enriched": "enrichment_status = 'completed'",
-                "needs-enrichment": "enrichment_status IS NULL OR enrichment_status = 'pending'",
-                "medium-priority": "apex_score >= 50 AND apex_score < 75",
-                "recent": "created_at > NOW() - INTERVAL '7 days'"
-            }
-            
-            where_clause = filters.get(list_id, "1=1")
-            
-            cursor.execute(f"""
-                SELECT id, name, first_name, last_name, email, company, title, 
-                       apex_score, match_tier, enrichment_status
-                FROM contacts
-                WHERE {where_clause}
-                ORDER BY COALESCE(apex_score, 0) DESC
-                LIMIT %s
-            """, (limit,))
-            
-            contacts = []
-            for row in cursor.fetchall():
-                r = dict(row)
-                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
-                contacts.append({
-                    "id": r['id'],
-                    "name": display_name,
-                    "first_name": r.get('first_name'),
-                    "last_name": r.get('last_name'),
-                    "title": r.get('title'),
-                    "company": r.get('company'),
-                    "match_score": r.get('apex_score', 0),
-                    "match_tier": r.get('match_tier', 'LOW')
-                })
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "list_id": list_id,
-                "contacts": contacts,
-                "total": len(contacts)
-            }
-    
-    except Exception as e:
-        logger.error(f"Smart list contacts error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# COLD CALL QUEUE ENDPOINTS
-# ============================================================================
-
-@app.get("/api/cold-call/queue", tags=["Cold Call"])
-async def get_cold_call_queue(status: Optional[str] = None):
-    """Get cold call queue - contacts needing outreach"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Get contacts sorted by apex_score, prioritize unenriched
-            query = """
-                SELECT 
-                    id, name, first_name, last_name, email, phone, linkedin_url,
-                    company, title, apex_score, enrichment_status, created_at
-                FROM contacts
-                WHERE phone IS NOT NULL OR email IS NOT NULL
-                ORDER BY 
-                    CASE WHEN enrichment_status != 'completed' THEN 0 ELSE 1 END,
-                    COALESCE(apex_score, 0) DESC
-                LIMIT 100
-            """
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            
-            queue = []
-            for row in rows:
-                r = dict(row)
-                display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
-                queue.append({
-                    "id": r['id'],
-                    "name": display_name,
-                    "phone": r.get('phone'),
-                    "mobile": r.get('phone'),
-                    "email": r.get('email'),
-                    "linkedin_url": r.get('linkedin_url'),
-                    "company": r.get('company'),
-                    "title": r.get('title'),
-                    "quick_fit_score": r.get('apex_score', 0),
-                    "priority": 1 if r.get('apex_score', 0) >= 75 else 2 if r.get('apex_score', 0) >= 50 else 3,
-                    "status": "new",
-                    "attempts": 0,
-                    "contact_id": r['id']
-                })
-            
-            # Calculate stats
-            total = len(queue)
-            high_priority = len([q for q in queue if q['priority'] == 1])
-            avg_score = sum(q['quick_fit_score'] or 0 for q in queue) / total if total > 0 else 0
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "queue": queue,
-                "stats": {
-                    "total": total,
-                    "new": total,
-                    "attempted": 0,
-                    "connected": 0,
-                    "meeting_set": 0,
-                    "high_priority": high_priority,
-                    "avg_score": round(avg_score, 1)
-                }
-            }
-    
-    except Exception as e:
-        logger.error(f"Cold call queue error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# SMART LISTS ENDPOINTS
-# ============================================================================
-
-@app.get("/api/smart-lists", tags=["Smart Lists"])
-async def get_smart_lists():
-    """Get predefined smart lists with counts"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            # Count contacts for each smart list criteria
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 75")
-            hot_leads = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE phone IS NOT NULL")
-            ready_to_call = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
-            enriched = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
-            needs_enrichment = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 50 AND apex_score < 75")
-            medium_priority = cursor.fetchone()['count']
-            
-            cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
-            recent = cursor.fetchone()['count']
-            
-            cursor.close()
-            
-            return {
-                "success": True,
-                "lists": [
-                    {"id": "hot-leads", "name": "Hot Leads", "description": "APEX Score 75+", "icon": "flame", "color": "red", "count": hot_leads},
-                    {"id": "ready-to-call", "name": "Ready to Call", "description": "Has phone number", "icon": "phone", "color": "green", "count": ready_to_call},
-                    {"id": "enriched", "name": "Fully Enriched", "description": "Enrichment complete", "icon": "zap", "color": "yellow", "count": enriched},
-                    {"id": "needs-enrichment", "name": "Needs Enrichment", "description": "Not yet enriched", "icon": "clock", "color": "blue", "count": needs_enrichment},
-                    {"id": "medium-priority", "name": "Medium Priority", "description": "APEX Score 50-74", "icon": "crown", "color": "purple", "count": medium_priority},
-                    {"id": "recent", "name": "Added This Week", "description": "Last 7 days", "icon": "sparkles", "color": "cyan", "count": recent}
-                ]
-            }
-    
-    except Exception as e:
-        logger.error(f"Smart lists error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-        
-@app.get("/api/user/profile", tags=["User"])
-async def get_user_profile(user_id: str = "default"):
-    """Get user profile and preferences"""
-    return {
-        "success": True,
-        "user_id": user_id,
-        "name": "Sales User",
-        "role": "Sales Rep",
-        "preferences": {
-            "default_view": "board",
-            "notifications_enabled": True
-        }
-    }
-    
-# ============================================================================
-# OUTREACH CONTENT GENERATION ENDPOINTS
-# December 15, 2025 - 11:17 PM PST
-# ============================================================================
-
-@app.post("/api/contacts/{contact_id}/generate-email", tags=["Content"])
-async def generate_email(contact_id: str):
-    """Generate 3-email outreach sequence"""
-    if not content_generator:
-        raise HTTPException(status_code=503, detail="Content generator not available")
-        
-    try:
-        result = await content_generator.generate_all_content(contact_id)
-        
-        if result.get('error'):
-            raise HTTPException(status_code=400, detail=result['error'])
-            
-        return {
-            'contact_id': contact_id,
-            'emails': result['emails'],
-            'generated_at': result['generated_at']
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating email: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-@app.post("/api/contacts/{contact_id}/generate-coldcall", tags=["Content"])
-@app.post("/api/contacts/{contact_id}/generate-call-script", tags=["Content"])
-async def generate_call_script(contact_id: str):
-    """Generate 3 call script variants (fixes 404 issue)"""
-    if not content_generator:
-        raise HTTPException(status_code=503, detail="Content generator not available")
-        
-    try:
-        result = await content_generator.generate_all_content(contact_id)
-        
-        if result.get('error'):
-            raise HTTPException(status_code=400, detail=result['error'])
-            
-        return {
-            'contact_id': contact_id,
-            'scripts': result['scripts'],
-            'generated_at': result['generated_at']
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating call scripts: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-@app.post("/api/contacts/{contact_id}/generate-linkedin", tags=["Content"])
-async def generate_linkedin_message(contact_id: str):
-    """Generate LinkedIn connection request + follow-up"""
-    if not content_generator or not linkedin_engine:
-        raise HTTPException(status_code=503, detail="LinkedIn generator not available")
-        
-    try:
-        result = await content_generator.generate_all_content(contact_id)
-        
-        if result.get('error'):
-            raise HTTPException(status_code=400, detail=result['error'])
-            
-        # Also create LinkedIn prospect record if URL exists
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT linkedin_url FROM contacts WHERE id = %s
-            """, (contact_id,))
-            row = cursor.fetchone()
-            
-            if row and row.get('linkedin_url'):
-                linkedin_engine.add_prospect(
-                    linkedin_url=row['linkedin_url'],
-                    contact_id=contact_id
-                )
-                
-        return {
-            'contact_id': contact_id,
-            'linkedin': result['linkedin'],
-            'generated_at': result['generated_at']
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating LinkedIn message: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-@app.get("/api/contacts/{contact_id}/outreach-content", tags=["Content"])
-async def get_outreach_content(contact_id: str):
-    """Get all generated outreach content for a contact"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM outreach_content
-                WHERE contact_id = %s
-            """, (contact_id,))
-            
-            content = cursor.fetchone()
-            
-            if not content:
-                raise HTTPException(status_code=404, detail="No content generated yet")
-                
-            return dict(content)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching content: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-@app.get("/api/contacts/{contact_id}/call-assistant-data", tags=["Content"])
-async def get_call_assistant_data(contact_id: str):
-    """Get data needed for call assistant UI"""
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                SELECT 
-                    c.id, c.name, c.email, c.company, c.title, c.phone,
-                    c.apex_score, c.enrichment,
-                    o.call_script_1, o.call_script_2, o.call_script_3
-                FROM contacts c
-                LEFT JOIN outreach_content o ON c.id = o.contact_id
-                WHERE c.id = %s
-            """, (contact_id,))
-            
-            row = cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Contact not found")
-                
-            contact = dict(row)
-            
-            # Parse name
-            name_parts = contact.get('name', '').split(maxsplit=1)
-            firstname = name_parts[0] if name_parts else ''
-            lastname = name_parts[1] if len(name_parts) > 1 else ''
-            
-            # Determine tier from score
-            score = contact.get('apex_score', 0) or 0
-            if score >= 75:
-                tier = 'HIGH'
-            elif score >= 50:
-                tier = 'MEDIUM'
-            elif score >= 20:
-                tier = 'LOW'
-            else:
-                tier = 'UNQUALIFIED'
-                
-            # Get profile context
-            enrichment = contact.get('enrichment', {}) or {}
-            sections = enrichment.get('sections', {}) or {}
-            profile_context = sections.get('1._overview', '')[:200] if sections else ''
-            
-            return {
-                'contact_id': contact_id,
-                'name': contact.get('name'),
-                'firstname': firstname,
-                'lastname': lastname,
-                'company': contact.get('company'),
-                'title': contact.get('title'),
-                'phone': contact.get('phone'),
-                'score': score,
-                'tier': tier,
-                'profile_context': profile_context,
-                'call_script_1': contact.get('call_script_1'),
-                'call_script_2': contact.get('call_script_2'),
-                'call_script_3': contact.get('call_script_3'),
-                'has_scripts': bool(contact.get('call_script_1'))
-            }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting call assistant data: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-# ============================================================================
-# LINKEDIN AUTOMATION ENDPOINTS
-# ============================================================================
-        
-@app.get("/api/linkedin/quota", tags=["LinkedIn"])
-async def get_linkedin_quota():
-    """Get today's LinkedIn quota status"""
-    if not linkedin_engine:
-        raise HTTPException(status_code=503, detail="LinkedIn engine not available")
-        
-    try:
-        quota = linkedin_engine.get_daily_quota_status()
-        return quota
-    except Exception as e:
-        logger.error(f"Error getting LinkedIn quota: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-@app.get("/api/linkedin/analytics", tags=["LinkedIn"])
-async def get_linkedin_analytics():
-    """Get LinkedIn outreach analytics"""
-    if not linkedin_engine:
-        raise HTTPException(status_code=503, detail="LinkedIn engine not available")
-        
-    try:
-        analytics = linkedin_engine.get_analytics()
-        return analytics
-    except Exception as e:
-        logger.error(f"Error getting LinkedIn analytics: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-        
-@app.get("/api/linkedin/pending", tags=["LinkedIn"])
-async def get_linkedin_pending():
-    """Get pending LinkedIn actions for today"""
-    if not linkedin_engine:
-        raise HTTPException(status_code=503, detail="LinkedIn engine not available")
-        
-    try:
-        pending = linkedin_engine.get_pending_actions()
-        return pending
-    except Exception as e:
-        logger.error(f"Error getting pending actions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-        
-@app.post("/api/contacts/{contact_id}/generate-all-content")
-async def generate_all_outreach_content(contact_id: str):
-    """Generate complete outreach package (emails + calls + LinkedIn)"""
-    if not content_generator:
-        raise HTTPException(status_code=503, detail="Content generator not available")
-    
-    try:
-        result = await content_generator.generate_all_content(contact_id)
-        return result
-    except Exception as e:
-        logger.error(f"Error generating all content: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==============================================================================
-# STAGE GATE SYSTEM - SPICE + BANT READINESS
-# ==============================================================================
-
-@app.get("/api/contacts/{contact_id}/stage-gate-status")
-def get_stage_gate_status(contact_id: str):
-    """
-    Calculate sales stage readiness based on SPICE + BANT completion
-    Returns current stage, next action, and gate blockers
-    """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT 
-                id, name, company, title,
-                apex_score, mdcp_score, rss_score,
-                spice_total_score,
-                spice_situation_score, spice_problem_score, 
-                spice_implication_score, spice_critical_event_score, 
-                spice_decision_score,
-                bant_total_score,
-                bant_budget_score, bant_authority_score,
-                bant_need_score, bant_timeline_score,
-                bant_budget_confirmed, bant_authority_level,
-                bant_timeline_identified,
-                spice_cost_of_inaction, spice_revenue_opportunity,
-                spice_critical_event_date, spice_critical_event_description
-            FROM contacts 
-            WHERE id = %s
-        """, (contact_id,))
-        
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        
-        contact = dict(row)
-        
-        # Calculate completion percentages
-        spice_score = contact.get('spice_total_score') or 0
-        bant_score = contact.get('bant_total_score') or 0
-        apex_score = contact.get('apex_score') or 0
-        
-        # Determine stage and next actions
-        spice_complete = spice_score >= 60
-        bant_complete = bant_score >= 60
-        apex_fit = apex_score >= 60
-        
-        # Stage gate logic
-        if spice_score < 40 and bant_score < 40:
-            stage = "new_lead"
-            next_action = "Run initial discovery call - capture SPICE or BANT data"
-            blocked = True
-            can_propose = False
-            priority = "low"
-            
-        elif spice_complete and not bant_complete:
-            stage = "qualification_needed"
-            next_action = "Validate BANT - confirm budget, authority, and timeline"
-            blocked = True
-            can_propose = False
-            priority = "medium"
-            
-        elif bant_complete and not spice_complete:
-            stage = "discovery_needed"
-            next_action = "Deepen SPICE discovery - quantify business impact and urgency"
-            blocked = True
-            can_propose = False
-            priority = "medium"
-            
-        elif spice_complete and bant_complete and not apex_fit:
-            stage = "poor_fit"
-            next_action = "ICP fit too low - consider nurture track or disqualify"
-            blocked = True
-            can_propose = False
-            priority = "low"
-            
-        elif spice_complete and bant_complete and apex_fit:
-            stage = "proposal_ready"
-            next_action = "Generate proposal + schedule executive review"
-            blocked = False
-            can_propose = True
-            priority = "high"
-            
-        else:
-            stage = "in_discovery"
-            next_action = "Continue discovery - capture more SPICE and BANT data"
-            blocked = True
-            can_propose = False
-            priority = "medium"
-        
-        # Calculate readiness breakdown
-        spice_gaps = []
-        if (contact.get('spice_situation_score') or 0) < 15:
-            spice_gaps.append("Situation unclear")
-        if (contact.get('spice_problem_score') or 0) < 15:
-            spice_gaps.append("Problem not identified")
-        if (contact.get('spice_implication_score') or 0) < 15:
-            spice_gaps.append("Business impact not quantified")
-        if (contact.get('spice_critical_event_score') or 0) < 15:
-            spice_gaps.append("No critical event")
-        if (contact.get('spice_decision_score') or 0) < 15:
-            spice_gaps.append("Decision process unknown")
-        
-        bant_gaps = []
-        if (contact.get('bant_budget_score') or 0) < 15:
-            bant_gaps.append("Budget not confirmed")
-        if (contact.get('bant_authority_score') or 0) < 15:
-            bant_gaps.append("Authority not mapped")
-        if (contact.get('bant_need_score') or 0) < 15:
-            bant_gaps.append("Need not validated")
-        if (contact.get('bant_timeline_score') or 0) < 15:
-            bant_gaps.append("Timeline not established")
-        
-        # ROI signals
-        roi_quantified = bool(
-            contact.get('spice_cost_of_inaction') or 
-            contact.get('spice_revenue_opportunity')
-        )
-        
-        urgency_signal = bool(contact.get('spice_critical_event_date'))
-        
-        return {
-            "contact_id": contact_id,
-            "contact_name": contact.get('name'),
-            "company": contact.get('company'),
-            
-            "current_stage": stage,
-            "next_action": next_action,
-            "blocked": blocked,
-            "can_propose": can_propose,
-            "priority": priority,
-            
-            "scores": {
-                "spice": spice_score,
-                "bant": bant_score,
-                "apex": apex_score,
-                "hybrid": int((apex_score * 0.4) + (bant_score * 0.3) + (spice_score * 0.3))
-            },
-            
-            "completion": {
-                "spice_complete": spice_complete,
-                "bant_complete": bant_complete,
-                "apex_fit": apex_fit,
-                "spice_percentage": spice_score,
-                "bant_percentage": bant_score
-            },
-            
-            "gaps": {
-                "spice": spice_gaps,
-                "bant": bant_gaps
-            },
-            
-            "signals": {
-                "roi_quantified": roi_quantified,
-                "cost_of_inaction": contact.get('spice_cost_of_inaction'),
-                "revenue_opportunity": contact.get('spice_revenue_opportunity'),
-                "urgency_signal": urgency_signal,
-                "critical_event_date": contact.get('spice_critical_event_date'),
-                "critical_event": contact.get('spice_critical_event_description')
-            },
-            
-            "bant_details": {
-                "budget_confirmed": contact.get('bant_budget_confirmed'),
-                "authority_level": contact.get('bant_authority_level'),
-                "timeline_identified": contact.get('bant_timeline_identified')
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error calculating stage gate: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
-
-
-@app.get("/api/pipeline/stage-distribution")
-def get_pipeline_stage_distribution():
-    """
-    Get distribution of contacts across stage gates
-    """
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN spice_total_score >= 60 AND bant_total_score >= 60 AND apex_score >= 60 THEN 1 ELSE 0 END) as proposal_ready,
-                SUM(CASE WHEN spice_total_score >= 60 AND bant_total_score < 60 THEN 1 ELSE 0 END) as needs_bant,
-                SUM(CASE WHEN bant_total_score >= 60 AND spice_total_score < 60 THEN 1 ELSE 0 END) as needs_spice,
-                SUM(CASE WHEN spice_total_score < 40 AND bant_total_score < 40 THEN 1 ELSE 0 END) as new_leads,
-                SUM(CASE WHEN spice_total_score >= 40 AND spice_total_score < 60 AND bant_total_score >= 40 AND bant_total_score < 60 THEN 1 ELSE 0 END) as in_discovery
-            FROM contacts
-        """)
-        
-        row = cursor.fetchone()
-        
-        return {
-            "total_contacts": row[0],
-            "stages": {
-                "proposal_ready": row[1],
-                "needs_bant_qualification": row[2],
-                "needs_spice_discovery": row[3],
-                "new_leads": row[4],
-                "in_discovery": row[5]
-            },
-            "conversion_funnel": {
-                "discovery_to_qualified": f"{(row[1] / row[0] * 100):.1f}%" if row[0] > 0 else "0%",
-                "qualified_rate": f"{((row[1] / row[0]) * 100):.1f}%" if row[0] > 0 else "0%"
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting stage distribution: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        conn.close()
+# DISABLED: @app.post("/api/batch/enrich")
+# DISABLED: async def batch_enrich_endpoint(request_body: dict = Body(...)):
+# DISABLED:     """
+# DISABLED:     POST /api/batch/enrich - Queue batch enrichment
+# DISABLED:     Body: {"contact_ids": [1,2,3]} or {"limit": 10}
+# DISABLED:     """
+# DISABLED:     contact_ids = request_body.get("contact_ids", [])
+# DISABLED:     limit = request_body.get("limit", 10)
+# DISABLED:     
+# DISABLED:     if not contact_ids:
+# DISABLED:         try:
+# DISABLED:             with get_db() as conn:
+# DISABLED:                 cursor = conn.cursor()
+# DISABLED:                 cursor.execute("""
+# DISABLED:                     SELECT id FROM contacts 
+# DISABLED:                     WHERE enrichment_status IS NULL OR enrichment_status = 'pending'
+# DISABLED:                     LIMIT %s
+# DISABLED:                 """, (limit,))
+# DISABLED:                 contact_ids = [row[0] for row in cursor.fetchall()]
+# DISABLED:         except Exception as e:
+# DISABLED:             raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:             
+# DISABLED:     return {
+# DISABLED:         "queued": contact_ids,
+# DISABLED:         "status": "queued",
+# DISABLED:         "count": len(contact_ids)
+# DISABLED:     }
+# DISABLED:     
+# DISABLED: 
+# DISABLED: # ============================================================================
+# DISABLED: # STARTUP
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.on_event("startup")
+# DISABLED: async def startup_event():
+# DISABLED:     """Initialize"""
+# DISABLED:     logger.info("=" * 70)
+# DISABLED:     logger.info("🚀 APEX SALES INTELLIGENCE v2.0 - MULTI-FRAMEWORK PLATFORM")
+# DISABLED:     logger.info("=" * 70)
+# DISABLED:     logger.info("Frameworks: APEX (MDCP+RSS), BANT, SPICE")
+# DISABLED:     logger.info("Verticals: SaaS, Insurance, Equipment Leasing, Custom")
+# DISABLED:     
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             cursor.execute("SELECT COUNT(*) as count FROM contacts")
+# DISABLED:             total = cursor.fetchone()["count"]
+# DISABLED:             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE enrichment_status = 'completed'")
+# DISABLED:             enriched = cursor.fetchone()["count"]
+# DISABLED:             cursor.execute("SELECT COUNT(*) as count FROM contacts WHERE unified_qualification_score > 0")
+# DISABLED:             qualified = cursor.fetchone()["count"]
+# DISABLED:             cursor.close()
+# DISABLED:         
+# DISABLED:         logger.info(f"✅ Database: {total} contacts ({enriched} enriched, {qualified} qualified)")
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"❌ Database error: {e}")
+# DISABLED:     
+# DISABLED:     if enrichment_engine:
+# DISABLED:         logger.info("✅ Enrichment engine loaded")
+# DISABLED:     else:
+# DISABLED:         logger.warning("⚠️ Enrichment engine not available")
+# DISABLED:     
+# DISABLED:     logger.info("=" * 70)
+# DISABLED:     logger.info("🎯 APEX v2.0 OPERATIONAL")
+# DISABLED:     logger.info("=" * 70)
+# DISABLED: 
+# DISABLED: if __name__ == "__main__":
+# DISABLED:     import uvicorn
+# DISABLED:     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+# DISABLED: 
+# DISABLED: # =============================================================================
+# DISABLED: 
+# DISABLED: # ============================================================================
+# DISABLED: # TODAYS BOARD ENDPOINT (for Dashboard v1 TodaysBoard component)
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.get("/api/todays-board", tags=["Dashboard"])
+# DISABLED: async def get_todays_board():
+# DISABLED:     """Get aggregated dashboard data for TodaysBoard component"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             # Get all contacts with scores
+# DISABLED:             cursor.execute("""
+# DISABLED:                 SELECT 
+# DISABLED:                     id, first_name, last_name, email, phone, company, title,
+# DISABLED:                     apex_score, unified_qualification_score, enrichment_status,
+# DISABLED:                     enriched_at, match_tier
+# DISABLED:                 FROM contacts
+# DISABLED:                 ORDER BY COALESCE(apex_score, 0) DESC
+# DISABLED:             """)
+# DISABLED:             
+# DISABLED:             contacts = [dict(row) for row in cursor.fetchall()]
+# DISABLED:             
+# DISABLED:             # Calculate stats
+# DISABLED:             total = len(contacts)
+# DISABLED:             enriched = sum(1 for c in contacts if c.get('enrichment_status') == 'completed')
+# DISABLED:             
+# DISABLED:             # Segment by apex_score (HIGH >= 75, MEDIUM 50-74, LOW < 50)
+# DISABLED:             high_contacts = [c for c in contacts if c.get('apex_score', 0) >= 75]
+# DISABLED:             medium_contacts = [c for c in contacts if 50 <= c.get('apex_score', 0) < 75]
+# DISABLED:             low_contacts = [c for c in contacts if c.get('apex_score', 0) < 50]
+# DISABLED:             
+# DISABLED:             cursor.close()
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 "success": True,
+# DISABLED:                 "date": datetime.now().strftime("%B %d, %Y"),
+# DISABLED:                 "time": datetime.now().strftime("%I:%M %p"),
+# DISABLED:                 "stats": {
+# DISABLED:                     "total_contacts": total,
+# DISABLED:                     "enriched": enriched,
+# DISABLED:                     "high_match": len(high_contacts),
+# DISABLED:                     "medium_match": len(medium_contacts),
+# DISABLED:                     "low_match": len(low_contacts),
+# DISABLED:                     "cold_call_queue": len(low_contacts)
+# DISABLED:                 },
+# DISABLED:                 "segments": {
+# DISABLED:                     "high": [
+# DISABLED:                         {
+# DISABLED:                             "id": c['id'],
+# DISABLED:                             "first_name": c.get('first_name'),
+# DISABLED:                             "last_name": c.get('last_name'),
+# DISABLED:                             "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+# DISABLED:                             "email": c.get('email'),
+# DISABLED:                             "phone": c.get('phone'),
+# DISABLED:                             "company": c.get('company'),
+# DISABLED:                             "title": c.get('title'),
+# DISABLED:                             "match_score": c.get('apex_score', 0),
+# DISABLED:                             "match_tier": "HIGH",
+# DISABLED:                             "enrichment_status": c.get('enrichment_status'),
+# DISABLED:                             "enriched_at": c.get('enriched_at')
+# DISABLED:                         }
+# DISABLED:                         for c in high_contacts[:20]
+# DISABLED:                     ],
+# DISABLED:                     "medium": [
+# DISABLED:                         {
+# DISABLED:                             "id": c['id'],
+# DISABLED:                             "first_name": c.get('first_name'),
+# DISABLED:                             "last_name": c.get('last_name'),
+# DISABLED:                             "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+# DISABLED:                             "email": c.get('email'),
+# DISABLED:                             "phone": c.get('phone'),
+# DISABLED:                             "company": c.get('company'),
+# DISABLED:                             "title": c.get('title'),
+# DISABLED:                             "match_score": c.get('apex_score', 0),
+# DISABLED:                             "match_tier": "MEDIUM",
+# DISABLED:                             "enrichment_status": c.get('enrichment_status'),
+# DISABLED:                             "enriched_at": c.get('enriched_at')
+# DISABLED:                         }
+# DISABLED:                         for c in medium_contacts[:20]
+# DISABLED:                     ],
+# DISABLED:                     "low": [
+# DISABLED:                         {
+# DISABLED:                             "id": c['id'],
+# DISABLED:                             "first_name": c.get('first_name'),
+# DISABLED:                             "last_name": c.get('last_name'),
+# DISABLED:                             "name": f"{c.get('first_name', '')} {c.get('last_name', '')}".strip(),
+# DISABLED:                             "email": c.get('email'),
+# DISABLED:                             "phone": c.get('phone'),
+# DISABLED:                             "company": c.get('company'),
+# DISABLED:                             "title": c.get('title'),
+# DISABLED:                             "match_score": c.get('apex_score', 0),
+# DISABLED:                             "match_tier": "LOW",
+# DISABLED:                             "enrichment_status": c.get('enrichment_status'),
+# DISABLED:                             "enriched_at": c.get('enriched_at')
+# DISABLED:                         }
+# DISABLED:                         for c in low_contacts[:20]
+# DISABLED:                     ]
+# DISABLED:                 },
+# DISABLED:                 "top_priority": high_contacts[:5],
+# DISABLED:                 "cold_call_stats": {
+# DISABLED:                     "total": total,
+# DISABLED:                     "new": len([c for c in contacts if c.get('enrichment_status') != 'completed']),
+# DISABLED:                     "meeting_set": 0
+# DISABLED:                 }
+# DISABLED:             }
+# DISABLED:     
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Todays board error: {e}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED: # ============================================================================
+# DISABLED: # COLD CALL QUEUE ENDPOINTS
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.get("/api/cold-call/queue", tags=["Cold Call"])
+# DISABLED: async def get_cold_call_queue(status: Optional[str] = None):
+# DISABLED:     """Get cold call queue - contacts needing outreach"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             # Get contacts sorted by apex_score, prioritize unenriched
+# DISABLED:             query = """
+# DISABLED:                 SELECT 
+# DISABLED:                     id, name, first_name, last_name, email, phone, linkedin_url,
+# DISABLED:                     company, title, apex_score, enrichment_status, created_at
+# DISABLED:                 FROM contacts
+# DISABLED:                 WHERE phone IS NOT NULL OR email IS NOT NULL
+# DISABLED:                 ORDER BY 
+# DISABLED:                     CASE WHEN enrichment_status != 'completed' THEN 0 ELSE 1 END,
+# DISABLED:                     COALESCE(apex_score, 0) DESC
+# DISABLED:                 LIMIT 100
+# DISABLED:             """
+# DISABLED:             cursor.execute(query)
+# DISABLED:             rows = cursor.fetchall()
+# DISABLED:             
+# DISABLED:             queue = []
+# DISABLED:             for row in rows:
+# DISABLED:                 r = dict(row)
+# DISABLED:                 display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+# DISABLED:                 queue.append({
+# DISABLED:                     "id": r['id'],
+# DISABLED:                     "name": display_name,
+# DISABLED:                     "phone": r.get('phone'),
+# DISABLED:                     "mobile": r.get('phone'),
+# DISABLED:                     "email": r.get('email'),
+# DISABLED:                     "linkedin_url": r.get('linkedin_url'),
+# DISABLED:                     "company": r.get('company'),
+# DISABLED:                     "title": r.get('title'),
+# DISABLED:                     "quick_fit_score": r.get('apex_score', 0),
+# DISABLED:                     "priority": 1 if r.get('apex_score', 0) >= 75 else 2 if r.get('apex_score', 0) >= 50 else 3,
+# DISABLED:                     "status": "new",
+# DISABLED:                     "attempts": 0,
+# DISABLED:                     "contact_id": r['id']
+# DISABLED:                 })
+# DISABLED:             
+# DISABLED:             # Calculate stats
+# DISABLED:             total = len(queue)
+# DISABLED:             high_priority = len([q for q in queue if q['priority'] == 1])
+# DISABLED:             avg_score = sum(q['quick_fit_score'] or 0 for q in queue) / total if total > 0 else 0
+# DISABLED:             
+# DISABLED:             cursor.close()
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 "success": True,
+# DISABLED:                 "queue": queue,
+# DISABLED:                 "stats": {
+# DISABLED:                     "total": total,
+# DISABLED:                     "new": total,
+# DISABLED:                     "attempted": 0,
+# DISABLED:                     "connected": 0,
+# DISABLED:                     "meeting_set": 0,
+# DISABLED:                     "high_priority": high_priority,
+# DISABLED:                     "avg_score": round(avg_score, 1)
+# DISABLED:                 }
+# DISABLED:             }
+# DISABLED:     
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Cold call queue error: {e}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED: @app.post("/api/cold-call/queue/{item_id}/outcome", tags=["Cold Call"])
+# DISABLED: async def log_call_outcome(item_id: int, outcome: str = Body(..., embed=True)):
+# DISABLED:     """Log outcome of a cold call"""
+# DISABLED:     try:
+# DISABLED:         # For now, just acknowledge - can add call_logs table later
+# DISABLED:         return {
+# DISABLED:             "success": True,
+# DISABLED:             "item_id": item_id,
+# DISABLED:             "outcome": outcome,
+# DISABLED:             "message": "Outcome logged"
+# DISABLED:         }
+# DISABLED:     except Exception as e:
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED: # ============================================================================
+# DISABLED: # SMART LISTS ENDPOINTS
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.get("/api/smart-lists", tags=["Smart Lists"])
+# DISABLED: async def get_smart_lists():
+# DISABLED:     """Get predefined smart lists with counts"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             # Count contacts for each smart list criteria
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 75")
+# DISABLED:             hot_leads = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE phone IS NOT NULL")
+# DISABLED:             ready_to_call = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+# DISABLED:             enriched = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
+# DISABLED:             needs_enrichment = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 50 AND apex_score < 75")
+# DISABLED:             medium_priority = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
+# DISABLED:             recent = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.close()
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 "success": True,
+# DISABLED:                 "lists": [
+# DISABLED:                     {"id": "hot-leads", "name": "Hot Leads", "description": "APEX Score 75+", "icon": "flame", "color": "red", "count": hot_leads},
+# DISABLED:                     {"id": "ready-to-call", "name": "Ready to Call", "description": "Has phone number", "icon": "phone", "color": "green", "count": ready_to_call},
+# DISABLED:                     {"id": "enriched", "name": "Fully Enriched", "description": "Enrichment complete", "icon": "zap", "color": "yellow", "count": enriched},
+# DISABLED:                     {"id": "needs-enrichment", "name": "Needs Enrichment", "description": "Not yet enriched", "icon": "clock", "color": "blue", "count": needs_enrichment},
+# DISABLED:                     {"id": "medium-priority", "name": "Medium Priority", "description": "APEX Score 50-74", "icon": "crown", "color": "purple", "count": medium_priority},
+# DISABLED:                     {"id": "recent", "name": "Added This Week", "description": "Last 7 days", "icon": "sparkles", "color": "cyan", "count": recent}
+# DISABLED:                 ]
+# DISABLED:             }
+# DISABLED:     
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Smart lists error: {e}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED: @app.get("/api/smart-lists/{list_id}/contacts", tags=["Smart Lists"])
+# DISABLED: async def get_smart_list_contacts(list_id: str, limit: int = 50):
+# DISABLED:     """Get contacts for a specific smart list"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             # Map list_id to SQL filter
+# DISABLED:             filters = {
+# DISABLED:                 "hot-leads": "apex_score >= 75",
+# DISABLED:                 "ready-to-call": "phone IS NOT NULL",
+# DISABLED:                 "enriched": "enrichment_status = 'completed'",
+# DISABLED:                 "needs-enrichment": "enrichment_status IS NULL OR enrichment_status = 'pending'",
+# DISABLED:                 "medium-priority": "apex_score >= 50 AND apex_score < 75",
+# DISABLED:                 "recent": "created_at > NOW() - INTERVAL '7 days'"
+# DISABLED:             }
+# DISABLED:             
+# DISABLED:             where_clause = filters.get(list_id, "1=1")
+# DISABLED:             
+# DISABLED:             cursor.execute(f"""
+# DISABLED:                 SELECT id, name, first_name, last_name, email, company, title, 
+# DISABLED:                        apex_score, match_tier, enrichment_status
+# DISABLED:                 FROM contacts
+# DISABLED:                 WHERE {where_clause}
+# DISABLED:                 ORDER BY COALESCE(apex_score, 0) DESC
+# DISABLED:                 LIMIT %s
+# DISABLED:             """, (limit,))
+# DISABLED:             
+# DISABLED:             contacts = []
+# DISABLED:             for row in cursor.fetchall():
+# DISABLED:                 r = dict(row)
+# DISABLED:                 display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+# DISABLED:                 contacts.append({
+# DISABLED:                     "id": r['id'],
+# DISABLED:                     "name": display_name,
+# DISABLED:                     "first_name": r.get('first_name'),
+# DISABLED:                     "last_name": r.get('last_name'),
+# DISABLED:                     "title": r.get('title'),
+# DISABLED:                     "company": r.get('company'),
+# DISABLED:                     "match_score": r.get('apex_score', 0),
+# DISABLED:                     "match_tier": r.get('match_tier', 'LOW')
+# DISABLED:                 })
+# DISABLED:             
+# DISABLED:             cursor.close()
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 "success": True,
+# DISABLED:                 "list_id": list_id,
+# DISABLED:                 "contacts": contacts,
+# DISABLED:                 "total": len(contacts)
+# DISABLED:             }
+# DISABLED:     
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Smart list contacts error: {e}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED: # ============================================================================
+# DISABLED: # COLD CALL QUEUE ENDPOINTS
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.get("/api/cold-call/queue", tags=["Cold Call"])
+# DISABLED: async def get_cold_call_queue(status: Optional[str] = None):
+# DISABLED:     """Get cold call queue - contacts needing outreach"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             # Get contacts sorted by apex_score, prioritize unenriched
+# DISABLED:             query = """
+# DISABLED:                 SELECT 
+# DISABLED:                     id, name, first_name, last_name, email, phone, linkedin_url,
+# DISABLED:                     company, title, apex_score, enrichment_status, created_at
+# DISABLED:                 FROM contacts
+# DISABLED:                 WHERE phone IS NOT NULL OR email IS NOT NULL
+# DISABLED:                 ORDER BY 
+# DISABLED:                     CASE WHEN enrichment_status != 'completed' THEN 0 ELSE 1 END,
+# DISABLED:                     COALESCE(apex_score, 0) DESC
+# DISABLED:                 LIMIT 100
+# DISABLED:             """
+# DISABLED:             cursor.execute(query)
+# DISABLED:             rows = cursor.fetchall()
+# DISABLED:             
+# DISABLED:             queue = []
+# DISABLED:             for row in rows:
+# DISABLED:                 r = dict(row)
+# DISABLED:                 display_name = r.get('name') or f"{r.get('first_name', '')} {r.get('last_name', '')}".strip() or 'Unknown'
+# DISABLED:                 queue.append({
+# DISABLED:                     "id": r['id'],
+# DISABLED:                     "name": display_name,
+# DISABLED:                     "phone": r.get('phone'),
+# DISABLED:                     "mobile": r.get('phone'),
+# DISABLED:                     "email": r.get('email'),
+# DISABLED:                     "linkedin_url": r.get('linkedin_url'),
+# DISABLED:                     "company": r.get('company'),
+# DISABLED:                     "title": r.get('title'),
+# DISABLED:                     "quick_fit_score": r.get('apex_score', 0),
+# DISABLED:                     "priority": 1 if r.get('apex_score', 0) >= 75 else 2 if r.get('apex_score', 0) >= 50 else 3,
+# DISABLED:                     "status": "new",
+# DISABLED:                     "attempts": 0,
+# DISABLED:                     "contact_id": r['id']
+# DISABLED:                 })
+# DISABLED:             
+# DISABLED:             # Calculate stats
+# DISABLED:             total = len(queue)
+# DISABLED:             high_priority = len([q for q in queue if q['priority'] == 1])
+# DISABLED:             avg_score = sum(q['quick_fit_score'] or 0 for q in queue) / total if total > 0 else 0
+# DISABLED:             
+# DISABLED:             cursor.close()
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 "success": True,
+# DISABLED:                 "queue": queue,
+# DISABLED:                 "stats": {
+# DISABLED:                     "total": total,
+# DISABLED:                     "new": total,
+# DISABLED:                     "attempted": 0,
+# DISABLED:                     "connected": 0,
+# DISABLED:                     "meeting_set": 0,
+# DISABLED:                     "high_priority": high_priority,
+# DISABLED:                     "avg_score": round(avg_score, 1)
+# DISABLED:                 }
+# DISABLED:             }
+# DISABLED:     
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Cold call queue error: {e}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED: # ============================================================================
+# DISABLED: # SMART LISTS ENDPOINTS
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.get("/api/smart-lists", tags=["Smart Lists"])
+# DISABLED: async def get_smart_lists():
+# DISABLED:     """Get predefined smart lists with counts"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             # Count contacts for each smart list criteria
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 75")
+# DISABLED:             hot_leads = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE phone IS NOT NULL")
+# DISABLED:             ready_to_call = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status = 'completed'")
+# DISABLED:             enriched = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE enrichment_status IS NULL OR enrichment_status = 'pending'")
+# DISABLED:             needs_enrichment = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE apex_score >= 50 AND apex_score < 75")
+# DISABLED:             medium_priority = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.execute("SELECT COUNT(*) FROM contacts WHERE created_at > NOW() - INTERVAL '7 days'")
+# DISABLED:             recent = cursor.fetchone()['count']
+# DISABLED:             
+# DISABLED:             cursor.close()
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 "success": True,
+# DISABLED:                 "lists": [
+# DISABLED:                     {"id": "hot-leads", "name": "Hot Leads", "description": "APEX Score 75+", "icon": "flame", "color": "red", "count": hot_leads},
+# DISABLED:                     {"id": "ready-to-call", "name": "Ready to Call", "description": "Has phone number", "icon": "phone", "color": "green", "count": ready_to_call},
+# DISABLED:                     {"id": "enriched", "name": "Fully Enriched", "description": "Enrichment complete", "icon": "zap", "color": "yellow", "count": enriched},
+# DISABLED:                     {"id": "needs-enrichment", "name": "Needs Enrichment", "description": "Not yet enriched", "icon": "clock", "color": "blue", "count": needs_enrichment},
+# DISABLED:                     {"id": "medium-priority", "name": "Medium Priority", "description": "APEX Score 50-74", "icon": "crown", "color": "purple", "count": medium_priority},
+# DISABLED:                     {"id": "recent", "name": "Added This Week", "description": "Last 7 days", "icon": "sparkles", "color": "cyan", "count": recent}
+# DISABLED:                 ]
+# DISABLED:             }
+# DISABLED:     
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Smart lists error: {e}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: 
+# DISABLED:         
+# DISABLED: @app.get("/api/user/profile", tags=["User"])
+# DISABLED: async def get_user_profile(user_id: str = "default"):
+# DISABLED:     """Get user profile and preferences"""
+# DISABLED:     return {
+# DISABLED:         "success": True,
+# DISABLED:         "user_id": user_id,
+# DISABLED:         "name": "Sales User",
+# DISABLED:         "role": "Sales Rep",
+# DISABLED:         "preferences": {
+# DISABLED:             "default_view": "board",
+# DISABLED:             "notifications_enabled": True
+# DISABLED:         }
+# DISABLED:     }
+# DISABLED:     
+# DISABLED: # ============================================================================
+# DISABLED: # OUTREACH CONTENT GENERATION ENDPOINTS
+# DISABLED: # December 15, 2025 - 11:17 PM PST
+# DISABLED: # ============================================================================
+# DISABLED: 
+# DISABLED: @app.post("/api/contacts/{contact_id}/generate-email", tags=["Content"])
+# DISABLED: async def generate_email(contact_id: str):
+# DISABLED:     """Generate 3-email outreach sequence"""
+# DISABLED:     if not content_generator:
+# DISABLED:         raise HTTPException(status_code=503, detail="Content generator not available")
+# DISABLED:         
+# DISABLED:     try:
+# DISABLED:         result = await content_generator.generate_all_content(contact_id)
+# DISABLED:         
+# DISABLED:         if result.get('error'):
+# DISABLED:             raise HTTPException(status_code=400, detail=result['error'])
+# DISABLED:             
+# DISABLED:         return {
+# DISABLED:             'contact_id': contact_id,
+# DISABLED:             'emails': result['emails'],
+# DISABLED:             'generated_at': result['generated_at']
+# DISABLED:         }
+# DISABLED:     except HTTPException:
+# DISABLED:         raise
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error generating email: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: @app.post("/api/contacts/{contact_id}/generate-coldcall", tags=["Content"])
+# DISABLED: @app.post("/api/contacts/{contact_id}/generate-call-script", tags=["Content"])
+# DISABLED: async def generate_call_script(contact_id: str):
+# DISABLED:     """Generate 3 call script variants (fixes 404 issue)"""
+# DISABLED:     if not content_generator:
+# DISABLED:         raise HTTPException(status_code=503, detail="Content generator not available")
+# DISABLED:         
+# DISABLED:     try:
+# DISABLED:         result = await content_generator.generate_all_content(contact_id)
+# DISABLED:         
+# DISABLED:         if result.get('error'):
+# DISABLED:             raise HTTPException(status_code=400, detail=result['error'])
+# DISABLED:             
+# DISABLED:         return {
+# DISABLED:             'contact_id': contact_id,
+# DISABLED:             'scripts': result['scripts'],
+# DISABLED:             'generated_at': result['generated_at']
+# DISABLED:         }
+# DISABLED:     except HTTPException:
+# DISABLED:         raise
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error generating call scripts: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: @app.post("/api/contacts/{contact_id}/generate-linkedin", tags=["Content"])
+# DISABLED: async def generate_linkedin_message(contact_id: str):
+# DISABLED:     """Generate LinkedIn connection request + follow-up"""
+# DISABLED:     if not content_generator or not linkedin_engine:
+# DISABLED:         raise HTTPException(status_code=503, detail="LinkedIn generator not available")
+# DISABLED:         
+# DISABLED:     try:
+# DISABLED:         result = await content_generator.generate_all_content(contact_id)
+# DISABLED:         
+# DISABLED:         if result.get('error'):
+# DISABLED:             raise HTTPException(status_code=400, detail=result['error'])
+# DISABLED:             
+# DISABLED:         # Also create LinkedIn prospect record if URL exists
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             cursor.execute("""
+# DISABLED:                 SELECT linkedin_url FROM contacts WHERE id = %s
+# DISABLED:             """, (contact_id,))
+# DISABLED:             row = cursor.fetchone()
+# DISABLED:             
+# DISABLED:             if row and row.get('linkedin_url'):
+# DISABLED:                 linkedin_engine.add_prospect(
+# DISABLED:                     linkedin_url=row['linkedin_url'],
+# DISABLED:                     contact_id=contact_id
+# DISABLED:                 )
+# DISABLED:                 
+# DISABLED:         return {
+# DISABLED:             'contact_id': contact_id,
+# DISABLED:             'linkedin': result['linkedin'],
+# DISABLED:             'generated_at': result['generated_at']
+# DISABLED:         }
+# DISABLED:     except HTTPException:
+# DISABLED:         raise
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error generating LinkedIn message: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: @app.get("/api/contacts/{contact_id}/outreach-content", tags=["Content"])
+# DISABLED: async def get_outreach_content(contact_id: str):
+# DISABLED:     """Get all generated outreach content for a contact"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             cursor.execute("""
+# DISABLED:                 SELECT * FROM outreach_content
+# DISABLED:                 WHERE contact_id = %s
+# DISABLED:             """, (contact_id,))
+# DISABLED:             
+# DISABLED:             content = cursor.fetchone()
+# DISABLED:             
+# DISABLED:             if not content:
+# DISABLED:                 raise HTTPException(status_code=404, detail="No content generated yet")
+# DISABLED:                 
+# DISABLED:             return dict(content)
+# DISABLED:         
+# DISABLED:     except HTTPException:
+# DISABLED:         raise
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error fetching content: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: @app.get("/api/contacts/{contact_id}/call-assistant-data", tags=["Content"])
+# DISABLED: async def get_call_assistant_data(contact_id: str):
+# DISABLED:     """Get data needed for call assistant UI"""
+# DISABLED:     try:
+# DISABLED:         with get_db() as conn:
+# DISABLED:             cursor = conn.cursor()
+# DISABLED:             
+# DISABLED:             cursor.execute("""
+# DISABLED:                 SELECT 
+# DISABLED:                     c.id, c.name, c.email, c.company, c.title, c.phone,
+# DISABLED:                     c.apex_score, c.enrichment,
+# DISABLED:                     o.call_script_1, o.call_script_2, o.call_script_3
+# DISABLED:                 FROM contacts c
+# DISABLED:                 LEFT JOIN outreach_content o ON c.id = o.contact_id
+# DISABLED:                 WHERE c.id = %s
+# DISABLED:             """, (contact_id,))
+# DISABLED:             
+# DISABLED:             row = cursor.fetchone()
+# DISABLED:             if not row:
+# DISABLED:                 raise HTTPException(status_code=404, detail="Contact not found")
+# DISABLED:                 
+# DISABLED:             contact = dict(row)
+# DISABLED:             
+# DISABLED:             # Parse name
+# DISABLED:             name_parts = contact.get('name', '').split(maxsplit=1)
+# DISABLED:             firstname = name_parts[0] if name_parts else ''
+# DISABLED:             lastname = name_parts[1] if len(name_parts) > 1 else ''
+# DISABLED:             
+# DISABLED:             # Determine tier from score
+# DISABLED:             score = contact.get('apex_score', 0) or 0
+# DISABLED:             if score >= 75:
+# DISABLED:                 tier = 'HIGH'
+# DISABLED:             elif score >= 50:
+# DISABLED:                 tier = 'MEDIUM'
+# DISABLED:             elif score >= 20:
+# DISABLED:                 tier = 'LOW'
+# DISABLED:             else:
+# DISABLED:                 tier = 'UNQUALIFIED'
+# DISABLED:                 
+# DISABLED:             # Get profile context
+# DISABLED:             enrichment = contact.get('enrichment', {}) or {}
+# DISABLED:             sections = enrichment.get('sections', {}) or {}
+# DISABLED:             profile_context = sections.get('1._overview', '')[:200] if sections else ''
+# DISABLED:             
+# DISABLED:             return {
+# DISABLED:                 'contact_id': contact_id,
+# DISABLED:                 'name': contact.get('name'),
+# DISABLED:                 'firstname': firstname,
+# DISABLED:                 'lastname': lastname,
+# DISABLED:                 'company': contact.get('company'),
+# DISABLED:                 'title': contact.get('title'),
+# DISABLED:                 'phone': contact.get('phone'),
+# DISABLED:                 'score': score,
+# DISABLED:                 'tier': tier,
+# DISABLED:                 'profile_context': profile_context,
+# DISABLED:                 'call_script_1': contact.get('call_script_1'),
+# DISABLED:                 'call_script_2': contact.get('call_script_2'),
+# DISABLED:                 'call_script_3': contact.get('call_script_3'),
+# DISABLED:                 'has_scripts': bool(contact.get('call_script_1'))
+# DISABLED:             }
+# DISABLED:         
+# DISABLED:     except HTTPException:
+# DISABLED:         raise
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error getting call assistant data: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: # ============================================================================
+# DISABLED: # LINKEDIN AUTOMATION ENDPOINTS
+# DISABLED: # ============================================================================
+# DISABLED:         
+# DISABLED: @app.get("/api/linkedin/quota", tags=["LinkedIn"])
+# DISABLED: async def get_linkedin_quota():
+# DISABLED:     """Get today's LinkedIn quota status"""
+# DISABLED:     if not linkedin_engine:
+# DISABLED:         raise HTTPException(status_code=503, detail="LinkedIn engine not available")
+# DISABLED:         
+# DISABLED:     try:
+# DISABLED:         quota = linkedin_engine.get_daily_quota_status()
+# DISABLED:         return quota
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error getting LinkedIn quota: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: @app.get("/api/linkedin/analytics", tags=["LinkedIn"])
+# DISABLED: async def get_linkedin_analytics():
+# DISABLED:     """Get LinkedIn outreach analytics"""
+# DISABLED:     if not linkedin_engine:
+# DISABLED:         raise HTTPException(status_code=503, detail="LinkedIn engine not available")
+# DISABLED:         
+# DISABLED:     try:
+# DISABLED:         analytics = linkedin_engine.get_analytics()
+# DISABLED:         return analytics
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error getting LinkedIn analytics: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED:         
+# DISABLED: @app.get("/api/linkedin/pending", tags=["LinkedIn"])
+# DISABLED: async def get_linkedin_pending():
+# DISABLED:     """Get pending LinkedIn actions for today"""
+# DISABLED:     if not linkedin_engine:
+# DISABLED:         raise HTTPException(status_code=503, detail="LinkedIn engine not available")
+# DISABLED:         
+# DISABLED:     try:
+# DISABLED:         pending = linkedin_engine.get_pending_actions()
+# DISABLED:         return pending
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error getting pending actions: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:         
+# DISABLED: @app.post("/api/contacts/{contact_id}/generate-all-content")
+# DISABLED: async def generate_all_outreach_content(contact_id: str):
+# DISABLED:     """Generate complete outreach package (emails + calls + LinkedIn)"""
+# DISABLED:     if not content_generator:
+# DISABLED:         raise HTTPException(status_code=503, detail="Content generator not available")
+# DISABLED:     
+# DISABLED:     try:
+# DISABLED:         result = await content_generator.generate_all_content(contact_id)
+# DISABLED:         return result
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error generating all content: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED: 
+# DISABLED: # ==============================================================================
+# DISABLED: # STAGE GATE SYSTEM - SPICE + BANT READINESS
+# DISABLED: # ==============================================================================
+# DISABLED: 
+# DISABLED: @app.get("/api/contacts/{contact_id}/stage-gate-status")
+# DISABLED: def get_stage_gate_status(contact_id: str):
+# DISABLED:     """
+# DISABLED:     Calculate sales stage readiness based on SPICE + BANT completion
+# DISABLED:     Returns current stage, next action, and gate blockers
+# DISABLED:     """
+# DISABLED:     conn = get_db_connection()
+# DISABLED:     try:
+# DISABLED:         cursor = conn.cursor()
+# DISABLED:         cursor.execute("""
+# DISABLED:             SELECT 
+# DISABLED:                 id, name, company, title,
+# DISABLED:                 apex_score, mdcp_score, rss_score,
+# DISABLED:                 spice_total_score,
+# DISABLED:                 spice_situation_score, spice_problem_score, 
+# DISABLED:                 spice_implication_score, spice_critical_event_score, 
+# DISABLED:                 spice_decision_score,
+# DISABLED:                 bant_total_score,
+# DISABLED:                 bant_budget_score, bant_authority_score,
+# DISABLED:                 bant_need_score, bant_timeline_score,
+# DISABLED:                 bant_budget_confirmed, bant_authority_level,
+# DISABLED:                 bant_timeline_identified,
+# DISABLED:                 spice_cost_of_inaction, spice_revenue_opportunity,
+# DISABLED:                 spice_critical_event_date, spice_critical_event_description
+# DISABLED:             FROM contacts 
+# DISABLED:             WHERE id = %s
+# DISABLED:         """, (contact_id,))
+# DISABLED:         
+# DISABLED:         row = cursor.fetchone()
+# DISABLED:         if not row:
+# DISABLED:             raise HTTPException(status_code=404, detail="Contact not found")
+# DISABLED:         
+# DISABLED:         contact = dict(row)
+# DISABLED:         
+# DISABLED:         # Calculate completion percentages
+# DISABLED:         spice_score = contact.get('spice_total_score') or 0
+# DISABLED:         bant_score = contact.get('bant_total_score') or 0
+# DISABLED:         apex_score = contact.get('apex_score') or 0
+# DISABLED:         
+# DISABLED:         # Determine stage and next actions
+# DISABLED:         spice_complete = spice_score >= 60
+# DISABLED:         bant_complete = bant_score >= 60
+# DISABLED:         apex_fit = apex_score >= 60
+# DISABLED:         
+# DISABLED:         # Stage gate logic
+# DISABLED:         if spice_score < 40 and bant_score < 40:
+# DISABLED:             stage = "new_lead"
+# DISABLED:             next_action = "Run initial discovery call - capture SPICE or BANT data"
+# DISABLED:             blocked = True
+# DISABLED:             can_propose = False
+# DISABLED:             priority = "low"
+# DISABLED:             
+# DISABLED:         elif spice_complete and not bant_complete:
+# DISABLED:             stage = "qualification_needed"
+# DISABLED:             next_action = "Validate BANT - confirm budget, authority, and timeline"
+# DISABLED:             blocked = True
+# DISABLED:             can_propose = False
+# DISABLED:             priority = "medium"
+# DISABLED:             
+# DISABLED:         elif bant_complete and not spice_complete:
+# DISABLED:             stage = "discovery_needed"
+# DISABLED:             next_action = "Deepen SPICE discovery - quantify business impact and urgency"
+# DISABLED:             blocked = True
+# DISABLED:             can_propose = False
+# DISABLED:             priority = "medium"
+# DISABLED:             
+# DISABLED:         elif spice_complete and bant_complete and not apex_fit:
+# DISABLED:             stage = "poor_fit"
+# DISABLED:             next_action = "ICP fit too low - consider nurture track or disqualify"
+# DISABLED:             blocked = True
+# DISABLED:             can_propose = False
+# DISABLED:             priority = "low"
+# DISABLED:             
+# DISABLED:         elif spice_complete and bant_complete and apex_fit:
+# DISABLED:             stage = "proposal_ready"
+# DISABLED:             next_action = "Generate proposal + schedule executive review"
+# DISABLED:             blocked = False
+# DISABLED:             can_propose = True
+# DISABLED:             priority = "high"
+# DISABLED:             
+# DISABLED:         else:
+# DISABLED:             stage = "in_discovery"
+# DISABLED:             next_action = "Continue discovery - capture more SPICE and BANT data"
+# DISABLED:             blocked = True
+# DISABLED:             can_propose = False
+# DISABLED:             priority = "medium"
+# DISABLED:         
+# DISABLED:         # Calculate readiness breakdown
+# DISABLED:         spice_gaps = []
+# DISABLED:         if (contact.get('spice_situation_score') or 0) < 15:
+# DISABLED:             spice_gaps.append("Situation unclear")
+# DISABLED:         if (contact.get('spice_problem_score') or 0) < 15:
+# DISABLED:             spice_gaps.append("Problem not identified")
+# DISABLED:         if (contact.get('spice_implication_score') or 0) < 15:
+# DISABLED:             spice_gaps.append("Business impact not quantified")
+# DISABLED:         if (contact.get('spice_critical_event_score') or 0) < 15:
+# DISABLED:             spice_gaps.append("No critical event")
+# DISABLED:         if (contact.get('spice_decision_score') or 0) < 15:
+# DISABLED:             spice_gaps.append("Decision process unknown")
+# DISABLED:         
+# DISABLED:         bant_gaps = []
+# DISABLED:         if (contact.get('bant_budget_score') or 0) < 15:
+# DISABLED:             bant_gaps.append("Budget not confirmed")
+# DISABLED:         if (contact.get('bant_authority_score') or 0) < 15:
+# DISABLED:             bant_gaps.append("Authority not mapped")
+# DISABLED:         if (contact.get('bant_need_score') or 0) < 15:
+# DISABLED:             bant_gaps.append("Need not validated")
+# DISABLED:         if (contact.get('bant_timeline_score') or 0) < 15:
+# DISABLED:             bant_gaps.append("Timeline not established")
+# DISABLED:         
+# DISABLED:         # ROI signals
+# DISABLED:         roi_quantified = bool(
+# DISABLED:             contact.get('spice_cost_of_inaction') or 
+# DISABLED:             contact.get('spice_revenue_opportunity')
+# DISABLED:         )
+# DISABLED:         
+# DISABLED:         urgency_signal = bool(contact.get('spice_critical_event_date'))
+# DISABLED:         
+# DISABLED:         return {
+# DISABLED:             "contact_id": contact_id,
+# DISABLED:             "contact_name": contact.get('name'),
+# DISABLED:             "company": contact.get('company'),
+# DISABLED:             
+# DISABLED:             "current_stage": stage,
+# DISABLED:             "next_action": next_action,
+# DISABLED:             "blocked": blocked,
+# DISABLED:             "can_propose": can_propose,
+# DISABLED:             "priority": priority,
+# DISABLED:             
+# DISABLED:             "scores": {
+# DISABLED:                 "spice": spice_score,
+# DISABLED:                 "bant": bant_score,
+# DISABLED:                 "apex": apex_score,
+# DISABLED:                 "hybrid": int((apex_score * 0.4) + (bant_score * 0.3) + (spice_score * 0.3))
+# DISABLED:             },
+# DISABLED:             
+# DISABLED:             "completion": {
+# DISABLED:                 "spice_complete": spice_complete,
+# DISABLED:                 "bant_complete": bant_complete,
+# DISABLED:                 "apex_fit": apex_fit,
+# DISABLED:                 "spice_percentage": spice_score,
+# DISABLED:                 "bant_percentage": bant_score
+# DISABLED:             },
+# DISABLED:             
+# DISABLED:             "gaps": {
+# DISABLED:                 "spice": spice_gaps,
+# DISABLED:                 "bant": bant_gaps
+# DISABLED:             },
+# DISABLED:             
+# DISABLED:             "signals": {
+# DISABLED:                 "roi_quantified": roi_quantified,
+# DISABLED:                 "cost_of_inaction": contact.get('spice_cost_of_inaction'),
+# DISABLED:                 "revenue_opportunity": contact.get('spice_revenue_opportunity'),
+# DISABLED:                 "urgency_signal": urgency_signal,
+# DISABLED:                 "critical_event_date": contact.get('spice_critical_event_date'),
+# DISABLED:                 "critical_event": contact.get('spice_critical_event_description')
+# DISABLED:             },
+# DISABLED:             
+# DISABLED:             "bant_details": {
+# DISABLED:                 "budget_confirmed": contact.get('bant_budget_confirmed'),
+# DISABLED:                 "authority_level": contact.get('bant_authority_level'),
+# DISABLED:                 "timeline_identified": contact.get('bant_timeline_identified')
+# DISABLED:             }
+# DISABLED:         }
+# DISABLED:         
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error calculating stage gate: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:     finally:
+# DISABLED:         conn.close()
+# DISABLED: 
+# DISABLED: 
+# DISABLED: @app.get("/api/pipeline/stage-distribution")
+# DISABLED: def get_pipeline_stage_distribution():
+# DISABLED:     """
+# DISABLED:     Get distribution of contacts across stage gates
+# DISABLED:     """
+# DISABLED:     conn = get_db_connection()
+# DISABLED:     try:
+# DISABLED:         cursor = conn.cursor()
+# DISABLED:         cursor.execute("""
+# DISABLED:             SELECT 
+# DISABLED:                 COUNT(*) as total,
+# DISABLED:                 SUM(CASE WHEN spice_total_score >= 60 AND bant_total_score >= 60 AND apex_score >= 60 THEN 1 ELSE 0 END) as proposal_ready,
+# DISABLED:                 SUM(CASE WHEN spice_total_score >= 60 AND bant_total_score < 60 THEN 1 ELSE 0 END) as needs_bant,
+# DISABLED:                 SUM(CASE WHEN bant_total_score >= 60 AND spice_total_score < 60 THEN 1 ELSE 0 END) as needs_spice,
+# DISABLED:                 SUM(CASE WHEN spice_total_score < 40 AND bant_total_score < 40 THEN 1 ELSE 0 END) as new_leads,
+# DISABLED:                 SUM(CASE WHEN spice_total_score >= 40 AND spice_total_score < 60 AND bant_total_score >= 40 AND bant_total_score < 60 THEN 1 ELSE 0 END) as in_discovery
+# DISABLED:             FROM contacts
+# DISABLED:         """)
+# DISABLED:         
+# DISABLED:         row = cursor.fetchone()
+# DISABLED:         
+# DISABLED:         return {
+# DISABLED:             "total_contacts": row[0],
+# DISABLED:             "stages": {
+# DISABLED:                 "proposal_ready": row[1],
+# DISABLED:                 "needs_bant_qualification": row[2],
+# DISABLED:                 "needs_spice_discovery": row[3],
+# DISABLED:                 "new_leads": row[4],
+# DISABLED:                 "in_discovery": row[5]
+# DISABLED:             },
+# DISABLED:             "conversion_funnel": {
+# DISABLED:                 "discovery_to_qualified": f"{(row[1] / row[0] * 100):.1f}%" if row[0] > 0 else "0%",
+# DISABLED:                 "qualified_rate": f"{((row[1] / row[0]) * 100):.1f}%" if row[0] > 0 else "0%"
+# DISABLED:             }
+# DISABLED:         }
+# DISABLED:         
+# DISABLED:     except Exception as e:
+# DISABLED:         logger.error(f"Error getting stage distribution: {str(e)}")
+# DISABLED:         raise HTTPException(status_code=500, detail=str(e))
+# DISABLED:     finally:
+# DISABLED:         conn.close()
