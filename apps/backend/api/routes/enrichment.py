@@ -53,7 +53,7 @@ async def enrich_contact_v2(contact_id: str, background_tasks: BackgroundTasks):
     
     try:
         # Import database function
-        from services.database import get_db
+        from tabase import get_db
         
         # Fetch contact from DB (UUID as string)
         with get_db() as conn:
@@ -99,7 +99,7 @@ async def batch_enrich(
         raise HTTPException(status_code=503, detail="Enrichment engine not available")
     
     try:
-        from services.database import get_db
+        from tabase import get_db
         
         contact_ids = []
         
@@ -146,7 +146,7 @@ def enrich_contact_internal(contact_id: str, contact_data: Optional[dict] = None
     - Preserves all fields
     """
     try:
-        from services.database import get_db
+        from tabase import get_db
         
         logger.info(f"⏳ Starting enrichment: {contact_id}")
         
@@ -230,7 +230,7 @@ def enrich_contact_internal(contact_id: str, contact_data: Optional[dict] = None
         
         # Save error
         try:
-            from services.database import get_db
+            from tabase import get_db
             with get_db() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
@@ -252,7 +252,7 @@ def enrich_contact_internal(contact_id: str, contact_data: Optional[dict] = None
 async def get_enrichment_status(contact_id: str):
     """Get enrichment status for a contact"""
     try:
-        from services.database import get_db
+        from tabase import get_db
         
         with get_db() as conn:
             cursor = conn.cursor()
@@ -286,7 +286,7 @@ async def get_enrichment_status(contact_id: str):
 async def get_enrichment_data(contact_id: str):
     """Get enrichment_data for a contact"""
     try:
-        from services.database import get_db
+        from tabase import get_db
         
         with get_db() as conn:
             cursor = conn.cursor()
