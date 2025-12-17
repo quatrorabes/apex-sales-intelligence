@@ -1,17 +1,21 @@
-"""
-APEX SALES INTELLIGENCE v2.0 - PRODUCTION BACKEND
-Multi-Vertical Sales Intelligence Platform
-Frameworks: APEX (MDCP + RSS) + BANT + SPICE
-Verticals: SaaS, Insurance, Equipment Leasing, Custom
-"""
+# SURGICAL FIX: Replace beginning of main.py up to "# PYDANTIC MODELS" section
+# Copy this block EXACTLY and replace lines 1-100 (approx) of your main.py
 
 import os
+import sys
 import json
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 from decimal import Decimal
+from pathlib import Path
+
+# ============================================================================
+# FIX IMPORT PATHS FOR RENDER DEPLOYMENT (CRITICAL)
+# ============================================================================
+BACKEND_DIR = Path(__file__).parent
+sys.path.insert(0, str(BACKEND_DIR))
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,37 +52,8 @@ app.add_middleware(
 )
 
 # ============================================================================
-# OUTREACH CONTENT GENERATORS - INITIALIZATION
+# DATABASE CONNECTION
 # ============================================================================
-
-content_generator = None
-linkedin_engine = None
-
-try:
-    from apps.backend.intelligence.engines.outreach.generators import ContentGenerator, LinkedInEngine
-    content_generator = ContentGenerator()
-    linkedin_engine = LinkedInEngine()
-    logger.info("✅ Outreach generators initialized successfully")
-except ImportError as e:
-    logger.warning(f"⚠️ Outreach generators not found: {str(e)}")
-    logger.warning("Run: mkdir -p apps/backend/intelligence/engines/outreach/generators")
-except Exception as e:
-    logger.error(f"❌ Error initializing outreach generators: {str(e)}")
-    
-# =============================================================================
-# V2 API ROUTES (Clean Schema)
-# =============================================================================
-from api.routes.contacts_v2 import router as contacts_v2_router
-app.include_router(contacts_v2_router)
-from api.routes.enrichment import router as enrichment_router
-app.include_router(enrichment_router)
-from api.routes.enrichment_apex_custom import router as apex_enrichment_router
-from api.routes.enrichment_premium import router as premium_enrichment_router
-from api.routes.playbook import router as playbook_router
-app.include_router(premium_enrichment_router)
-app.include_router(apex_enrichment_router)
-app.include_router(playbook_router)
-
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set")
@@ -91,14 +66,93 @@ def get_db():
     finally:
         conn.close()
         
+# ============================================================================
+# ENRICHMENT ENGINE v3.0 - APEX (PRIORITY)
+# ============================================================================
+enrichment_engine_v3 = None
+
+try:
+    from engines.intelligence.enrichment import ApexEnrichmentEngineV3
+    enrichment_engine_v3 = ApexEnrichmentEngineV3()
+    logger.info("✅ APEX Enrichment Engine v3.0 initialized successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ APEX v3.0 enrichment engine not found: {str(e)}")
+except Exception as e:
+    logger.error(f"❌ Error initializing APEX v3.0 engine: {str(e)}")
+    
+# ============================================================================
+# LEGACY ENRICHMENT ENGINE (FALLBACK)
+# ============================================================================
+enrichment_engine = None
+
 try:
     from enrichment_engine import EnhancedEnrichment
     enrichment_engine = EnhancedEnrichment()
-    logger.info("✅ Enrichment engine loaded")
+    logger.info("✅ Legacy enrichment engine loaded (fallback)")
 except ImportError:
-    enrichment_engine = None
-    logger.warning("⚠️ Enrichment engine not available")
+    logger.warning("⚠️ Legacy enrichment engine not available (fallback)")
     
+# ============================================================================
+# OUTREACH CONTENT GENERATORS - INITIALIZATION
+# ============================================================================
+content_generator = None
+linkedin_engine = None
+
+try:
+    from intelligence.engines.outreach.generators import ContentGenerator, LinkedInEngine
+    content_generator = ContentGenerator()
+    linkedin_engine = LinkedInEngine()
+    logger.info("✅ Outreach generators initialized successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Outreach generators not found: {str(e)}")
+except Exception as e:
+    logger.error(f"❌ Error initializing outreach generators: {str(e)}")
+    
+# ============================================================================
+# API ROUTES - V2 ENDPOINTS
+# ============================================================================
+    
+# Import contacts router (REQUIRED)
+try:
+    from api.routes.contacts_v2 import router as contacts_v2_router
+    app.include_router(contacts_v2_router)
+    logger.info("✅ Contacts v2 routes loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ Failed to import contacts_v2 routes: {e}")
+    
+# Import enrichment router (REQUIRED - has the v3.0 engine)
+try:
+    from api.routes.enrichment import router as enrichment_router
+    app.include_router(enrichment_router)
+    logger.info("✅ Enrichment routes loaded (v3.0)")
+except ImportError as e:
+    logger.warning(f"⚠️ Failed to import enrichment routes: {e}")
+    
+# Import premium enrichment router (OPTIONAL)
+try:
+    from api.routes.enrichment_premium import router as premium_enrichment_router
+    app.include_router(premium_enrichment_router)
+    logger.info("✅ Premium enrichment routes loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ Premium enrichment routes not available: {e}")
+    
+# Import APEX custom enrichment router (OPTIONAL)
+try:
+    from api.routes.enrichment_apex_custom import router as apex_enrichment_router
+    app.include_router(apex_enrichment_router)
+    logger.info("✅ APEX custom enrichment routes loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ APEX custom enrichment routes not available: {e}")
+    
+# Import playbook router (OPTIONAL)
+try:
+    from api.routes.playbook import router as playbook_router
+    app.include_router(playbook_router)
+    logger.info("✅ Playbook routes loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ Playbook routes not available: {e}")
+    
+
 # ============================================================================
 # PYDANTIC MODELS
 # ============================================================================
