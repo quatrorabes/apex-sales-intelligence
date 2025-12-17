@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { 
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import {
     Users, Grid, List, Columns, Search, Filter, RefreshCw,
     Loader2, ChevronLeft, Building2, Mail, Phone, Zap,
     ChevronRight, MoreHorizontal, Star, Clock, Target,
@@ -36,6 +36,8 @@ type ViewMode = 'table' | 'cards' | 'kanban' | 'compact';
 type SortField = 'name' | 'company' | 'match_score' | 'enriched_at' | 'title';
 
 export default function ContactsView() {
+    // ✅ FIX 2: Added navigate hook
+    const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [loading, setLoading] = useState(true);
@@ -45,22 +47,21 @@ export default function ContactsView() {
     const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
     const [filterTier, setFilterTier] = useState<string>('all');
     const [filterEnriched, setFilterEnriched] = useState<string>('all');
-    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [showFilters, setShowFilters] = useState(false);
     const [draggedContact, setDraggedContact] = useState<Contact | null>(null);
     const [dragOverTier, setDragOverTier] = useState<string | null>(null);
-    const [quickViewId, setQuickViewId] = useState<number | null>(null);
+    const [quickViewId, setQuickViewId] = useState<string | null>(null);
     const [bulkAction, setBulkAction] = useState<string>('');
     const [actionLoading, setActionLoading] = useState(false);
     const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
     const [page, setPage] = useState(1);
     const [totalContacts, setTotalContacts] = useState(0);
     const pageSize = 50;
-    
+
     useEffect(() => {
         fetchContacts();
     }, [page]);
-    
 
     useEffect(() => {
         fetchContacts();
@@ -91,7 +92,7 @@ export default function ContactsView() {
             setLoading(false);
         }
     };
-                
+
     const getDisplayName = (c: Contact) => {
         if (c.name) return c.name;
         return `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Unknown';
@@ -146,7 +147,7 @@ export default function ContactsView() {
         { id: 'MINIMAL', label: 'Unscored', color: 'border-t-gray-600', bg: 'bg-gray-500/5' },
     ];
 
-    const toggleSelect = (id: number) => {
+    const toggleSelect = (id: string) => {
         const newSet = new Set(selectedIds);
         if (newSet.has(id)) newSet.delete(id);
         else newSet.add(id);
@@ -159,6 +160,11 @@ export default function ContactsView() {
         } else {
             setSelectedIds(new Set(filteredContacts.map(c => c.id)));
         }
+    };
+
+    // ✅ FIX 3: Added handleContactClick function
+    const handleContactClick = (contactId: string) => {
+        navigate(`/contacts/${contactId}`);
     };
 
     // Drag & Drop handlers
@@ -181,14 +187,14 @@ export default function ContactsView() {
     const handleDrop = async (e: React.DragEvent, newTier: string) => {
         e.preventDefault();
         setDragOverTier(null);
-        
+
         if (!draggedContact) return;
-        
+
         // Update locally first (optimistic)
-        setContacts(prev => prev.map(c => 
+        setContacts(prev => prev.map(c =>
             c.id === draggedContact.id ? { ...c, match_tier: newTier } : c
         ));
-        
+
         // Update on server
         try {
             await fetch(`${API_URL}/api/contacts/${draggedContact.id}/tier`, {
@@ -202,7 +208,7 @@ export default function ContactsView() {
             fetchContacts();
             setNotification({ type: 'error', message: 'Failed to update tier' });
         }
-        
+
         setDraggedContact(null);
     };
 
@@ -210,7 +216,7 @@ export default function ContactsView() {
     const handleBulkAction = async (action: string) => {
         if (selectedIds.size === 0) return;
         setActionLoading(true);
-        
+
         try {
             if (action === 'enrich') {
                 const ids = Array.from(selectedIds).slice(0, 5);
@@ -250,7 +256,7 @@ export default function ContactsView() {
                 c.linkedin_url || ''
             ].map(v => `"${v}"`).join(','))
         ].join('\n');
-        
+
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -259,85 +265,6 @@ export default function ContactsView() {
         a.click();
         setNotification({ type: 'success', message: `Exported ${exportData.length} contacts` });
     };
-
-    // Quick View Modal
-    const QuickViewModal = ({ contact }: { contact: Contact }) => (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setQuickViewId(null)}>
-            <div className="bg-[#1e2228] rounded-2xl border border-gray-700 w-full max-w-lg mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="p-6 border-b border-gray-800">
-                    <div className="flex items-start justify-between">
-                        <div>
-                            <h2 className="text-xl font-bold text-white">{getDisplayName(contact)}</h2>
-                            <p className="text-gray-400">{contact.title}</p>
-                            <p className="text-blue-400 flex items-center gap-1 mt-1">
-                                <Building2 size={14} /> {contact.company}
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <div className="text-4xl font-bold text-white">{Math.round(contact.match_score || 0)}</div>
-                            {contact.match_tier && (
-                                <span className={`px-2 py-1 rounded border text-xs font-bold ${tierColors[contact.match_tier]}`}>
-                                    {contact.match_tier}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="p-6 space-y-4">
-                    {/* Score Breakdown */}
-                    <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-[#0f1114] rounded-lg p-3 text-center">
-                            <p className="text-2xl font-bold text-green-400">{Math.round(contact.fit_score || 0)}</p>
-                            <p className="text-gray-500 text-xs">FIT</p>
-                        </div>
-                        <div className="bg-[#0f1114] rounded-lg p-3 text-center">
-                            <p className="text-2xl font-bold text-blue-400">{Math.round(contact.relevance_score || 0)}</p>
-                            <p className="text-gray-500 text-xs">RELEVANCE</p>
-                        </div>
-                        <div className="bg-[#0f1114] rounded-lg p-3 text-center">
-                            <p className="text-2xl font-bold text-orange-400">{Math.round(contact.timing_score || 0)}</p>
-                            <p className="text-gray-500 text-xs">TIMING</p>
-                        </div>
-                    </div>
-                    
-                    {/* Contact Info */}
-                    <div className="space-y-2">
-                        {contact.email && (
-                            <a href={`mailto:${contact.email}`} className="flex items-center gap-2 text-gray-300 hover:text-white">
-                                <Mail size={16} className="text-gray-500" /> {contact.email}
-                            </a>
-                        )}
-                        {contact.phone && (
-                            <a href={`tel:${contact.phone}`} className="flex items-center gap-2 text-gray-300 hover:text-white">
-                                <Phone size={16} className="text-gray-500" /> {contact.phone}
-                            </a>
-                        )}
-                        {contact.linkedin_url && (
-                            <a href={contact.linkedin_url} target="_blank" className="flex items-center gap-2 text-blue-400 hover:text-blue-300">
-                                <Linkedin size={16} /> View LinkedIn
-                            </a>
-                        )}
-                    </div>
-                </div>
-                
-                <div className="p-4 bg-[#0f1114] border-t border-gray-800 flex items-center gap-3">
-                    <Link 
-                        to={`/contacts/${contact.id}`}
-                        className="flex-1 bg-purple-600 hover:bg-purple-700 text-center py-2 rounded-lg font-medium"
-                    >
-                        Full Profile
-                    </Link>
-                    <button 
-                        onClick={() => setQuickViewId(null)}
-                        className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg"
-                    >
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
 
     // ===================
     // TABLE VIEW
@@ -349,32 +276,32 @@ export default function ContactsView() {
                     <thead className="bg-[#0f1114] border-b border-gray-800">
                         <tr>
                             <th className="px-4 py-3 text-left w-10">
-                                <input 
-                                    type="checkbox" 
+                                <input
+                                    type="checkbox"
                                     checked={selectedIds.size === filteredContacts.length && filteredContacts.length > 0}
                                     onChange={selectAll}
                                     className="rounded bg-gray-700 border-gray-600"
                                 />
                             </th>
-                            <th 
+                            <th
                                 className="px-4 py-3 text-left text-gray-400 text-sm font-medium cursor-pointer hover:text-white group"
                                 onClick={() => { setSortField('name'); setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }}
                             >
                                 <span className="flex items-center gap-1">
-                                    Name 
+                                    Name
                                     <ArrowUpDown size={14} className={sortField === 'name' ? 'text-purple-400' : 'opacity-0 group-hover:opacity-100'} />
                                 </span>
                             </th>
-                            <th 
+                            <th
                                 className="px-4 py-3 text-left text-gray-400 text-sm font-medium cursor-pointer hover:text-white group"
                                 onClick={() => { setSortField('company'); setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }}
                             >
                                 <span className="flex items-center gap-1">
-                                    Company 
+                                    Company
                                     <ArrowUpDown size={14} className={sortField === 'company' ? 'text-purple-400' : 'opacity-0 group-hover:opacity-100'} />
                                 </span>
                             </th>
-                            <th 
+                            <th
                                 className="px-4 py-3 text-left text-gray-400 text-sm font-medium cursor-pointer hover:text-white group"
                                 onClick={() => { setSortField('title'); setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }}
                             >
@@ -383,12 +310,12 @@ export default function ContactsView() {
                                     <ArrowUpDown size={14} className={sortField === 'title' ? 'text-purple-400' : 'opacity-0 group-hover:opacity-100'} />
                                 </span>
                             </th>
-                            <th 
+                            <th
                                 className="px-4 py-3 text-center text-gray-400 text-sm font-medium cursor-pointer hover:text-white group"
                                 onClick={() => { setSortField('match_score'); setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }}
                             >
                                 <span className="flex items-center justify-center gap-1">
-                                    Score 
+                                    Score
                                     <ArrowUpDown size={14} className={sortField === 'match_score' ? 'text-purple-400' : 'opacity-0 group-hover:opacity-100'} />
                                 </span>
                             </th>
@@ -400,19 +327,26 @@ export default function ContactsView() {
                     </thead>
                     <tbody className="divide-y divide-gray-800">
                         {filteredContacts.map(c => (
-                            <tr key={c.id} className="hover:bg-gray-800/50 transition group">
+                            // ✅ FIX 4: Added onClick handler & cursor-pointer
+                            <tr
+                                key={c.id}
+                                onClick={() => handleContactClick(c.id)}
+                                className="hover:bg-gray-800/50 transition group cursor-pointer"
+                            >
                                 <td className="px-4 py-3">
-                                    <input 
+                                    <input
                                         type="checkbox"
                                         checked={selectedIds.has(c.id)}
                                         onChange={() => toggleSelect(c.id)}
+                                        onClick={(e) => e.stopPropagation()}
                                         className="rounded bg-gray-700 border-gray-600"
                                     />
                                 </td>
+                                {/* ✅ FIX 6: Removed Link, use plain span */}
                                 <td className="px-4 py-3">
-                                    <Link to={`/contacts/${c.id}`} className="font-medium text-white hover:text-purple-400">
+                                    <span className="font-medium text-white group-hover:text-purple-400">
                                         {getDisplayName(c)}
-                                    </Link>
+                                    </span>
                                 </td>
                                 <td className="px-4 py-3 text-gray-400">{c.company || '-'}</td>
                                 <td className="px-4 py-3 text-gray-400 text-sm max-w-[200px] truncate">{c.title || '-'}</td>
@@ -428,48 +362,38 @@ export default function ContactsView() {
                                         </span>
                                     )}
                                 </td>
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-3 text-center">
                                     <div className="flex items-center justify-center gap-2">
-                                        {c.email && (
-                                            <a href={`mailto:${c.email}`} className="text-gray-500 hover:text-white">
-                                                <Mail size={16} />
-                                            </a>
-                                        )}
-                                        {c.phone && (
-                                            <a href={`tel:${c.phone}`} className="text-gray-500 hover:text-white">
-                                                <Phone size={16} />
-                                            </a>
-                                        )}
-                                        {c.linkedin_url && (
-                                            <a href={c.linkedin_url} target="_blank" className="text-gray-500 hover:text-blue-400">
-                                                <Linkedin size={16} />
-                                            </a>
-                                        )}
+                                        {c.email && <Mail size={16} className="text-gray-500" />}
+                                        {c.phone && <Phone size={16} className="text-gray-500" />}
+                                        {c.linkedin_url && <Linkedin size={16} className="text-gray-500" />}
                                     </div>
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                    {(c.enrichment_status === 'completed' || c.apex_enrichment_data) ? (
-                                        <span className="text-green-400" title="Enriched"><Check size={18} /></span>
+                                    {c.enrichment_status === 'completed' || c.apex_enrichment_data ? (
+                                        <span className="flex items-center justify-center gap-1 text-green-400">
+                                            <Check size={16} />
+                                            Enriched
+                                        </span>
+                                    ) : c.enrichment_status === 'pending' ? (
+                                        <span className="flex items-center justify-center gap-1 text-yellow-400">
+                                            <Clock size={16} />
+                                            Pending
+                                        </span>
                                     ) : (
-                                        <span className="text-gray-600" title="Not enriched"><Clock size={18} /></span>
+                                        <span className="text-gray-500">-</span>
                                     )}
                                 </td>
-                                <td className="px-4 py-3">
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                                        <button 
-                                            onClick={() => setQuickViewId(c.id)}
-                                            className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-white"
-                                            title="Quick View"
-                                        >
-                                            <Eye size={16} />
-                                        </button>
-                                        <Link 
-                                            to={`/contacts/${c.id}`}
-                                            className="p-1 hover:bg-gray-700 rounded text-gray-500 hover:text-white"
-                                        >
-                                            <ChevronRight size={16} />
-                                        </Link>
-                                    </div>
+                                <td className="px-4 py-3 text-center">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setQuickViewId(c.id);
+                                        }}
+                                        className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white opacity-0 group-hover:opacity-100"
+                                    >
+                                        <Eye size={16} />
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -487,19 +411,23 @@ export default function ContactsView() {
             {filteredContacts.map(c => (
                 <div
                     key={c.id}
-                    className="bg-[#1e2228] border border-gray-800 rounded-xl overflow-hidden hover:border-gray-700 transition group relative"
+                    onClick={() => handleContactClick(c.id)}
+                    className="bg-[#1e2228] border border-gray-800 rounded-xl overflow-hidden hover:border-gray-700 transition group relative cursor-pointer"
                 >
                     {/* Quick actions on hover */}
                     <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
-                        <button 
-                            onClick={() => setQuickViewId(c.id)}
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setQuickViewId(c.id);
+                            }}
                             className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
                         >
                             <Eye size={14} />
                         </button>
                     </div>
-                    
-                    <Link to={`/contacts/${c.id}`} className="block p-5">
+
+                    <div className="block p-5">
                         <div className="flex items-start justify-between mb-3">
                             <div className="flex-1 min-w-0">
                                 <h3 className="font-semibold text-white truncate group-hover:text-purple-400">
@@ -530,8 +458,8 @@ export default function ContactsView() {
                                 {(c.enrichment_status === 'completed' || c.apex_enrichment_data) && <Zap size={14} className="text-purple-400" />}
                             </div>
                         </div>
-                    </Link>
-                    
+                    </div>
+
                     {/* Score breakdown footer */}
                     {c.fit_score !== undefined && (
                         <div className="px-5 py-3 bg-[#0f1114] border-t border-gray-800 flex justify-between text-xs">
@@ -546,21 +474,21 @@ export default function ContactsView() {
     );
 
     // ===================
-    // KANBAN VIEW (with Drag & Drop)
+    // KANBAN VIEW
     // ===================
     const KanbanView = () => (
         <div className="grid grid-cols-4 gap-4 h-[calc(100vh-220px)]">
             {kanbanColumns.map(col => {
-                const colContacts = filteredContacts.filter(c => 
-                    col.id === 'MINIMAL' 
+                const colContacts = filteredContacts.filter(c =>
+                    col.id === 'MINIMAL'
                         ? (!c.match_tier || c.match_tier === 'MINIMAL')
                         : c.match_tier === col.id
                 );
                 const isDragOver = dragOverTier === col.id;
-                
+
                 return (
-                    <div 
-                        key={col.id} 
+                    <div
+                        key={col.id}
                         className="flex flex-col"
                         onDragOver={(e) => handleDragOver(e, col.id)}
                         onDragLeave={handleDragLeave}
@@ -583,6 +511,7 @@ export default function ContactsView() {
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, c)}
                                     onDragEnd={() => setDraggedContact(null)}
+                                    onClick={() => handleContactClick(c.id)}
                                     className={`bg-[#1e2228] border border-gray-700 rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-gray-600 transition group ${
                                         draggedContact?.id === c.id ? 'opacity-50' : ''
                                     }`}
@@ -590,9 +519,7 @@ export default function ContactsView() {
                                     <div className="flex items-start gap-2">
                                         <GripVertical size={14} className="text-gray-600 mt-0.5 opacity-0 group-hover:opacity-100" />
                                         <div className="flex-1 min-w-0">
-                                            <Link to={`/contacts/${c.id}`} className="hover:text-purple-400">
-                                                <h4 className="font-medium text-white text-sm truncate">{getDisplayName(c)}</h4>
-                                            </Link>
+                                            <h4 className="font-medium text-white text-sm truncate group-hover:text-purple-400">{getDisplayName(c)}</h4>
                                             <p className="text-gray-500 text-xs truncate">{c.title}</p>
                                             <p className="text-blue-400 text-xs truncate">{c.company}</p>
                                         </div>
@@ -629,15 +556,16 @@ export default function ContactsView() {
     const CompactView = () => (
         <div className="bg-[#1e2228] rounded-xl border border-gray-800 divide-y divide-gray-800">
             {filteredContacts.map(c => (
-                <div key={c.id} className="flex items-center gap-4 px-4 py-2 hover:bg-gray-800/50 group">
-                    <input 
+                <div key={c.id} onClick={() => handleContactClick(c.id)} className="flex items-center gap-4 px-4 py-2 hover:bg-gray-800/50 group cursor-pointer">
+                    <input
                         type="checkbox"
                         checked={selectedIds.has(c.id)}
                         onChange={() => toggleSelect(c.id)}
+                        onClick={(e) => e.stopPropagation()}
                         className="rounded bg-gray-700 border-gray-600"
                     />
-                    <Link to={`/contacts/${c.id}`} className="flex-1 flex items-center gap-4 min-w-0">
-                        <span className="font-medium text-white truncate w-48">{getDisplayName(c)}</span>
+                    <div className="flex-1 flex items-center gap-4 min-w-0">
+                        <span className="font-medium text-white truncate w-48 group-hover:text-purple-400">{getDisplayName(c)}</span>
                         <span className="text-gray-500 text-sm truncate w-32">{c.title}</span>
                         <span className="text-blue-400 text-sm truncate w-40">{c.company}</span>
                         <span className="text-white font-bold w-12 text-center">{Math.round(c.match_score || 0)}</span>
@@ -646,9 +574,9 @@ export default function ContactsView() {
                                 {c.match_tier}
                             </span>
                         )}
-                    </Link>
+                    </div>
                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100">
-                        <button onClick={() => setQuickViewId(c.id)} className="p-1 text-gray-500 hover:text-white">
+                        <button onClick={(e) => { e.stopPropagation(); setQuickViewId(c.id); }} className="p-1 text-gray-500 hover:text-white">
                             <Eye size={14} />
                         </button>
                     </div>
@@ -659,209 +587,144 @@ export default function ContactsView() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#0f1114] flex items-center justify-center">
-                <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-[#0f1114] text-white">
-            {/* Notification Toast */}
+        <div className="space-y-4">
+            {/* Notification */}
             {notification && (
-                <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 animate-in slide-in-from-right ${
-                    notification.type === 'success' ? 'bg-green-600' : 'bg-red-600'
-                }`}>
-                    {notification.type === 'success' ? <Check size={18} /> : <AlertCircle size={18} />}
+                <div className={`p-4 rounded-lg border ${notification.type === 'success' ? 'bg-green-500/10 border-green-500/50 text-green-400' : 'bg-red-500/10 border-red-500/50 text-red-400'}`}>
                     {notification.message}
                 </div>
             )}
 
-            {/* Quick View Modal */}
-            {quickViewId && (
-                <QuickViewModal contact={contacts.find(c => c.id === quickViewId)!} />
-            )}
-
-            {/* Header */}
-            <div className="bg-[#1a1d21] border-b border-gray-800 px-6 py-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link to="/" className="text-gray-400 hover:text-white flex items-center gap-1">
-                            <ChevronLeft size={20} /> Home
-                        </Link>
-                        <h1 className="text-2xl font-bold flex items-center gap-2">
-                            <Users className="text-blue-400" /> Contacts
-                        </h1>
-                        <span className="bg-gray-800 text-gray-400 px-2 py-1 rounded text-sm">
-                            {filteredContacts.length} of {contacts.length}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {/* View Toggle */}
-                        <div className="bg-[#0f1114] rounded-lg p-1 flex">
-                            {[
-                                { id: 'table', icon: <List size={18} />, label: 'Table' },
-                                { id: 'cards', icon: <Grid size={18} />, label: 'Cards' },
-                                { id: 'kanban', icon: <Columns size={18} />, label: 'Kanban' },
-                                { id: 'compact', icon: <LayoutGrid size={18} />, label: 'Compact' },
-                            ].map(v => (
-                                <button
-                                    key={v.id}
-                                    onClick={() => setView(v.id as ViewMode)}
-                                    className={`p-2 rounded transition ${view === v.id ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                                    title={v.label}
-                                >
-                                    {v.icon}
-                                </button>
-                            ))}
-                        </div>
-                        
-                        <button 
-                            onClick={() => setShowFilters(!showFilters)}
-                            className={`p-2 rounded-lg transition ${showFilters ? 'bg-purple-600 text-white' : 'hover:bg-gray-800 text-gray-400'}`}
-                        >
-                            <SlidersHorizontal size={20} />
-                        </button>
-                        
-                        <button onClick={fetchContacts} className="p-2 hover:bg-gray-800 rounded-lg">
-                            <RefreshCw size={20} className="text-gray-400" />
-                        </button>
-                        
-                        <button 
-                            onClick={exportContacts}
-                            className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white"
-                            title="Export CSV"
-                        >
-                            <Download size={20} />
-                        </button>
-                    </div>
-                </div>
-
-                {/* Filters Row */}
-                <div className="flex items-center gap-4 mt-4">
-                    {/* Search */}
+            {/* Controls */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 flex-1">
                     <div className="relative flex-1 max-w-md">
-                        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                         <input
                             type="text"
+                            placeholder="Search contacts..."
                             value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Search name, company, title..."
-                            className="w-full bg-[#0f1114] border border-gray-700 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 bg-[#0f1114] border border-gray-800 rounded-lg text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
-                        {search && (
-                            <button 
-                                onClick={() => setSearch('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                            >
-                                <X size={16} />
-                            </button>
-                        )}
                     </div>
-                    
-                    {/* Filters */}
-                    {showFilters && (
-                        <>
-                            <select
-                                value={filterTier}
-                                onChange={e => setFilterTier(e.target.value)}
-                                className="bg-[#0f1114] border border-gray-700 rounded-lg px-4 py-2 text-white"
-                            >
-                                <option value="all">All Tiers</option>
-                                <option value="HIGH">🟢 High Priority</option>
-                                <option value="MEDIUM">🟡 Medium</option>
-                                <option value="LOW">🟠 Low</option>
-                                <option value="MINIMAL">🔴 Minimal</option>
-                            </select>
-                            
-                            <select
-                                value={filterEnriched}
-                                onChange={e => setFilterEnriched(e.target.value)}
-                                className="bg-[#0f1114] border border-gray-700 rounded-lg px-4 py-2 text-white"
-                            >
-                                <option value="all">All Status</option>
-                                <option value="yes">✅ Enriched</option>
-                                <option value="no">⏳ Not Enriched</option>
-                            </select>
-                        </>
-                    )}
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white"
+                    >
+                        <SlidersHorizontal size={18} />
+                    </button>
+                </div>
 
-                    {/* Bulk Actions */}
+                <div className="flex items-center gap-2">
                     {selectedIds.size > 0 && (
-                        <div className="flex items-center gap-2 bg-purple-900/30 border border-purple-500/50 rounded-lg px-4 py-2 ml-auto">
-                            <span className="text-purple-300 text-sm font-medium">{selectedIds.size} selected</span>
-                            <div className="w-px h-5 bg-purple-500/50" />
-                            <button 
-                                onClick={() => handleBulkAction('enrich')}
-                                disabled={actionLoading}
-                                className="text-purple-400 hover:text-white text-sm flex items-center gap-1"
+                        <div className="flex items-center gap-2 bg-purple-500/10 border border-purple-500/50 rounded-lg px-3 py-2">
+                            <span className="text-sm text-purple-300">{selectedIds.size} selected</span>
+                            <select
+                                value={bulkAction}
+                                onChange={(e) => setBulkAction(e.target.value)}
+                                className="bg-purple-500/10 border border-purple-500/50 rounded px-2 py-1 text-white text-sm focus:outline-none"
                             >
-                                <Zap size={14} /> Enrich
-                            </button>
-                            <button 
-                                onClick={() => handleBulkAction('export')}
-                                className="text-purple-400 hover:text-white text-sm flex items-center gap-1"
-                            >
-                                <Download size={14} /> Export
-                            </button>
-                            <button 
-                                onClick={() => setSelectedIds(new Set())} 
-                                className="text-gray-500 hover:text-white ml-2"
-                            >
-                                <X size={16} />
-                            </button>
+                                <option value="">Bulk actions...</option>
+                                <option value="enrich">Enrich</option>
+                                <option value="delete">Delete</option>
+                            </select>
                         </div>
                     )}
-                </div>
-            </div>
 
-            {/* Content */}
-            <div className="p-6">
-                {view === 'table' && <TableView />}
-                {view === 'cards' && <CardsView />}
-                {view === 'kanban' && <KanbanView />}
-                {view === 'compact' && <CompactView />}
-
-                {filteredContacts.length === 0 && (
-                    <div className="text-center py-16">
-                        <Users className="w-16 h-16 text-gray-700 mx-auto mb-4" />
-                        <p className="text-gray-500">No contacts found</p>
-                        {search && (
-                            <button onClick={() => setSearch('')} className="text-purple-400 hover:text-purple-300 mt-2">
-                                Clear search
-                            </button>
-                        )}
+                    <div className="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
+                        <button
+                            onClick={() => setView('table')}
+                            className={`p-2 rounded ${view === 'table' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <List size={18} />
+                        </button>
+                        <button
+                            onClick={() => setView('cards')}
+                            className={`p-2 rounded ${view === 'cards' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Grid size={18} />
+                        </button>
+                        <button
+                            onClick={() => setView('kanban')}
+                            className={`p-2 rounded ${view === 'kanban' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            <Columns size={18} />
+                        </button>
                     </div>
-                )}
+                </div>
             </div>
 
-            {/* ADD PAGINATION HERE */}
+            {/* Filter panel */}
+            {showFilters && (
+                <div className="bg-[#1e2228] border border-gray-800 rounded-lg p-4 space-y-3">
+                    <div>
+                        <label className="text-sm text-gray-400 mb-2 block">Match Tier</label>
+                        <select
+                            value={filterTier}
+                            onChange={(e) => setFilterTier(e.target.value)}
+                            className="w-full bg-[#0f1114] border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                            <option value="all">All Tiers</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                            <option value="MINIMAL">Minimal</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-sm text-gray-400 mb-2 block">Enrichment Status</label>
+                        <select
+                            value={filterEnriched}
+                            onChange={(e) => setFilterEnriched(e.target.value)}
+                            className="w-full bg-[#0f1114] border border-gray-700 rounded px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                            <option value="all">All</option>
+                            <option value="yes">Enriched</option>
+                            <option value="no">Not Enriched</option>
+                        </select>
+                    </div>
+                </div>
+            )}
+
+            {/* View rendering */}
+            {view === 'table' && <TableView />}
+            {view === 'cards' && <CardsView />}
+            {view === 'kanban' && <KanbanView />}
+            {view === 'compact' && <CompactView />}
+
             {/* Pagination */}
-            <div className="flex items-center justify-between px-6 py-4 bg-[#1a1d21] border-t border-gray-800">
-                <div className="text-sm text-gray-400">
-                    Showing {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, totalContacts)} of {totalContacts} contacts
+            {view === 'table' && (
+                <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-400">
+                        Showing {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, totalContacts)} of {totalContacts} contacts
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                            className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-50"
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
+                        <span className="text-sm text-gray-400">Page {page}</span>
+                        <button
+                            onClick={() => setPage(p => p + 1)}
+                            disabled={page * pageSize >= totalContacts}
+                            className="p-2 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white disabled:opacity-50"
+                        >
+                            <ChevronRight size={18} />
+                        </button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1}
-                        className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm flex items-center gap-1"
-                    >
-                        <ChevronLeft size={16} /> Previous
-                    </button>
-                    <span className="px-3 py-1.5 text-sm text-gray-300">
-                        Page {page} of {Math.ceil(totalContacts / pageSize) || 1}
-                    </span>
-                    <button
-                        onClick={() => setPage(p => p + 1)}
-                        disabled={page >= Math.ceil(totalContacts / pageSize)}
-                        className="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm flex items-center gap-1"
-                    >
-                        Next <ChevronRight size={16} />
-                    </button>
-                </div>
-            </div>
-
+            )}
         </div>
     );
 }
