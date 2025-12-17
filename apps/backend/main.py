@@ -2860,3 +2860,11 @@ async def get_contact_by_uuid(contact_uuid: str):
         logger.error(f"Get contact by UUID error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Enrichment v2 routes
+try:
+    from api.routes.enrichment_debug import router as enrichment_debug_router
+    app.include_router(enrichment_debug_router)
+    logger.info("✅ Enrichment v2 debug routes registered")
+except ImportError as e:
+    logger.warning(f"Enrichment routes: {e}")
