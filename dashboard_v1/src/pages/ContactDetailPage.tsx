@@ -49,18 +49,15 @@ type SectionsMap = Record<string, string>;
 const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'https://apex-backend-i7b0.onrender.com';
 
 function getSectionsFromEnrichment(contact: Contact): SectionsMap {
-  const enrichment = contact.enrichment || null;
-  const legacyRaw = enrichment?.raw_profile || contact.profile_content || '';
-  if (enrichment?.sections && typeof enrichment.sections === 'object') {
-    const s = enrichment.sections as Record<string, string | undefined>;
-    console.log('[APEX v2.0] Backend sections:', Object.keys(s));
-    return s as SectionsMap;
+  const enrichmentData = (contact as any).enrichment_data;
+  if (enrichmentData?.sections?.raw_text) {
+    console.log('[APEX v2.1] Using enrichment_data.sections.raw_text');
+    return { raw_profile: enrichmentData.sections.raw_text };
   }
-  if (legacyRaw && legacyRaw.length > 100) {
-    console.log('[APEX v1.0] Using legacy raw profile');
-    return { raw_profile: legacyRaw };
-  }
-  return {};
+  if (enrichmentData?.raw_profile) {
+    console.log('[APEX v2.1] Using enrichment_data.raw_profile');
+    return { raw_profile: enrichmentData.raw_profile };
+  }  return {};
 }
 
 function renderMarkdownBlock(text: string): JSX.Element {
