@@ -1,51 +1,57 @@
 """
-apps/backend/services/enrichment_integration.py
-
 Enrichment Integration Service
-Orchestrates parsing and normalization of enrichment data.
-
-Author: Apex Sales Intelligence Team
-Date: 2025-12-16
+Orchestrates apex_custom_enrichment.py + enrichment_parser.py
 """
 
-from typing import Dict, Any
-from .enrichment_parser import parse_enrichment
+import sys
+from pathlib import Path
+import json
+
+# Add intelligence path
+BACKEND_DIR = Path(__file__).parent.parent
+INTELLIGENCE_PATH = BACKEND_DIR / 'intelligence'
+sys.path.insert(0, str(INTELLIGENCE_PATH))
+
+from services.enrichment_parser import parse_enrichment
 
 
-def integrate_enrichment_result(raw_enrichment_output: str) -> Dict[str, Any]:
+def integrate_enrichment_result(raw_enrichment_output: str) -> dict:
     """
-    Integrate raw enrichment output into structured format.
-    
-    This is the main orchestration point called by main.py after
-    the enrichment engine completes.
-    
-    Flow:
-        1. Parse raw markdown into sections
-        2. Return structured dict ready for JSON serialization
-        3. DB persistence happens in caller (main.py)
-    
-    Args:
-        raw_enrichment_output: Raw markdown from enrichment engine
-        
-    Returns:
-        Structured dict with sections and metadata
+    Takes raw output from apex_custom_enrichment.py Stage 2 (GPT-4 synthesis)
+    Parses it into structured sections
+    Returns enrichment object ready for Postgres storage
     """
-    return parse_enrichment(raw_enrichment_output)
+
+    parsed = parse_enrichment(raw_enrichment_output)
+
+    enrichment_object = {
+        "version": "2.0",
+        "raw_profile": raw_enrichment_output,
+        "sections": parsed["sections"],
+        "metadata": parsed["metadata"]
+    }
+
+    return enrichment_object
 
 
-if __name__ == "__main__":
-    # Quick smoke test
-    test_input = """
-## overview
-Test contact at Test Company.
+def parse_existing_enrichment(contact_enrichment: dict) -> dict:
+    """
+    Parse existing enrichment data that might be in old format
+    Useful for migrating existing enriched contacts
+    """
 
-## background_and_experience
-5 years experience in the field.
-"""
-    
-    result = integrate_enrichment_result(test_input)
-    print("Integration Test:")
-    print(f"  Format: {result['metadata']['format_detected']}")
-    print(f"  Sections: {result['metadata']['total_sections']}")
-    print(f"  Keys: {list(result['sections'].keys())}")
-    print("✅ Integration service operational")
+    # Check if already in v2 format
+    if isinstance(contact_enrichment, dict) and "sections" in contact_enrichment:
+        return contact_enrichment
+
+    # If it's a string or old format, parse it
+    if isinstance(contact_enrichment, str):
+        raw_text = contact_enrichment
+    elif isinstance(contact_enrichment, dict) and "raw_profile" in contact_enrichment:
+        raw_text = contact_enrichment["raw_profile"]
+    else:
+        # Unknown format, return as-is
+        return contact_enrichment
+
+    # Parse it
+    return integrate_enrichment_result(raw_text)
