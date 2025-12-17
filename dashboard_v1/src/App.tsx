@@ -1,22 +1,17 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import LandingPage from './components/LandingPage';
-import ContactsView from './components/ContactsView';
-import ContactDetail from './components/ContactDetail';
-import TodaysBoard from './components/TodaysBoard';
+import React from 'react';
 import './App.css';
 
 function App() {
   return (
-    <Router>
-      <div className="app">
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/contacts" element={<ContactsView />} />
-          <Route path="/contacts/:contactId" element={<ContactDetail />} />
-          <Route path="/today" element={<TodaysBoard />} />
-        </Routes>
-      </div>
-    </Router>
+    <div className="app">
+      <header className="app-header">
+        <h1>APEX Sales Intelligence</h1>
+        <p>Unified sales qualification and enrichment platform</p>
+      </header>
+      <main className="app-main">
+        <p>Dashboard loading...</p>
+      </main>
+    </div>
   );
 }
 
