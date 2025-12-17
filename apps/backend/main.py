@@ -70,8 +70,8 @@ except Exception as e:
 # =============================================================================
 from api.routes.contacts_v2 import router as contacts_v2_router
 app.include_router(contacts_v2_router)
-from api.routes.contacts_v2_enrichment import router as contacts_v2_enrichment_router
-app.include_router(contacts_v2_enrichment_router)
+from api.routes.enrichment import router as enrichment_router
+app.include_router(enrichment_router)
 from api.routes.enrichment_apex_custom import router as apex_enrichment_router
 from api.routes.enrichment_premium import router as premium_enrichment_router
 from api.routes.playbook import router as playbook_router
