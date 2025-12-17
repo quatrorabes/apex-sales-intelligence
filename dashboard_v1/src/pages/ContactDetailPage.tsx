@@ -54,7 +54,7 @@ export const ContactDetailPage: React.FC = () => {
   const fetchContact = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${config.APIBASEURL}/api/contacts/${id}`);
+      const response = await fetch(`${config.APIBASEURL}/api/v2/contacts/${id}`);
       const data = await response.json();
       
       if (data.success && data.contact) {
