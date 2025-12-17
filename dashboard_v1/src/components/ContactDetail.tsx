@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
+import { config } from '../config';
 import '../styles/ContactDetail.css';
 
 interface Contact {
@@ -17,46 +18,34 @@ interface Contact {
   unified_qualification_score?: number;
 }
 
-interface EnrichmentData {
-  markdown?: string;
-  raw_context?: Record<string, string>;
-  enriched_at?: string;
-}
-
 export default function ContactDetail() {
   const { contactId } = useParams<{ contactId: string }>();
+  const navigate = useNavigate();
   const [contact, setContact] = useState<Contact | null>(null);
-  const [enrichmentData, setEnrichmentData] = useState<EnrichmentData | null>(null);
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
-
-  const API_URL = process.env.REACT_APP_API_URL || 'https://apex-backend-i7b0.onrender.com';
+  const [generatedEmail, setGeneratedEmail] = useState<string | null>(null);
+  const [generatedCall, setGeneratedCall] = useState<string | null>(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showCallModal, setShowCallModal] = useState(false);
 
   useEffect(() => {
-    fetchContact();
+    if (contactId) fetchContact();
   }, [contactId]);
 
   const fetchContact = async () => {
+    if (!contactId) return;
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/contacts/${contactId}`);
-      if (!response.ok) throw new Error('Failed to fetch contact');
+      const url = `${config.API_BASE_URL}/api/contacts/${contactId}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('Contact not found');
       
       const data = await response.json();
       setContact(data);
-      
-      if (data.enrichment_data) {
-        try {
-          const enrichData = typeof data.enrichment_data === 'string' 
-            ? JSON.parse(data.enrichment_data) 
-            : data.enrichment_data;
-          setEnrichmentData(enrichData);
-        } catch (e) {
-          console.error('Failed to parse enrichment data:', e);
-        }
-      }
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -69,34 +58,42 @@ export default function ContactDetail() {
     
     try {
       setEnriching(true);
-      const response = await fetch(`${API_URL}/api/v2/contacts/${contactId}/enrich`, {
+      setError(null);
+      const url = `${config.API_BASE_URL}/api/v2/contacts/${contactId}/enrich`;
+      
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
       
       if (!response.ok) throw new Error('Enrichment failed');
       
+      // Poll for completion
       let completed = false;
       let attempts = 0;
       
-      while (!completed && attempts < 120) {
+      while (!completed && attempts < 180) {
         await new Promise(r => setTimeout(r, 2000));
         
-        const statusResponse = await fetch(
-          `${API_URL}/api/v2/contacts/${contactId}/enrichment-status`
-        );
+        const statusUrl = `${config.API_BASE_URL}/api/v2/contacts/${contactId}/enrichment-status`;
+        const statusResponse = await fetch(statusUrl);
+        
+        if (!statusResponse.ok) {
+          attempts++;
+          continue;
+        }
+        
         const statusData = await statusResponse.json();
         
         if (statusData.enrichment_status === 'completed') {
           completed = true;
+          await new Promise(r => setTimeout(r, 500));
           await fetchContact();
         }
         attempts++;
       }
       
-      if (!completed) {
-        setError('Enrichment timeout - please check back later');
-      }
+      if (!completed) setError('Enrichment timed out');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enrichment failed');
     } finally {
@@ -104,150 +101,140 @@ export default function ContactDetail() {
     }
   };
 
-  const parseMarkdownSections = (markdown: string): Record<string, string> => {
-    const sections: Record<string, string> = {};
-    const parts = markdown.split(/^## /m);
-    
-    for (const part of parts) {
-      if (!part.trim()) continue;
-      const lines = part.split('\n');
-      const header = lines[0].trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_|_$/g, '');
-      const content = lines.slice(1).join('\n').trim();
-      if (header && content) sections[header] = content;
+  const generateEmail = async () => {
+    if (!contactId || !contact?.enrichment_data) {
+      setError('Contact not enriched');
+      return;
     }
     
-    return sections;
+    try {
+      const url = `${config.API_BASE_URL}/api/contacts/${contactId}/generate-email`;
+      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      if (!response.ok) throw new Error('Failed to generate email');
+      const data = await response.json();
+      setGeneratedEmail(data.email);
+      setShowEmailModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed');
+    }
+  };
+
+  const generateCallScript = async () => {
+    if (!contactId || !contact?.enrichment_data) {
+      setError('Contact not enriched');
+      return;
+    }
+    
+    try {
+      const url = `${config.API_BASE_URL}/api/contacts/${contactId}/generate-call-script`;
+      const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      if (!response.ok) throw new Error('Failed to generate script');
+      const data = await response.json();
+      setGeneratedCall(data.script);
+      setShowCallModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed');
+    }
+  };
+
+  const parseEnrichmentData = (data: any) => {
+    if (!data) return {};
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch {
+        return {};
+      }
+    }
+    return data;
   };
 
   if (loading) return <div className="loading">Loading contact...</div>;
-  if (error && !contact) return <div className="error">Error: {error}</div>;
+  if (error && !contact) return <div className="error">{error} <button onClick={() => navigate('/')}>Back</button></div>;
   if (!contact) return <div className="error">Contact not found</div>;
 
-  const enrichedSections = enrichmentData?.markdown 
-    ? parseMarkdownSections(enrichmentData.markdown)
-    : {};
+  const enrichmentData = parseEnrichmentData(contact.enrichment_data);
+  const isEnriched = contact.enrichment_status === 'completed' && enrichmentData.markdown;
 
   return (
     <div className="contact-detail">
+      <button className="back-button" onClick={() => navigate('/')}>← Back</button>
+      
       <header className="detail-header">
         <div className="header-content">
           <h1>{contact.name}</h1>
           <p className="subtitle">{contact.title} at {contact.company}</p>
         </div>
         <div className="header-actions">
-          {contact.enrichment_status !== 'completed' && (
-            <button 
-              className="enrich-btn"
-              onClick={triggerEnrichment}
-              disabled={enriching}
-            >
-              {enriching ? 'Enriching...' : '✨ Enrich Contact'}
-            </button>
-          )}
+          <button 
+            className="btn btn-primary"
+            onClick={triggerEnrichment}
+            disabled={enriching || isEnriched}
+          >
+            {enriching ? 'Enriching...' : isEnriched ? '✓ Enriched' : 'Enrich'}
+          </button>
         </div>
       </header>
 
+      {isEnriched && (
+        <div className="action-buttons">
+          <button className="btn btn-secondary" onClick={generateEmail}>📧 Email</button>
+          <button className="btn btn-secondary" onClick={generateCallScript}>☎️ Call Script</button>
+        </div>
+      )}
+
       <div className="detail-scores">
-        {contact.mdcp_score && (
-          <div className="score-card">
-            <div className="score-label">MDCP Score</div>
-            <div className="score-value">{Math.round(contact.mdcp_score)}</div>
-          </div>
-        )}
-        {contact.rss_score && (
-          <div className="score-card">
-            <div className="score-label">RSS Score</div>
-            <div className="score-value">{Math.round(contact.rss_score)}</div>
-          </div>
-        )}
-        {contact.unified_qualification_score && (
-          <div className="score-card highlight">
-            <div className="score-label">Unified Score</div>
-            <div className="score-value">{Math.round(contact.unified_qualification_score)}</div>
-          </div>
-        )}
+        {contact.mdcp_score && <div className="score-card"><label>MDCP</label><value>{Math.round(contact.mdcp_score)}</value></div>}
+        {contact.rss_score && <div className="score-card"><label>RSS</label><value>{Math.round(contact.rss_score)}</value></div>}
+        {contact.unified_qualification_score && <div className="score-card highlight"><label>Score</label><value>{Math.round(contact.unified_qualification_score)}</value></div>}
       </div>
 
       <div className="detail-tabs">
-        <button 
-          className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
-        >
-          Overview
-        </button>
-        <button 
-          className={`tab ${activeTab === 'enrichment' ? 'active' : ''}`}
-          onClick={() => setActiveTab('enrichment')}
-        >
-          Enrichment
-        </button>
+        <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>Overview</button>
+        {isEnriched && <button className={`tab ${activeTab === 'enrichment' ? 'active' : ''}`} onClick={() => setActiveTab('enrichment')}>Enrichment</button>}
       </div>
 
       <div className="detail-content">
         {activeTab === 'overview' && (
           <div className="overview-panel">
-            <div className="info-group">
-              <label>Email</label>
-              <p>{contact.email}</p>
-            </div>
-            <div className="info-group">
-              <label>Phone</label>
-              <p>{contact.phone || 'Not provided'}</p>
-            </div>
-            <div className="info-group">
-              <label>LinkedIn</label>
-              {contact.linkedin_url ? (
-                <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer">
-                  {contact.linkedin_url}
-                </a>
-              ) : (
-                <p>Not provided</p>
-              )}
-            </div>
-            <div className="info-group">
-              <label>Enrichment Status</label>
-              <p className={`status ${contact.enrichment_status}`}>
-                {contact.enrichment_status || 'Pending'}
-              </p>
-            </div>
+            <div className="info-group"><label>Email</label><p>{contact.email || 'N/A'}</p></div>
+            <div className="info-group"><label>Phone</label><p>{contact.phone || 'N/A'}</p></div>
+            <div className="info-group"><label>LinkedIn</label><p>{contact.linkedin_url ? <a href={contact.linkedin_url} target="_blank" rel="noopener">View</a> : 'N/A'}</p></div>
+            <div className="info-group"><label>Status</label><p className={`status-badge ${contact.enrichment_status}`}>{contact.enrichment_status}</p></div>
           </div>
         )}
 
-        {activeTab === 'enrichment' && (
+        {activeTab === 'enrichment' && isEnriched && (
           <div className="enrichment-panel">
-            {enrichmentData?.markdown ? (
-              <>
-                <div className="enrichment-meta">
-                  Enriched: {enrichmentData.enriched_at ? new Date(enrichmentData.enriched_at).toLocaleString() : 'Unknown'}
-                </div>
-                
-                {Object.entries(enrichedSections).map(([section, content]) => (
-                  <div key={section} className="enrichment-section">
-                    <h3>{section.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</h3>
-                    <div className="section-content">
-                      {content.split('\n').map((line, i) => (
-                        <p key={i}>{line}</p>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </>
-            ) : (
-              <div className="empty-state">
-                <p>No enrichment data available</p>
-                <p className="hint">Click "Enrich Contact" to generate intelligence</p>
-              </div>
-            )}
+            <div className="enrichment-meta">Enriched: {new Date(enrichmentData.enriched_at).toLocaleString()}</div>
+            <div className="enrichment-markdown">{enrichmentData.markdown}</div>
           </div>
         )}
       </div>
 
-      {error && (
-        <div className="error-banner">{error}</div>
+      {showEmailModal && (
+        <div className="modal" onClick={() => setShowEmailModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Generated Email</h3>
+            <textarea value={generatedEmail || ''} readOnly rows={12}></textarea>
+            <button onClick={() => {navigator.clipboard.writeText(generatedEmail || ''); alert('Copied!');}} className="btn btn-primary">Copy</button>
+            <button onClick={() => setShowEmailModal(false)} className="btn btn-secondary">Close</button>
+          </div>
+        </div>
       )}
+
+      {showCallModal && (
+        <div className="modal" onClick={() => setShowCallModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Call Script</h3>
+            <textarea value={generatedCall || ''} readOnly rows={12}></textarea>
+            <button onClick={() => {navigator.clipboard.writeText(generatedCall || ''); alert('Copied!');}} className="btn btn-primary">Copy</button>
+            <button onClick={() => setShowCallModal(false)} className="btn btn-secondary">Close</button>
+          </div>
+        </div>
+      )}
+
+      {error && <div className="error-banner">{error}</div>}
     </div>
   );
 }
