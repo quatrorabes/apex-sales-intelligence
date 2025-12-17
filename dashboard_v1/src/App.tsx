@@ -1,31 +1,22 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
-import '@mantine/core/styles.css';
-import '@mantine/notifications/styles.css';
-
-import AppShell from './layouts/AppShell';
 import LandingPage from './components/LandingPage';
-import TodaysBoard from './components/TodaysBoard';
 import ContactsView from './components/ContactsView';
-import ContactDetailPage from './pages/ContactDetailPage';
+import ContactDetail from './components/ContactDetail';
+import TodaysBoard from './components/TodaysBoard';
+import './App.css';
 
 function App() {
   return (
-    <MantineProvider>
-      <Notifications position="top-right" />
-      <Router>
+    <Router>
+      <div className="app">
         <Routes>
-          <Route path="/" element={<AppShell />}>
-            <Route index element={<LandingPage />} />
-            <Route path="dashboard" element={<TodaysBoard />} />
-            <Route path="todays-board" element={<TodaysBoard />} />
-            <Route path="contacts" element={<ContactsView />} />
-            <Route path="contacts/:id" element={<ContactDetailPage />} />
-          </Route>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/contacts" element={<ContactsView />} />
+          <Route path="/contacts/:contactId" element={<ContactDetail />} />
+          <Route path="/today" element={<TodaysBoard />} />
         </Routes>
-      </Router>
-    </MantineProvider>
+      </div>
+    </Router>
   );
 }
 
