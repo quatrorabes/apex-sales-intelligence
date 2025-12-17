@@ -2830,3 +2830,33 @@ async def import_from_hubspot():
 # DISABLED:         raise HTTPException(status_code=500, detail=str(e))
 # DISABLED:     finally:
 # DISABLED:         conn.close()
+
+# ============================================
+# UUID CONTACT LOOKUP (Dashboard_v1 Compatibility)
+# ============================================
+import uuid
+
+@app.get("/api/contacts/uuid/{contact_uuid}", tags=["Contacts"])
+async def get_contact_by_uuid(contact_uuid: str):
+    """Get contact by UUID - Dashboard_v1 compatibility"""
+    try:
+        # Validate UUID format
+        uuid.UUID(contact_uuid)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM contacts WHERE uuid = %s", (contact_uuid,))
+            contact = cursor.fetchone()
+            cursor.close()
+            if not contact:
+                raise HTTPException(status_code=404, detail="Contact not found")
+            return {"success": True, "contact": dict(contact)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get contact by UUID error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
