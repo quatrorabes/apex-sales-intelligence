@@ -7,6 +7,7 @@ Architecture:
 - Stage 1-3: Perplexity research (raw data collection)
 - Stage 4: GPT-4 structured parsing (clean sections)
 """
+
 import os
 import logging
 import requests
@@ -29,7 +30,6 @@ class EnhancedEnrichment:
         
         self.openai_client = OpenAI(api_key=self.openai_key)
         self.perplexity_url = "https://api.perplexity.ai/chat/completions"
-        
         logger.info("✅ EnhancedEnrichment initialized")
     
     def enrich_contact(self, contact: dict) -> dict:
@@ -78,7 +78,7 @@ class EnhancedEnrichment:
             
             logger.info(f"📊 Total research: {len(combined_research)} chars")
             
-            # STAGE 4: Parse with GPT-4 (NOT Perplexity - this was the bug!)
+            # STAGE 4: Parse with GPT-4
             logger.info("🧠 STAGE 4: Generating structured profile with GPT-4...")
             structured_profile = self._parse_with_gpt4(combined_research, contact)
             
@@ -93,14 +93,14 @@ class EnhancedEnrichment:
             return {
                 'success': True,
                 'profile_text': structured_profile,
-                'character_count': len(structured_profile)
+                'character_count': len(structured_profile),
+                'raw_research': combined_research  # Include for compiler
             }
-            
+        
         except Exception as e:
             logger.error(f"❌ Enrichment failed: {e}")
             import traceback
             traceback.print_exc()
-            
             return {
                 'success': True,
                 'profile_text': self._create_minimal_profile(contact),
@@ -113,7 +113,6 @@ class EnhancedEnrichment:
             query = f"{name} {company} site:linkedin.com OR {linkedin}"
         else:
             query = f"{name} {company} site:linkedin.com professional profile background education career"
-        
         return self._perplexity_search(query, "person profile")
     
     def _search_company(self, company: str) -> str:
@@ -158,7 +157,6 @@ class EnhancedEnrichment:
                 json=payload,
                 timeout=60
             )
-            
             response.raise_for_status()
             data = response.json()
             
@@ -175,7 +173,7 @@ class EnhancedEnrichment:
                     content += f"[{i}] {citation}\n"
             
             return content
-            
+        
         except Exception as e:
             logger.error(f"❌ Search failed for {search_type}: {e}")
             return ""
@@ -183,15 +181,12 @@ class EnhancedEnrichment:
     def _parse_with_gpt4(self, research_data: str, contact: dict) -> str:
         """
         Stage 4: Use GPT-4 to parse raw research into structured sections
-        
-        KEY FIX: Using GPT-4 instead of Perplexity avoids the 8K context limit error
         """
         name = contact.get('name', 'Unknown')
         company = contact.get('company', 'Unknown Company')
         title = contact.get('title', 'Unknown Title')
         
         # Truncate research to fit within GPT-4's context window
-        # Leave room for prompt (~1500 tokens) + response (3000 tokens)
         max_research_chars = 12000  # ~3000 tokens
         truncated_research = research_data[:max_research_chars]
         
@@ -213,23 +208,11 @@ class EnhancedEnrichment:
 ## company_overview
 [Company description, size, industry, business model - bullet points]
 
-## market_position
-[Industry category, competitors, market advantages - bullet points]
-
-## leadership_and_culture
-[CEO/leadership team, company culture, values - bullet points]
-
-## recent_activity_and_news
-[Recent company news, funding, launches, press - bullet points]
-
 ## pain_points_and_challenges
 [Role-specific and industry challenges they face - bullet points]
 
 ## budget_and_authority
 [Decision-making power, budget ownership, procurement influence - bullet points]
-
-## personality_and_communication
-[Inferred communication style, professional traits, preferences - bullet points]
 
 ---
 
@@ -245,7 +228,7 @@ class EnhancedEnrichment:
         
         try:
             response = self.openai_client.chat.completions.create(
-                model="gpt-4",  # Standard GPT-4 (8K context)
+                model="gpt-4",
                 messages=[
                     {
                         "role": "system",
@@ -261,7 +244,7 @@ class EnhancedEnrichment:
             )
             
             return response.choices[0].message.content
-            
+        
         except Exception as e:
             logger.error(f"❌ GPT-4 parsing failed: {e}")
             import traceback

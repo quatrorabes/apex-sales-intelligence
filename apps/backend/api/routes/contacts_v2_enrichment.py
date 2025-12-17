@@ -1,180 +1,296 @@
-#!/usr/bin/env python3
-
 """
-V2 Contact Enrichment & Analytics Routes
+apps/backend/api/routes/contacts_v2_enrichment.py
+APEX Enrichment Routes v2 - WITH PROVEN ENGINES
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from typing import Dict, Any, List
-import sys
+from fastapi import APIRouter, HTTPException, Query
+from typing import Dict, Any
+import logging
 import json
+import os
+import sys
 from datetime import datetime
-from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/contacts", tags=["enrichment"])
+
+# Add paths for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+
+# Import parser
+try:
+    from services.enrichment_integration import integrate_enrichment_result
+    PARSER_AVAILABLE = True
+    logger.info("✅ Parser loaded")
+except ImportError as e:
+    logger.error(f"Parser import failed: {e}")
+    PARSER_AVAILABLE = False
+
+# Import EnhancedEnrichment
+try:
+    from intelligence.engines.enrichment.enhanced_enrichment import EnhancedEnrichment
+    enrichment_engine = EnhancedEnrichment()
+    ENGINE_AVAILABLE = True
+    logger.info("✅ EnhancedEnrichment engine loaded")
+except ImportError as e:
+    logger.error(f"Engine import failed: {e}")
+    enrichment_engine = None
+    ENGINE_AVAILABLE = False
+
+# Database connection
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import os
+from contextlib import contextmanager
 
-router = APIRouter(prefix="/api/v2/contacts", tags=["Enrichment V2"])
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").replace("postgres://", "postgresql://")
-
-
-def get_contact_from_db(contact_id: str):
-    """Get contact directly from Postgres"""
+@contextmanager
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     try:
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
-        contact = cursor.fetchone()
-        cursor.close()
+        yield conn
+    finally:
         conn.close()
-        return dict(contact) if contact else None
-    except Exception as e:
-        print(f"Error fetching contact: {e}")
-        return None
 
 
-@router.get("/{contact_id}/enrichment/analytics")
-async def get_enrichment_analytics(contact_id: str) -> Dict[str, Any]:
-    """Get enrichment analytics for Intelligence/Qualification tabs."""
-    contact = get_contact_from_db(contact_id)
+def enrich_contact_internal(contact_id: int) -> Dict[str, Any]:
+    """
+    Complete enrichment pipeline with proven engines.
     
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    
-    # Parse enrichment JSON
-    enrichment = contact.get('enrichment') or {}
-    
-    # Handle both v1 (string) and v2 (dict) formats
-    if isinstance(enrichment, str):
-        try:
-            enrichment = json.loads(enrichment)
-        except:
-            enrichment = {}
-    
-    # Check if this is v2 format (has 'sections' key) or v1 format (plain dict/string)
-    is_v2_format = isinstance(enrichment, dict) and 'sections' in enrichment
-    
-    if is_v2_format:
-        # V2 format: enrichment has structured sections
-        sections = enrichment.get('sections', {})
-    else:
-        # V1 format: enrichment is a plain dict or has no sections structure
-        # Return empty sections for v1 - these need to be migrated
-        sections = {}
-    
-    return {
-        "contact_id": contact_id,
-        "enriched_at": contact.get('enriched_at'),
-        "enrichment_status": contact.get('enrichment_status', 'pending'),
-        
-        # Intelligence sections
-        "sections": {
-            "overview": sections.get('overview', ''),
-            "company_overview": sections.get('company_overview', ''),
-            "pain_points_and_challenges": sections.get('pain_points_and_challenges', ''),
-            "budget_and_authority": sections.get('budget_and_authority', ''),
-            "sales_intel": sections.get('sales_intel', ''),
-            "opportunity_insights": sections.get('opportunity_insights', ''),
-        },
-        
-        # Qualification scores
-        "scores": {
-            "mdcp": contact.get('mdcp_score', 0),
-            "bant": contact.get('bant_total_score', 0),
-            "spice": contact.get('spice_total_score', 0),
-            "apex": contact.get('apex_score', 0),
-            "unified": contact.get('unified_qualification_score', 0),
-        },
-        
-        # Metadata
-        "metadata": {
-            "total_sections": len([s for s in sections.values() if s]),
-            "character_count": sum(len(str(v)) for v in sections.values()),
-            "has_pain_points": bool(sections.get('pain_points_and_challenges')),
-            "has_budget_info": bool(sections.get('budget_and_authority')),
-            "format": "v2" if is_v2_format else "v1"
+    Flow:
+    1. Fetch contact from DB
+    2. EnhancedEnrichment (Perplexity + GPT-4)
+    3. Parse output with new parser
+    4. Save structured JSON to DB
+    """
+    if not ENGINE_AVAILABLE:
+        return {
+            "success": False,
+            "contactId": contact_id,
+            "status": "error",
+            "error": "EnhancedEnrichment engine not available"
         }
-    }
-
-
-@router.get("/{contact_id}/enrichment/raw")
-async def get_raw_enrichment(contact_id: str) -> Dict[str, Any]:
-    """Get raw enrichment data (for debugging)"""
-    contact = get_contact_from_db(contact_id)
     
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    if not PARSER_AVAILABLE:
+        return {
+            "success": False,
+            "contactId": contact_id,
+            "status": "error",
+            "error": "Parser not available"
+        }
     
-    return {
-        "contact_id": contact_id,
-        "enrichment": contact.get('enrichment'),
-        "enriched_at": contact.get('enriched_at'),
-        "enrichment_status": contact.get('enrichment_status', 'pending'),
-    }
-
-
-@router.get("/{contact_id}/enrichment/personality")
-async def get_personality_analysis(contact_id: str) -> Dict[str, Any]:
-    """Get personality and communication style analysis for Personality tab."""
-    contact = get_contact_from_db(contact_id)
+    try:
+        # 1. Fetch contact
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,))
+            contact = cursor.fetchone()
+            cursor.close()
+        
+        if not contact:
+            return {
+                "success": False,
+                "contactId": contact_id,
+                "status": "error",
+                "error": f"Contact {contact_id} not found"
+            }
+        
+        contact_dict = dict(contact)
+        
+        # 2. Call EnhancedEnrichment (Perplexity 3-stage + GPT-4)
+        logger.info(f"🚀 Enriching contact {contact_id}: {contact_dict.get('name')}")
+        enrichment_result = enrichment_engine.enrich_contact(contact_dict)
+        
+        if not enrichment_result.get("success"):
+            error_msg = enrichment_result.get("error", "Enrichment failed")
+            logger.error(f"❌ Enrichment failed for {contact_id}: {error_msg}")
+            
+            # Mark as failed in DB
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s",
+                    (contact_id,)
+                )
+                conn.commit()
+                cursor.close()
+            
+            return {
+                "success": False,
+                "contactId": contact_id,
+                "status": "error",
+                "error": error_msg
+            }
+        
+        # 3. Parse with new parser
+        raw_profile = enrichment_result.get("profile_text", "")
+        logger.info(f"📝 Parsing {len(raw_profile)} chars for contact {contact_id}")
+        
+        enrichment_object = integrate_enrichment_result(raw_profile)
+        
+        # 4. Save to DB
+        enrichment_json = json.dumps(enrichment_object)
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE contacts 
+                SET enrichment_status = 'completed',
+                    enriched_at = NOW(),
+                    enrichment_data = %s
+                WHERE id = %s
+                """,
+                (enrichment_json, contact_id)
+            )
+            conn.commit()
+            cursor.close()
+        
+        logger.info(f"✅ Enrichment complete for contact {contact_id}")
+        
+        return {
+            "success": True,
+            "contactId": contact_id,
+            "status": "completed",
+            "sections": len(enrichment_object.get("sections", {})),
+            "format": enrichment_object.get("metadata", {}).get("format_detected", "unknown"),
+            "characterCount": len(raw_profile)
+        }
     
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    
-    enrichment = contact.get('enrichment') or {}
-    if isinstance(enrichment, str):
+    except Exception as e:
+        logger.error(f"❌ Enrichment exception for {contact_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        # Mark as failed
         try:
-            enrichment = json.loads(enrichment)
+            with get_db() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE contacts SET enrichment_status = 'failed' WHERE id = %s",
+                    (contact_id,)
+                )
+                conn.commit()
+                cursor.close()
         except:
-            enrichment = {}
-    
-    # Check if v2 format
-    is_v2_format = isinstance(enrichment, dict) and 'sections' in enrichment
-    sections = enrichment.get('sections', {}) if is_v2_format else {}
-    
-    # Extract personality-related sections
-    personality_data = sections.get('personality_profile', '')
-    communication_style = sections.get('communication_style', '')
-    
-    return {
-        "contact_id": contact_id,
-        "enriched_at": contact.get('enriched_at'),
-        "enrichment_status": contact.get('enrichment_status', 'pending'),
-        "personality": personality_data,
-        "communication_style": communication_style,
-        "has_data": bool(personality_data or communication_style)
-    }
+            pass
+        
+        return {
+            "success": False,
+            "contactId": contact_id,
+            "status": "error",
+            "error": str(e)
+        }
 
 
-@router.get("/{contact_id}/enrichment/icp")
-async def get_icp_match(contact_id: str) -> Dict[str, Any]:
-    """Get ICP match analysis for Why We Fit tab."""
-    contact = get_contact_from_db(contact_id)
+# ROUTES
+
+@router.post("/{contact_id}/enrich")
+async def enrich_contact(contact_id: int):
+    """Enrich single contact"""
+    result = enrich_contact_internal(contact_id)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error"))
+    return result
+
+
+@router.post("/batch/enrich")
+async def batch_enrich(limit: int = Query(10, ge=1, le=100)):
+    """
+    Batch enrich multiple contacts using proven engines.
+    """
+    if not ENGINE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Enrichment engine not available")
     
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    try:
+        # Find unenriched contacts
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id FROM contacts 
+                WHERE enrichment_status IS NULL 
+                   OR enrichment_status != 'completed'
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,)
+            )
+            targets = [row["id"] for row in cursor.fetchall()]
+            cursor.close()
+        
+        if not targets:
+            return {
+                "status": "complete",
+                "message": "No contacts to enrich",
+                "processed": 0
+            }
+        
+        logger.info(f"🔄 Batch enriching {len(targets)} contacts...")
+        
+        # Enrich each contact
+        results = []
+        for contact_id in targets:
+            result = enrich_contact_internal(contact_id)
+            results.append(result)
+        
+        successful = sum(1 for r in results if r["success"])
+        
+        return {
+            "status": "complete",
+            "processed": len(results),
+            "successful": successful,
+            "failed": len(results) - successful,
+            "results": results
+        }
     
-    enrichment = contact.get('enrichment') or {}
-    if isinstance(enrichment, str):
-        try:
-            enrichment = json.loads(enrichment)
-        except:
-            enrichment = {}
+    except Exception as e:
+        logger.error(f"❌ Batch enrich failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{contact_id}/enrichment-status")
+async def get_enrichment_status(contact_id: int):
+    """Check enrichment status"""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT enrichment_status, enriched_at, enrichment_data 
+                FROM contacts 
+                WHERE id = %s
+                """,
+                (contact_id,)
+            )
+            row = cursor.fetchone()
+            cursor.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        response = {
+            "contactId": contact_id,
+            "enrichmentStatus": row["enrichment_status"] or "pending",
+            "enrichedAt": str(row["enriched_at"]) if row["enriched_at"] else None
+        }
+        
+        # Include metadata if enriched
+        if row["enrichment_data"]:
+            try:
+                enrichment = json.loads(row["enrichment_data"]) if isinstance(row["enrichment_data"], str) else row["enrichment_data"]
+                if isinstance(enrichment, dict):
+                    response["sectionsCount"] = len(enrichment.get("sections", {}))
+                    response["formatDetected"] = enrichment.get("metadata", {}).get("format_detected", "unknown")
+                    response["totalSections"] = enrichment.get("metadata", {}).get("total_sections", 0)
+            except:
+                pass
+        
+        return response
     
-    # Check if v2 format
-    is_v2_format = isinstance(enrichment, dict) and 'sections' in enrichment
-    sections = enrichment.get('sections', {}) if is_v2_format else {}
-    
-    # Extract ICP-related sections
-    icp_analysis = sections.get('icp_match', '')
-    fit_score = sections.get('fit_score', '')
-    
-    return {
-        "contact_id": contact_id,
-        "enriched_at": contact.get('enriched_at'),
-        "enrichment_status": contact.get('enrichment_status', 'pending'),
-        "icp_match": icp_analysis,
-        "fit_score": fit_score,
-        "has_data": bool(icp_analysis or fit_score)
-    }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Status check failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
