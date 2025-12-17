@@ -1,221 +1,159 @@
-# apps/backend/engines/intelligence/enrichment/engine_v3.py
 """
-APEX Enrichment Engine v3.0 - Main Engine
-10-stage enrichment pipeline producing 10,000+ word profiles
+APEX Enrichment Engine v3.0
+Handles None values and missing fields gracefully
 """
 
 import os
 import json
 import requests
-import openai
-from typing import Dict, Any, Optional
-from datetime import datetime
 import logging
-from .research import PerplexityResearch
-from .prompts import get_10k_synthesis_prompt
-from .parser import parse_enrichment_sections
-from .models import EnrichmentResponse
+from datetime import datetime
+from typing import Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
 class ApexEnrichmentEngineV3:
-    """
-    Production enrichment engine v3.0
-    
-    Generates 10,000+ word buyer intelligence profiles including:
-    - Personality profile (MBTI-style analysis)
-    - Background & career trajectory
-    - Company analysis
-    - Role-specific pain points
-    - Buying signals & budget indicators
-    - Competitive landscape
-    - Engagement strategy
-    - Organizational dynamics
-    - 90-day engagement roadmap
-    
-    Uses:
-    - Perplexity AI: 10 parallel research queries (online search)
-    - GPT-4: Synthesis into comprehensive profile
-    """
-    
     def __init__(self):
-        self.perplexity_key = os.getenv("PERPLEXITY_API_KEY")
-        self.openai_key = os.getenv("OPENAI_API_KEY")
-        self.research_service = PerplexityResearch(self.perplexity_key)
-        
-        if not self.perplexity_key or not self.openai_key:
-            raise ValueError("Missing API keys: PERPLEXITY_API_KEY or OPENAI_API_KEY")
-        
-        # Configure OpenAI
-        openai.api_key = self.openai_key
-        
-        logger.info("✅ APEX Enrichment Engine v3.0 initialized")
+        self.perplexity_key = os.getenv('PERPLEXITY_API_KEY')
+        self.openai_key = os.getenv('OPENAI_API_KEY')
     
-    def enrich_contact(self, contact: Dict[str, Any]) -> EnrichmentResponse:
-        """
-        Main enrichment pipeline: 10 stages producing 10,000+ word profile
-        
-        Input: Contact object with name, title, company, email, linkedin_url
-        Output: EnrichmentResponse with 10 detailed sections
-        
-        UUID HANDLING: All contact IDs remain as UUID strings throughout
-        DATABASE: All contact fields preserved, no elimination
-        """
-        
+    def enrich_contact(self, contact: Dict) -> Dict[str, Any]:
+        """Enrich a single contact with proper None handling"""
         try:
-            # Extract and validate contact fields (UUID stays as string)
-            contact_id = contact.get("id")
-            name = contact.get("name", "").strip()
-            title = contact.get("title", "").strip()
-            company = contact.get("company", "").strip()
-            email = contact.get("email", "").strip()
-            linkedin_url = contact.get("linkedin_url", "").strip()
+            logger.info(f"🚀 Calling APEX v3.0 engine for {contact.get('name', 'Unknown')}")
             
-            # Preserve all other fields (no elimination)
-            preserved_fields = {
-                k: v for k, v in contact.items()
-                if k not in ["id", "name", "title", "company", "email", "linkedin_url", "enrichment_data"]
+            # Handle None values safely with (value or "").strip()
+            name = (contact.get("name") or "").strip()
+            company = (contact.get("company") or "").strip()
+            title = (contact.get("title") or "").strip()
+            email = (contact.get("email") or "").strip()
+            linkedin_url = (contact.get("linkedin_url") or "").strip()
+            
+            if not name:
+                return {'status': 'error', 'error': 'Contact name is required'}
+            
+            logger.info(f"Enriching: {name} at {company or 'Unknown Company'}")
+            
+            # Stage 1: Gather raw context
+            raw_context = self._gather_raw_context(name, company, title, email, linkedin_url)
+            
+            # Stage 2: Synthesize with GPT-4
+            markdown = self._synthesize_to_markdown(name, company, raw_context)
+            
+            return {
+                'status': 'success',
+                'markdown': markdown,
+                'raw_context': raw_context,
+                'enriched_at': datetime.now().isoformat()
             }
-            
-            if not all([name, title, company]):
-                return EnrichmentResponse(
-                    success=False,
-                    error="Missing required fields: name, title, company",
-                    contact_id=contact_id
-                )
-            
-            logger.info(f"🚀 APEX v3.0: Enriching {name} ({title} @ {company})")
-            start_time = datetime.utcnow()
-            
-            # ================================================================
-            # STAGES 1-5: RESEARCH GATHERING (Perplexity - Parallel)
-            # ================================================================
-            logger.info("📡 Stage 1-5: Gathering research from Perplexity...")
-            research = self.research_service.gather_comprehensive_research(
-                name=name,
-                title=title,
-                company=company,
-                email=email,
-                linkedin_url=linkedin_url
-            )
-            
-            research_time = (datetime.utcnow() - start_time).total_seconds()
-            logger.info(f"✅ Research complete: {research_time:.1f}s")
-            
-            # ================================================================
-            # STAGES 6-10: GPT-4 SYNTHESIS → 10,000 WORD PROFILE
-            # ================================================================
-            logger.info("🧠 Stage 6-10: Synthesizing profile with GPT-4...")
-            profile_text = self._synthesize_10k_profile(
-                name=name,
-                title=title,
-                company=company,
-                research=research
-            )
-            
-            synthesis_time = (datetime.utcnow() - start_time).total_seconds() - research_time
-            logger.info(f"✅ Synthesis complete: {synthesis_time:.1f}s")
-            
-            # ================================================================
-            # PARSE INTO STRUCTURED SECTIONS
-            # ================================================================
-            logger.info("📋 Parsing sections...")
-            sections = parse_enrichment_sections(profile_text)
-            
-            # ================================================================
-            # BUILD RESPONSE (All data preserved)
-            # ================================================================
-            response = EnrichmentResponse(
-                success=True,
-                contact_id=contact_id,  # UUID string preserved
-                contact_info={
-                    "id": contact_id,
-                    "name": name,
-                    "title": title,
-                    "company": company,
-                    "email": email,
-                    "linkedin_url": linkedin_url
-                },
-                sections=sections,
-                raw_profile=profile_text,
-                metadata={
-                    "enrichment_engine": "v3.0",
-                    "total_sections": len(sections),
-                    "character_count": len(profile_text),
-                    "word_count": len(profile_text.split()),
-                    "research_sources": list(research.keys()),
-                    "generated_at": datetime.utcnow().isoformat(),
-                    "processing_time_seconds": round((datetime.utcnow() - start_time).total_seconds(), 2)
-                },
-                preserved_fields=preserved_fields  # All extra fields preserved
-            )
-            
-            total_time = (datetime.utcnow() - start_time).total_seconds()
-            logger.info(f"✅ COMPLETE: {len(profile_text)} chars, {response.metadata['word_count']} words, {total_time:.1f}s total")
-            
-            return response
         
         except Exception as e:
-            logger.error(f"❌ Enrichment failed: {str(e)}", exc_info=True)
-            return EnrichmentResponse(
-                success=False,
-                error=str(e),
-                contact_id=contact.get("id")
-            )
+            logger.error(f"❌ Enrichment failed: {e}")
+            return {'status': 'error', 'error': str(e)}
     
-    def _synthesize_10k_profile(
-        self, name: str, title: str, company: str, research: Dict[str, str]
-    ) -> str:
-        """
-        Use GPT-4 to synthesize research into 10,000+ word profile
-        """
+    def _gather_raw_context(self, name: str, company: str, title: str, email: str, linkedin_url: str) -> Dict[str, str]:
+        """Gather 6 raw searches"""
+        raw_context = {}
         
-        # Build research context (each source truncated to avoid token overload)
-        research_context = self._build_research_context(research)
+        logger.info(f"1/6 Person research for {name}")
+        person_prompt = f"Research {name} comprehensively. Title: {title or 'Unknown'}, Company: {company or 'Unknown'}, Email: {email or 'N/A'}, LinkedIn: {linkedin_url or 'Not provided'}. Provide current role, work history (5 years), education, achievements, and career progression."
+        raw_context['person'] = self._call_perplexity(person_prompt, 2000)
         
-        # Get comprehensive synthesis prompt
-        prompt = get_10k_synthesis_prompt(
-            name=name,
-            title=title,
-            company=company,
-            research=research_context
-        )
+        logger.info(f"2/6 Company research for {company or 'Unknown'}")
+        company_prompt = f"Research {company or 'this company'} thoroughly. Provide description, mission, size, products, leadership, recent news (90 days), market position, and growth trajectory."
+        raw_context['company'] = self._call_perplexity(company_prompt, 2000)
         
-        # Call GPT-4 with high token limit for 10,000 word output
-        response = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are the world's best B2B sales intelligence analyst. "
-                        "Create comprehensive, deeply researched buyer profiles that help sales reps close deals. "
-                        "Be specific, detailed, and action-oriented. "
-                        "Include personality traits, pain points, buying signals, and engagement strategies. "
-                        "Write in conversational tone. Target: 10,000+ words across all sections."
-                    )
+        logger.info(f"3/6 Social media profiles")
+        social_prompt = f"Find all social media profiles for {name}. Search for LinkedIn, Twitter, Instagram, Facebook. Provide exact URLs."
+        raw_context['social'] = self._call_perplexity(social_prompt, 1500)
+        
+        logger.info(f"4/6 Recent activity")
+        activity_prompt = f"Find recent activity for {name} at {company or 'their company'} (last 90 days). LinkedIn posts, news, speaking engagements, deals, awards."
+        raw_context['activity'] = self._call_perplexity(activity_prompt, 2000)
+        
+        logger.info(f"5/6 Skills and expertise")
+        skills_prompt = f"Identify skills for {name}, {title or 'professional'}. Technical, leadership, industry expertise, certifications."
+        raw_context['skills'] = self._call_perplexity(skills_prompt, 1500)
+        
+        logger.info(f"6/6 Fun facts and icebreakers")
+        facts_prompt = f"Find interesting info about {name} and {company or 'their company'}. Culture, background, awards, community involvement, alma mater, sports."
+        raw_context['fun_facts'] = self._call_perplexity(facts_prompt, 1200)
+        
+        return raw_context
+    
+    def _synthesize_to_markdown(self, name: str, company: str, raw_context: Dict) -> str:
+        """Synthesize with GPT-4"""
+        logger.info(f"🧠 Synthesizing with GPT-4")
+        
+        compiled = "\n\n".join([f"## {k.upper()}\n{v}" for k, v in raw_context.items() if v])
+        
+        synthesis_prompt = f"""Synthesize into sales profile for {name} at {company}.
+
+RAW DATA:
+{compiled}
+
+OUTPUT AS MARKDOWN - Only real sections:
+## Overview
+## Background & Experience  
+## Education
+## Company Context
+## Skills & Expertise
+## Social Media & Online Presence
+## Recent Activity
+## Sales Signals & Triggers
+## Talking Points
+## Recommended Outreach
+
+Be specific. Include dates, numbers, names."""
+        
+        markdown = self._call_gpt4(synthesis_prompt, 4000)
+        logger.info(f"✅ Synthesis done: {len(markdown)} chars")
+        return markdown
+    
+    def _call_perplexity(self, prompt: str, max_tokens: int = 2000) -> str:
+        """Call Perplexity API"""
+        if not self.perplexity_key:
+            return ""
+        
+        try:
+            response = requests.post(
+                'https://api.perplexity.ai/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {self.perplexity_key}',
+                    'Content-Type': 'application/json'
                 },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.7,
-            max_tokens=8000,  # Will produce ~10,000 words
-            timeout=60
-        )
-        
-        return response.choices[0].message.content
+                json={
+                    'model': 'sonar-pro',
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'temperature': 0.2,
+                    'max_tokens': max_tokens
+                },
+                timeout=120
+            )
+            if response.status_code == 200:
+                return response.json()['choices'][0]['message']['content']
+        except Exception as e:
+            logger.error(f"Perplexity error: {e}")
+        return ""
     
-    def _build_research_context(self, research: Dict[str, str]) -> str:
-        """Format research data into readable context (truncated to fit tokens)"""
-        sections = []
+    def _call_gpt4(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Call GPT-4"""
+        if not self.openai_key:
+            return ""
         
-        for source_name, content in research.items():
-            if content.strip():
-                label = source_name.replace("_", " ").upper()
-                # Truncate each source to ~800 chars to avoid token overload
-                truncated = content[:800] + ("..." if len(content) > 800 else "")
-                sections.append(f"{label}:\n{truncated}")
-        
-        return "\n\n".join(sections)
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=self.openai_key)
+            response = client.chat.completions.create(
+                model='gpt-4',
+                messages=[
+                    {'role': 'system', 'content': 'Professional sales intelligence analyst.'},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.3,
+                max_tokens=max_tokens
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"GPT-4 error: {e}")
+        return ""
