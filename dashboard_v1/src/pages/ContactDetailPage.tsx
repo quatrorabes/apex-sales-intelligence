@@ -54,7 +54,7 @@ export const ContactDetailPage: React.FC = () => {
   const fetchContact = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${config.APIBASEURL}/api/v2/contacts/${id}`);
+      const response = await fetch(`${config.APIBASEURL}/api/contacts/${id}`);
       const data = await response.json();
       
       if (data.success && data.contact) {
@@ -76,7 +76,7 @@ export const ContactDetailPage: React.FC = () => {
   const checkEnrichmentStatus = async () => {
     try {
       const response = await fetch(
-        `${config.APIBASEURL}/api/v2/contacts/${id}/enrichment-status`
+        `${config.APIBASEURL}/api/contacts/${id}/enrichment-status`
       );
       const data = await response.json();
       
@@ -101,7 +101,7 @@ export const ContactDetailPage: React.FC = () => {
     try {
       setEnriching(true);
       const response = await fetch(
-        `${config.APIBASEURL}/api/v2/contacts/${id}/enrich`,
+        `${config.APIBASEURL}/api/contacts/${id}/enrich`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -119,7 +119,7 @@ export const ContactDetailPage: React.FC = () => {
         // Start polling
         const pollInterval = setInterval(async () => {
           const statusRes = await fetch(
-            `${config.APIBASEURL}/api/v2/contacts/${id}/enrichment-status`
+            `${config.APIBASEURL}/api/contacts/${id}/enrichment-status`
           );
           const statusData = await statusRes.json();
           
