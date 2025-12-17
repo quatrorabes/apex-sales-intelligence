@@ -1,9 +1,10 @@
-"""APEX Enrichment Routes v3"""
+"""APEX Enrichment Routes v3 - Fixed schema validation"""
 import os, json, logging
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Body
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from typing import List
 
 router = APIRouter(tags=['enrichment'])
 logger = logging.getLogger(__name__)
@@ -15,12 +16,23 @@ try:
 except:
     enrichment_engine = None
 
+# Single contact enrichment (v2 endpoint - called from ContactDetail)
+@router.post('/api/v2/contacts/{contact_id}/enrich')
+async def enrich_single_contact(contact_id: str):
+    """Enrich single contact"""
+    logger.info(f"POST /api/v2/contacts/{contact_id}/enrich")
+    return await enrich_contact_internal(contact_id)
+
+# Batch enrichment
 @router.post('/api/batch/enrich')
-async def batch_enrich(contact_ids: list = Body(...)):
+async def batch_enrich(contact_ids: List[str] = Body(...)):
+    """Batch enrich contacts"""
     if not contact_ids:
-        raise HTTPException(status_code=400, detail="No contact IDs")
+        raise HTTPException(status_code=400, detail="contact_ids required")
     
+    logger.info(f"Batch enriching {len(contact_ids)} contacts")
     results = []
+    
     for contact_id in contact_ids:
         try:
             result = await enrich_contact_internal(contact_id)
@@ -30,11 +42,8 @@ async def batch_enrich(contact_ids: list = Body(...)):
     
     return {'results': results}
 
-@router.post('/api/contacts/{contact_id}/enrich')
-async def enrich_contact(contact_id: str):
-    return await enrich_contact_internal(contact_id)
-
 async def enrich_contact_internal(contact_id: str) -> dict:
+    """Internal enrichment handler"""
     try:
         if not DATABASE_URL or not enrichment_engine:
             raise HTTPException(status_code=500, detail="Service not ready")
@@ -42,7 +51,10 @@ async def enrich_contact_internal(contact_id: str) -> dict:
         conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id, name, company, title, email, linkedin_url FROM contacts WHERE id = %s", (contact_id,))
+        cursor.execute(
+            "SELECT id, name, company, title, email, linkedin_url FROM contacts WHERE id = %s",
+            (contact_id,)
+        )
         contact_row = cursor.fetchone()
         
         if not contact_row:
@@ -51,7 +63,7 @@ async def enrich_contact_internal(contact_id: str) -> dict:
             raise HTTPException(status_code=404, detail="Contact not found")
         
         contact = dict(contact_row)
-        logger.info(f"⏳ Enriching: {contact_id}")
+        logger.info(f"Enriching: {contact['name']}")
         
         enrichment_result = enrichment_engine.enrich_contact(contact)
         
@@ -89,11 +101,12 @@ async def enrich_contact_internal(contact_id: str) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Enrichment failed: {e}")
+        logger.error(f"Enrichment failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get('/api/contacts/{contact_id}/enrichment-status')
+@router.get('/api/v2/contacts/{contact_id}/enrichment-status')
 async def get_enrichment_status(contact_id: str):
+    """Check enrichment status"""
     try:
         conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         cursor = conn.cursor()
@@ -105,7 +118,10 @@ async def get_enrichment_status(contact_id: str):
         if not result:
             raise HTTPException(status_code=404, detail="Contact not found")
         
-        return {'enrichment_status': result['enrichment_status'], 'enriched_at': result['enriched_at']}
+        return {
+            'enrichment_status': result['enrichment_status'] or 'pending',
+            'enriched_at': result['enriched_at']
+        }
     except HTTPException:
         raise
     except Exception as e:
