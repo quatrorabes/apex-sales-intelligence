@@ -1,47 +1,108 @@
-#!/usr/bin/env python3
+"""
+APEX Enrichment v2 Routes
+Uses Orchestrator for 3-stage enrichment
+"""
 
-# backend/api/routes/enrichment_v2.py
-"""
-APEX Enrichment API v2 - Uses ApexCustomEnrichment (Three-Stage)
-"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
+import json
+import logging
 from datetime import datetime
-import sys
-from pathlib import Path
-import traceback
 
-# Add intelligence path
-BACKEND_DIR = Path(__file__).parent.parent.parent
-INTELLIGENCE_PATH = BACKEND_DIR / 'intelligence'
-sys.path.insert(0, str(INTELLIGENCE_PATH))
+from services.enrichment_orchestrator_v2 import ApexEnrichmentOrchestrator
 
-from apex_scoring_engine import ApexScoringEngine
-from backend.models.database import Contact, SessionLocal
-from intelligence.engines.enrichment.apex_custom_enrichment import ApexCustomEnrichment
-from backend.services.enrichment_parser_v2 import EnrichmentParser
+router = APIRouter(tags=['enrichment_v2'])
+enrichment_engine = ApexEnrichmentOrchestrator()
+logger = logging.getLogger(__name__)
 
-router = APIRouter()
+class EnrichContactRequest(BaseModel):
+    contact_id: str
+    name: str
+    company: str
+    title: Optional[str] = None
+    email: Optional[str] = None
+    linkedin_url: Optional[str] = None
 
-# Initialize engines
-scoring_engine = ApexScoringEngine(db_path='./apex.db')
-
-
-class EnrichmentConfig:
-	"""Configuration for ApexCustomEnrichment"""
-	def __init__(self):
-		import os
-		self.perplexity_api_key = os.getenv('PERPLEXITY_API_KEY')
-		self.openai_api_key = os.getenv('OPENAI_API_KEY')
-		
-		
-@router.post("/api/contacts/{contact_id}/enrich")
-async def enrich_contact(contact_id: str):
-	"""
-	Trigger deep enrichment with Apex Custom Intelligence (Three-Stage)
-	Returns immediately after completion (synchronous)
-	"""
-	# Validate contact exists
-	db = SessionLocal()
-	try:
-		contact = db.query(Contact).filter(Contact.id == contact_id).first
-		
+@router.post('/api/v2/contacts/{contact_id}/enrich')
+async def enrich_contact_v2(contact_id: str):
+    """
+    Trigger 3-stage enrichment
+    - Stage 1: Perplexity open-ended research
+    - Stage 2: GPT-4 markdown synthesis
+    - Stage 3: Frontend parses markdown → sections
+    """
+    try:
+        # Fetch contact from DB
+        from contextlib import contextmanager
+        import psycopg2
+        
+        # Get DB connection (your existing pattern)
+        DATABASEURL = os.getenv('DATABASE_URL')
+        conn = psycopg2.connect(DATABASEURL)
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT id, name, company, title, email, linkedin_url FROM contacts WHERE id = %s",
+            (contact_id,)
+        )
+        contact_row = cursor.fetchone()
+        cursor.close()
+        
+        if not contact_row:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        # Map to dict
+        contact = {
+            'id': contact_row[0],
+            'name': contact_row[1],
+            'company': contact_row[2],
+            'title': contact_row[3],
+            'email': contact_row[4],
+            'linkedin_url': contact_row[5]
+        }
+        
+        # Run enrichment
+        logger.info(f"Enriching {contact['name']}...")
+        result = enrichment_engine.enrich_contact(contact)
+        
+        if result['status'] == 'error':
+            raise HTTPException(status_code=500, detail=result.get('error'))
+        
+        # Save to DB
+        enrichment_json = json.dumps({
+            'version': '3.0',
+            'markdown': result['markdown'],
+            'raw_context': result['raw_context'],
+            'enriched_at': result['metadata']['enriched_at']
+        })
+        
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE contacts 
+            SET enrichment_status = %s,
+                enrichment_data = %s::jsonb,
+                enriched_at = %s
+            WHERE id = %s
+            """,
+            ('completed', enrichment_json, datetime.now().isoformat(), contact_id)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"✅ Enrichment saved for {contact['name']}")
+        
+        return {
+            'success': True,
+            'contact_id': contact_id,
+            'enrichment_status': 'completed',
+            'markdown_length': len(result['markdown'])
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Enrichment error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
